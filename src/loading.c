@@ -35,7 +35,15 @@ void Loading_Enter(int songId) {
     char path[MAX_PATH];
     /* Zero (piu 0x8081594 / 0x80825ad): TITLE/T%sH.PNZ (coreano) ou T%sE.PNZ,
      * sempre com o id da própria música. Idioma ainda fixo em inglês (E). */
-    snprintf(path, sizeof(path), "%s/TITLE/T%sE.PNZ", g_game.currentDirectory, Song_IdStr(songId));
+    /* era (Zero): "%s/TITLE/T%sE.PNZ". NX: "TITLE/%03X.PNZ" (string do piu);
+     * sem o arquivo, o recurso de 0x8061d10 (Another -> base). */
+    snprintf(path, sizeof(path), "%s/TITLE/%s.PNZ", g_game.currentDirectory, Song_IdStr(songId));
+    {
+        FILE* tf = fopen(path, "rb");
+        if (tf) fclose(tf);
+        else if (NX_ResId(songId) >= 0)
+            snprintf(path, sizeof(path), "%s/TITLE/%s.PNZ", g_game.currentDirectory, Song_IdStr(NX_ResId(songId)));
+    }
     /* era (Exceed2): "%s/TITLE/T%s.pnz" com Song_DataIdStr(songId) */
     Log_Print("Loading: loading PNZ '%s'\n", path);
 

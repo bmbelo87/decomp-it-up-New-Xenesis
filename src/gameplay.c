@@ -3580,7 +3580,7 @@ void Gameplay_Render(void)
             else if (g_game.stageCount == 1) stageSpr = g_fontSprM02;
             else                             stageSpr = g_fontSprM03;
         }
-        if (stageSpr >= 0 && g_game.sprTileCount > stageSpr) {
+        if (stageSpr >= 0 && g_game.sprTileCount > stageSpr && s_nxGauge < 0) {   /* NX: depois da lifebar */
             float sx = (float)g_game.sprTiles[stageSpr].srcX;
             float sy = (float)g_game.sprTiles[stageSpr].srcY;
             float sw = (float)g_game.sprTiles[stageSpr].srcW;
@@ -3821,6 +3821,14 @@ void Gameplay_Render(void)
         bool both = (pRend1 - pRend0) >= 2;
         for (int p = pRend0; p < pRend1; p++)
             nxLifebarDraw(p, 1.0f - beat, both);
+        /* NX 0x8069b00 (depois da lifebar, 0x806ce65): m00 1st, m01 2nd, m02 Final,
+         * m03 BONUS — o m0%d.spr inteiro (texto + moldura M04) */
+        int stg = g_game.isBonusSong ? g_fontSprM04 : g_game.stageCount == 2 ? g_fontSprM01
+                : g_game.stageCount == 1 ? g_fontSprM02 : g_fontSprM03;
+        if (stg >= 0) {
+            int n = sprTileCount(stg);
+            for (int t = n - 1; t >= 0; t--) exLifeTile(stg + t, 1, 1, 1, 1);
+        }
     } else if (g_exceedSongIds && g_fontSprGGS >= 0) {
         /* Exceed: 0x40B084, chamada com (p*5, beat). Double (flags 0xA80 em
          * [0x568FF4], aqui aproximado pelo modo do projeto) usa gg_d. */
