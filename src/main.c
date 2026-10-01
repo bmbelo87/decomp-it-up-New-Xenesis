@@ -271,6 +271,7 @@ void Game_Init(HINSTANCE hInstance) {
     {   /* extra deste projeto (teste): PUMPY_AUTOSTATE=SELECT abre direto a Select */
         const char* as = getenv("PUMPY_AUTOSTATE");
         if (as && _stricmp(as, "SELECT") == 0) Game_ChangeState(STATE_EXSELECT);
+        if (as && _stricmp(as, "STATION") == 0) Game_ChangeState(STATE_STATION);
     }
     g_game.lastTime = timeGetTime();
 }

@@ -116,3 +116,14 @@ Pads em `0x9e420a0 + jogador*0xccc`. Botões: **7 DL, 8 UL, 9 C, 0xA UR, 0xB DR*
 - Faltam: texto artista/título/BPM em FreeType (NXTW.TTF), códigos/COMMAND.DAT, modo
   especial (corações, FULL SONG/REMIX/ANOTHER).
 - Teste sem pad: PUMPY_AUTOSTATE=SELECT e PUMPY_SHOT=n1,n2 (capturas em pumpy_shot_n.bmp).
+
+## Station (src/nx_station.c) — CStation 0x808a7f0
+
+- Usa BGA/COMMON.DAT (cards "screen *", canal, nome, tempo de 25 s) e BGA/ARRO.DAT
+  (setas; slots 0/2/4/6 recebem as variantes "Prev./Next" dos slots 18..21).
+- 4 estações (+0x12c): 0 TRAINING, 1 ARCADE, 2 WORLD TOUR, 3 SPECIAL ZONE; modo de jogo
+  [0x81f8998] pela tabela 0x8114978 = {3, 0, 2, 1}. UR/DR avançam ("screen L move"),
+  UL/DL voltam ("screen R move"); rotação dos cards em 0x808bf90.
+- Dúvida: o slot 1 do COMMON recebe a camada 52 (text_arc) nas estações 0..2 — é o que o
+  código lê (ebx preservado), mas não foi conferido no jogo real.
+- TRAINING (CSelectEz), WORLD TOUR (CSelectWorld) e SPECIAL ZONE ainda vão para a Select arcade.
