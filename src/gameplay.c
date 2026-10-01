@@ -93,6 +93,8 @@ static void judgeWindows(int lvl, double bpm, double early[4], double late[4])
  * Danger threshold: vida < 180 → barra vermelha
  * Stage break: missCombo > 50 → game over imediato */
 #define LIFE_INITIAL        500
+static int s_nxGauge = -1;
+static int s_nxGaugeBlink[2];  /* [0xa7f4a54 + p*4]: alterna a cada quadro */
 /* Barra de life (PUMPY.EXE 0x411c6b-0x411c99): displayF = life * 0.001 - (1 - pulso) * k, limitado a [0,1],
  * com k = 0.1 nos modos simples e 0.05 em HalfDouble/Double/Nightmare. A barra cheia é life = 1000:
  * o life inicial (500) aparece como MEIA barra. Antes o port usava life/500 (barra cheia no início). */
@@ -2033,6 +2035,11 @@ void Gameplay_Start(int songId)
              * 0x8069b00 escolhe [0x81f8910] (stage) ou 2 + extra. Aqui vão para
              * M01..M04, que o desenho abaixo já usa como 1st/2nd/final/extra. */
             g_fontSprM05 = -1;
+            {   /* NX 0x806e40c: nxgauge.spr (lifebar) antes dos m0%d */
+                int start = g_game.sprTileCount;
+                SPR_LoadSPR("nxgauge.spr", NULL, NULL, NULL);
+                s_nxGauge = (g_game.sprTileCount >= start + 9) ? start : -1;
+            }
             int* const mv[4] = { &g_fontSprM01, &g_fontSprM02, &g_fontSprM03, &g_fontSprM04 };
             for (int i = 0; i < 4; i++) {
                 char nm[16];
@@ -2675,6 +2682,83 @@ static void exLifebarDraw(int p, float beat, bool dbl)
 
     glPopMatrix();
     glColor4f(1, 1, 1, 1);
+}
+
+/* NX 0x80681c0(gauge, jogador, t): lifebar do BGA/00.DAT (nxgauge.spr, 9 tiles).
+ * t = fração da batida (0 no tempo, 0x806ca5c). Tiles: 0 moldura, 1 ponta direita,
+ * 2 barra (arco-íris), 3 brilho cheio, 4 vermelho, 5 ponta amarela, 6 moldura
+ * externa, 7 ponta externa, 8 reflexo. Espelhada no P2 (translate 640 + rotate 180 Y).
+ * otherActive: (0x81f8904 & (2 >> p)) — o outro jogador está jogando (sem pontas). */
+
+static void nxLifebarDraw(int p, float t, bool otherActive)
+{
+    static const float k_tab[6] = { 1.0f, 0.6f, 0.3f, 0.1f, 0.0f, 0.0f };   /* 0x8141e48 */
+    int g = s_nxGauge;
+    if (g < 0 || g + 8 >= g_game.sprTileCount) return;
+    int life = g_game.stats.life[p];
+
+    glPushMatrix();
+    if (p != 0) {
+        glTranslatef(640.0f, 0.0f, 0.0f);
+        glRotatef(180.0f, 0.0f, 1.0f, 0.0f);
+    }
+    exLifeTile(g + 0, 1, 1, 1, 1);
+    if (!otherActive) exLifeTile(g + 1, 1, 1, 1, 1);
+
+    /* largura da barra */
+    float v = (float)life / 1000.0f;
+    if (life <= 999) {
+        int k = (int)((1.0f - t) * 59.0f) / 10;
+        if (k < 0) k = 0;
+        if (k > 5) k = 5;
+        v -= (1.0f - k_tab[k]) / 10.0f;
+    }
+    int n = (int)(v * 61.0f);
+    if (n < 0) n = 0;
+    if (n >= 0x3e) n = 0x3d;
+    int len = n * 4;
+    if (life != 0) len++;
+    if (life >= 1000) len++;
+
+    SPRTileDef* bar = &g_game.sprTiles[g + 2];
+    if (bar->texId >= 0 && bar->texId < MAX_TEXTURES && g_game.textures[bar->texId].inUse) {
+        int tw = Texture_GetWidth(bar->texId); if (tw <= 0) tw = 512;
+        float x0 = (float)bar->srcX, x1 = x0 + (float)len;
+        float yT = 480.0f - (float)bar->srcY, yB = 480.0f - (float)(bar->srcY + bar->srcH);
+        float u0 = bar->u1, u1 = bar->u1 + (float)len / (float)tw;
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, g_game.textures[bar->texId].id);
+        glColor4f(1.0f, 1.0f, 1.0f, 0.75f);
+        glBegin(GL_QUADS);
+        glTexCoord2f(u0, bar->v1); glVertex2f(x0, yT);
+        glTexCoord2f(u0, bar->v2); glVertex2f(x0, yB);
+        glTexCoord2f(u1, bar->v2); glVertex2f(x1, yB);
+        glTexCoord2f(u1, bar->v1); glVertex2f(x1, yT);
+        glEnd();
+    }
+
+    if (life > 999) {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        exLifeTile(g + 3, 1, 1, 1, s_nxGaugeBlink[p] ? 0.5f : 0.0f);
+    } else if (life <= 0x14d) {
+        exLifeTile(g + 4, 1, 1, 1, s_nxGaugeBlink[p] ? 0.75f : 0.25f);
+    }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    int n2 = life * 61 / 1000;
+    if (n2 < 0) n2 = 0;
+    if (n2 >= 0x3e) n2 = 0x3d;
+    if (s_nxGaugeBlink[p]) {
+        glTranslatef((float)(n2 * 4), 0.0f, 0.0f);
+        exLifeTile(g + 5, 1, 1, 1, 1);
+        glTranslatef((float)(-n2 * 4), 0.0f, 0.0f);
+    }
+    exLifeTile(g + 6, 1, 1, 1, 1);
+    if (!otherActive) exLifeTile(g + 7, 1, 1, 1, 1);
+    exLifeTile(g + 8, 1, 1, 1, 1);
+    glPopMatrix();
+    glColor4f(1, 1, 1, 1);
+    s_nxGaugeBlink[p] = 1 - s_nxGaugeBlink[p];
 }
 
 void Gameplay_Render(void)
@@ -3715,7 +3799,29 @@ void Gameplay_Render(void)
     }  // end for p
 
     // Life bars (03/04/05 ou W03/W04/W05) — renderizadas DEPOIS de todos os players
-    if (g_exceedSongIds && g_fontSprGGS >= 0) {
+    if (s_nxGauge >= 0) {
+        /* NX: 0x806ca5c passa a fração da batida; o "beat" daqui é 1 - fração */
+        float beat = 1.0f;
+        if (g_chart && g_songLoaded && (float)g_songTime > 0.1f) {
+            float curBpm = (float)g_chart->segments[0].bpm;
+            double acc = g_chartDelay;
+            for (int s = 0; s < g_chart->segmentCount; s++) {
+                double segDur = g_chart->segments[s].rowCount * getSegmentSpr(s) + getSegmentDelay(s);
+                if (g_songTime < acc + segDur || s == g_chart->segmentCount - 1) {
+                    curBpm = (float)g_chart->segments[s].bpm;
+                    break;
+                }
+                acc += segDur;
+            }
+            if (curBpm > 0.0f) {
+                float period = 60.0f / curBpm;
+                beat = 1.0f - fmodf((float)g_songTime, period) / period;
+            }
+        }
+        bool both = (pRend1 - pRend0) >= 2;
+        for (int p = pRend0; p < pRend1; p++)
+            nxLifebarDraw(p, 1.0f - beat, both);
+    } else if (g_exceedSongIds && g_fontSprGGS >= 0) {
         /* Exceed: 0x40B084, chamada com (p*5, beat). Double (flags 0xA80 em
          * [0x568FF4], aqui aproximado pelo modo do projeto) usa gg_d. */
         float beat = 1.0f;
