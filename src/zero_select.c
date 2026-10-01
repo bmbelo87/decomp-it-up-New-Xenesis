@@ -329,23 +329,27 @@ static void requestPreview(int id) {
 /* 0x806a2f0: BGA/PREVIEW/%X.MOV -> PREVIEW/<ENG|HAN>/%X.MOV -> a da base ->
  * BGA/000P.MOV; AUDIO/D%X.AUD -> o da base. O idioma vem do PIUZERO.INI +0xBB1
  * (0 -> HAN); o projeto ainda não guarda essa opção e usa ENG. */
-static void openPreview(int id) {
-    const char* lang = "ENG";
-    char mov[MAX_PATH], aud[MAX_PATH];
-    FILE* f;
-    snprintf(mov, sizeof(mov), "%s/BGA/PREVIEW/%X.MOV", g_game.currentDirectory, (unsigned)id);
-    if (!(f = fopen(mov, "rb"))) {
-        snprintf(mov, sizeof(mov), "%s/BGA/PREVIEW/%s/%X.MOV", g_game.currentDirectory, lang, (unsigned)id);
-        if (!(f = fopen(mov, "rb"))) {
-            int base = Song_BaseId(id);
-            if (base != -1)
-                snprintf(mov, sizeof(mov), "%s/BGA/PREVIEW/%s/%X.MOV", g_game.currentDirectory, lang, (unsigned)base);
-            f = fopen(mov, "rb");
-        }
+/* NX 0x80791f1: tenta "fmt" com o id e segue 0x8061d10 (recurso do recurso)
+ * enquanto o arquivo não existir; devolve false se a corrente acabar. */
+static bool nxFindChain(int id, const char* fmt, char* out, size_t outSize) {
+    for (int guard = 0; id != -1 && guard < 8; guard++) {
+        snprintf(out, outSize, fmt, g_game.currentDirectory, (unsigned)id);
+        FILE* f = fopen(out, "rb");
+        if (f) { fclose(f); return true; }
+        id = NX_ResId(id);
     }
-    if (f) fclose(f);
-    else snprintf(mov, sizeof(mov), "%s/BGA/000P.MOV", g_game.currentDirectory);
-    Song_FindFile(id, "%s/AUDIO/D%s.AUD", false, aud, sizeof(aud));
+    return false;
+}
+
+static void openPreview(int id) {
+    char mov[MAX_PATH], aud[MAX_PATH];
+    /* era (Zero 0x806a2f0): PREVIEW/%X.MOV -> PREVIEW/<ENG|HAN>/%X.MOV -> base ->
+     * 000P.MOV; AUDIO/D%X.AUD -> base.
+     * NX 0x80791f1: PREVIEW/%03X.MOV pela corrente -> PREVIEW/001.MOV;
+     * AUDIO/INTRO/%03X.AUD pela corrente. */
+    if (!nxFindChain(id, "%s/BGA/PREVIEW/%03X.MOV", mov, sizeof(mov)))
+        snprintf(mov, sizeof(mov), "%s/BGA/PREVIEW/001.MOV", g_game.currentDirectory);
+    nxFindChain(id, "%s/AUDIO/INTRO/%03X.AUD", aud, sizeof(aud));
 
     Movie_Close();
     Movie_Open(mov, true);
@@ -638,24 +642,27 @@ void ZeroSelect_Enter(void) {
     }
     if (!s_digOk) Log_Print("ZSELECT: slots de dígito do SELECT3 incompletos\n");
 
-    /* 0x805ae20: discos "%X.TGA" do BGA/90.DAT, com a base como reserva */
+    /* era (Zero 0x805ae20): discos "%X.TGA" do BGA/90.DAT, com a base como reserva.
+     * NX 0x8062210: "%03X.TGA" do BGA/TEST.DAT -> registro +0x38; pula as músicas
+     * com (canal & 4); sem o arquivo, tenta o recurso de 0x813f860 (baseId). */
     char path[MAX_PATH];
     for (int i = 0; i < EX_SONG_COUNT; i++) s_bannerTex[i] = -1;
-    snprintf(path, sizeof(path), "%s/BGA/90.DAT", g_game.currentDirectory);
+    snprintf(path, sizeof(path), "%s/BGA/TEST.DAT", g_game.currentDirectory);
     if (RES_Open(path)) {
         int ok = 0;
         for (int i = 0; i < EX_SONG_COUNT; i++) {
             char name[16];
-            snprintf(name, sizeof(name), "%X.TGA", (unsigned)g_exSongs[i].id);
+            if (g_exSongs[i].channel & 4) continue;
+            snprintf(name, sizeof(name), "%03X.TGA", (unsigned)g_exSongs[i].id);
             s_bannerTex[i] = loadTextureFromRES(name);
             if (s_bannerTex[i] < 0 && g_exSongs[i].baseId != -1) {
-                snprintf(name, sizeof(name), "%X.TGA", (unsigned)g_exSongs[i].baseId);
+                snprintf(name, sizeof(name), "%03X.TGA", (unsigned)g_exSongs[i].baseId);
                 s_bannerTex[i] = loadTextureFromRES(name);
             }
             if (s_bannerTex[i] >= 0) ok++;
         }
         RES_Close();
-        Log_Print("ZSELECT: %d/%d discos do 90.DAT\n", ok, EX_SONG_COUNT);
+        Log_Print("ZSELECT: %d/%d discos do TEST.DAT\n", ok, EX_SONG_COUNT);
     } else {
         Log_Print("ZSELECT: falha ao abrir '%s'\n", path);
     }

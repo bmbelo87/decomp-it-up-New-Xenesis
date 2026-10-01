@@ -83,7 +83,8 @@ const char* Song_IdStr(int id) {
     static char buf[4][16];
     static int slot;
     char* s = buf[slot++ & 3];
-    snprintf(s, 16, g_exceedSongIds ? "%X" : "%d", id);
+    /* era (Zero): g_exceedSongIds ? "%X" : "%d" — NX: "%03X" em todos os nomes (STEP, BGA, TITLE, AUDIO) */
+    snprintf(s, 16, g_exceedSongIds ? "%03X" : "%d", id);
     return s;
 }
 
@@ -96,7 +97,15 @@ int Song_DataId(int id) {
 }
 */
 
-/* Zero: id base do registro (+0x08, piu 0x805a460); -1 se não houver. */
+/* NX 0x8061d10: primeiro par de 0x813f860 com chart == id -> id do recurso; -1 se não houver. */
+int NX_ResId(int id) {
+    for (int i = 0; i < NX_RESMAP_COUNT; i++)
+        if ((int)g_nxResMap[i][1] == id) return (int)g_nxResMap[i][0];
+    return -1;
+}
+
+/* Zero: id base do registro (+0x08, piu 0x805a460); -1 se não houver.
+ * NX: gen_nx_songs.py preenche baseId com NX_ResId quando >= 0x100. */
 int Song_BaseId(int id) {
     for (int i = 0; i < EX_SONG_COUNT; i++)
         if ((int)g_exSongs[i].id == id) return g_exSongs[i].baseId;
@@ -125,11 +134,12 @@ bool Song_FindFile(int id, const char* fmt, bool hex3, char* out, size_t outSize
     for (int pass = 0; pass < 2; pass++) {
         int cur = pass == 0 ? id : base;
         if (cur < 0) break;
-        snprintf(ids, sizeof(ids), hex3 ? "%03X" : "%X", (unsigned)cur);
+        (void)hex3;  /* era (Zero): hex3 ? "%03X" : "%X" — NX usa "%03X" sempre */
+        snprintf(ids, sizeof(ids), "%03X", (unsigned)cur);
         snprintf(out, outSize, fmt, g_game.currentDirectory, ids);
         if (song_file_exists(out)) return true;
     }
-    snprintf(ids, sizeof(ids), hex3 ? "%03X" : "%X", (unsigned)id);
+    snprintf(ids, sizeof(ids), "%03X", (unsigned)id);
     snprintf(out, outSize, fmt, g_game.currentDirectory, ids);
     return false;
 }

@@ -8,6 +8,67 @@
 /* CStep::LoadStep_STX: uncompress() num buffer de 2 MB (BlockSizeUnCompressed = 2097152). */
 #define STX_DECOMP_MAX 2097152
 
+/* NX (.SEE): depois do uncompress, 0x8067e30 decifra 8 bytes a cada 0x18 com
+ * BF_decrypt (0x80a10e0); BF_set_key(ks, 0x18, 0x8141e30) feito uma vez (0x80a0b90). */
+#include "nx_blowfish.inc"
+static uint32_t s_bfP[18], s_bfS[4][256];
+static bool s_bfReady;
+
+static uint32_t bfF(uint32_t x)
+{
+    return ((s_bfS[0][x >> 24] + s_bfS[1][(x >> 16) & 0xFF]) ^ s_bfS[2][(x >> 8) & 0xFF]) + s_bfS[3][x & 0xFF];
+}
+
+static void bfEncrypt(uint32_t* l, uint32_t* r)
+{
+    uint32_t L = *l, R = *r, t;
+    for (int i = 0; i < 16; i++) { L ^= s_bfP[i]; R ^= bfF(L); t = L; L = R; R = t; }
+    t = L; L = R; R = t;
+    R ^= s_bfP[16]; L ^= s_bfP[17];
+    *l = L; *r = R;
+}
+
+static void bfDecrypt(uint32_t* l, uint32_t* r)
+{
+    uint32_t L = *l, R = *r, t;
+    for (int i = 17; i > 1; i--) { L ^= s_bfP[i]; R ^= bfF(L); t = L; L = R; R = t; }
+    t = L; L = R; R = t;
+    R ^= s_bfP[1]; L ^= s_bfP[0];
+    *l = L; *r = R;
+}
+
+static void seeKeyInit(void)
+{
+    if (s_bfReady) return;
+    memcpy(s_bfP, k_nxBfInit, sizeof(s_bfP));
+    memcpy(s_bfS, k_nxBfInit + 18, sizeof(s_bfS));
+    for (int i = 0, j = 0; i < 18; i++) {
+        uint32_t d = 0;
+        for (int k = 0; k < 4; k++, j++) d = (d << 8) | k_nxSeeKey[j % 24];
+        s_bfP[i] ^= d;
+    }
+    uint32_t l = 0, r = 0;
+    for (int i = 0; i < 18; i += 2) { bfEncrypt(&l, &r); s_bfP[i] = l; s_bfP[i + 1] = r; }
+    for (int s = 0; s < 4; s++)
+        for (int i = 0; i < 256; i += 2) { bfEncrypt(&l, &r); s_bfS[s][i] = l; s_bfS[s][i + 1] = r; }
+    s_bfReady = true;
+}
+
+/* 0x8067e30(buf, len): for (i = 0; i < len; i += 0x18) BF_decrypt(buf + i) */
+static void seeDecrypt(uint8_t* buf, uint32_t len)
+{
+    seeKeyInit();
+    for (uint32_t i = 0; i + 8 <= len; i += 0x18) {
+        uint32_t l, r;
+        memcpy(&l, buf + i, 4); memcpy(&r, buf + i + 4, 4);
+        bfDecrypt(&l, &r);
+        memcpy(buf + i, &l, 4); memcpy(buf + i + 4, &r, 4);
+    }
+}
+
+static bool s_see;          /* arquivo atual e .SEE */
+static int  s_secHeader;    /* STX_SECTION_HEADER ou SEE_SECTION_HEADER */
+
 void Log_Print(const char* fmt, ...);
 uint8_t* Resource_ExtractFromPack(const char* datPath, const char* name, uint32_t* outSize);
 
@@ -111,7 +172,9 @@ bool Step_LoadSong(const char* path, StepSong* song)
     fseek(f, 0, SEEK_SET);
     fread(header, 1, STX_HEADER_SIZE, f);
 
-    if (memcmp(header, STX_MAGIC, 4) != 0)
+    s_see = memcmp(header, SEE_MAGIC, 4) == 0;
+    s_secHeader = s_see ? SEE_SECTION_HEADER : STX_SECTION_HEADER;
+    if (!s_see && memcmp(header, STX_MAGIC, 4) != 0)
     {
         free(header); fclose(f);
         return false;
@@ -137,13 +200,13 @@ bool Step_LoadSong(const char* path, StepSong* song)
 
         fseek(f, secOff, SEEK_SET);
 
-        uint8_t secHeader[STX_SECTION_HEADER];
-        if (fread(secHeader, 1, STX_SECTION_HEADER, f) != STX_SECTION_HEADER)
+        uint8_t secHeader[SEE_SECTION_HEADER];
+        if (fread(secHeader, 1, s_secHeader, f) != (size_t)s_secHeader)
             continue;
 
         uint32_t compSize;
-        memcpy(&compSize, secHeader + STX_SECTION_HEADER - 4, 4);
-        if (compSize == 0 || compSize > (uint32_t)(fileSize - secOff - STX_SECTION_HEADER))
+        memcpy(&compSize, secHeader + s_secHeader - 4, 4);
+        if (compSize == 0 || compSize > (uint32_t)(fileSize - secOff - s_secHeader))
             continue;
 
         /* Layout real da seção, conforme Step_ParseFile (0x004068b0, PUMPY.EXE; confirmado no CStep::LoadStep_STX do fonte do Exceed):
@@ -184,7 +247,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
          * uint32_t secEnd = secOff + STX_SECTION_HEADER + compSize; */
 
         // Read main section compressed data
-        fseek(f, secOff + STX_SECTION_HEADER, SEEK_SET);
+        fseek(f, secOff + s_secHeader, SEEK_SET);
         uint8_t* compData = (uint8_t*)malloc(compSize);
         if (!compData || fread(compData, 1, compSize, f) != compSize)
         {
@@ -205,6 +268,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
             free(decompBuf);
             continue;
         }
+        if (s_see) seeDecrypt(decompBuf, decompLen);
 
         float bpm;
         uint32_t beatPerMeasure, beatSplit;
@@ -233,6 +297,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
         chart->beatPerMeasure = beatPerMeasure;
         chart->beatSplit = beatSplit;
         chart->delay = delay;
+        chart->delayDiv = s_see ? 1000 : 100;
         chart->rowCount = rowCount;
         chart->hasSplit = false;
         chart->segmentCount = 1;
@@ -308,7 +373,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
          * sequência logo após o primeiro, cada um prefixado por 4 bytes com o
          * próprio tamanho comprimido. Nada de procurar magic. */
         {
-            uint32_t blockPos = secOff + STX_SECTION_HEADER + compSize;
+            uint32_t blockPos = secOff + s_secHeader + compSize;
 
             for (int blk = 1; blk < totalBlocks; blk++)
             {
@@ -331,6 +396,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
                 int bret = zlib_decompress_ex(bComp, bSize, bDec, &bdl, &bic);
                 free(bComp);
                 if (bret != 0 || bdl < STX_GRID_OFFSET + STX_ROW_SIZE) { free(bDec); break; }
+                if (s_see) seeDecrypt(bDec, bdl);
 
                 float sBpm;
                 uint32_t sBpmM, sBpmS;

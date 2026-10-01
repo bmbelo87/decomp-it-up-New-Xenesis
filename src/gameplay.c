@@ -259,7 +259,7 @@ static double getSegmentSpr(int seg)
 
 static double getSegmentDelay(int seg)
 {
-    return g_chart->segments[seg].delay / 100.0;
+    return g_chart->segments[seg].delay / (double)g_chart->delayDiv;
 }
 
 static double getRowTime(int ri)
@@ -665,12 +665,21 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     g_chart = NULL;
 
     char stxPath[MAX_PATH];
-    snprintf(stxPath, sizeof(stxPath), "%s/STEP/%s.STX",
+    /* era (Zero): "%s/STEP/%s.STX" */
+    snprintf(stxPath, sizeof(stxPath), "%s/STEP/%s.SEE",
              g_game.currentDirectory, Song_DataIdStr(songId));
 
     Log_Print("GP: loading '%s' (song %d, mode=%s)\n", stxPath, songId, modeName ? modeName : "?");
 
-    if (!Step_LoadSong(stxPath, &g_playSong))
+    bool loaded = Step_LoadSong(stxPath, &g_playSong);
+    if (!loaded && Song_BaseId(songId) >= 0) {
+        /* NX 0x8072380: sem o .SEE do chart, 0x8061d10(id) e tenta o id do recurso */
+        snprintf(stxPath, sizeof(stxPath), "%s/STEP/%s.SEE",
+                 g_game.currentDirectory, Song_IdStr(Song_BaseId(songId)));
+        Log_Print("GP: tentando o recurso '%s'\n", stxPath);
+        loaded = Step_LoadSong(stxPath, &g_playSong);
+    }
+    if (!loaded)
     {
         Log_Print("GP: FAILED to load STX\n");
         return false;
@@ -701,7 +710,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         }
     }
     Log_Print("GP: last note row = %d / %u\n", g_lastNoteRow, g_chart ? g_chart->rowCount : 0);
-    g_chartDelay = g_chart->delay / 100.0;
+    g_chartDelay = g_chart->delay / (double)g_chart->delayDiv;
     float bpm = g_chart->bpm;
     if (bpm <= 0) bpm = 120.0f;
     uint32_t subdiv = g_chart->beatSplit;
@@ -714,7 +723,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         for (int s = 0; s < g_chart->segmentCount; s++)
         {
             double segSpr = 60.0 / ((double)g_chart->segments[s].bpm * (double)g_chart->segments[s].beatSplit);
-            total += g_chart->segments[s].rowCount * segSpr + (g_chart->segments[s].delay / 100.0);
+            total += g_chart->segments[s].rowCount * segSpr + (g_chart->segments[s].delay / (double)g_chart->delayDiv);
         }
         g_totalSongSeconds = total;
     }
@@ -2019,10 +2028,15 @@ void Gameplay_Start(int songId)
         /* 0x80860d1: m01..m04 (indicador de estágio) do BGA/00.DAT */
         snprintf(datPath, sizeof(datPath), "%s/BGA/00.DAT", g_game.currentDirectory);
         if (RES_Open(datPath)) {
-            int* const mv[5] = { &g_fontSprM01, &g_fontSprM02, &g_fontSprM03, &g_fontSprM04, &g_fontSprM05 };
-            for (int i = 0; i < 5; i++) {
+            /* era (Zero): m01..m05 em M01..M05.
+             * NX 0x806e440: "m0%d.spr", i = 0..3 (m00 1st, m01 2nd, m02 Final, m03 BONUS);
+             * 0x8069b00 escolhe [0x81f8910] (stage) ou 2 + extra. Aqui vão para
+             * M01..M04, que o desenho abaixo já usa como 1st/2nd/final/extra. */
+            g_fontSprM05 = -1;
+            int* const mv[4] = { &g_fontSprM01, &g_fontSprM02, &g_fontSprM03, &g_fontSprM04 };
+            for (int i = 0; i < 4; i++) {
                 char nm[16];
-                snprintf(nm, sizeof(nm), "m%02d.spr", i + 1);
+                snprintf(nm, sizeof(nm), "m0%d.spr", i);
                 int start = g_game.sprTileCount;
                 SPR_LoadSPR(nm, NULL, NULL, NULL);
                 *mv[i] = (g_game.sprTileCount > start) ? start : -1;

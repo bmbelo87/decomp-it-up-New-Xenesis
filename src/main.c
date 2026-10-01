@@ -232,7 +232,8 @@ void Game_Init(HINSTANCE hInstance) {
         {
             SongEntry* e = &g_game.songDB.songs[i];
             char stxPath[MAX_PATH];
-            snprintf(stxPath, sizeof(stxPath), "%s/%s.STX", stepDir, Song_DataIdStr(e->id));
+            /* era (Zero): "%s/%s.STX" */
+            snprintf(stxPath, sizeof(stxPath), "%s/%s.SEE", stepDir, Song_DataIdStr(e->id));
             FILE* test = fopen(stxPath, "rb");
             if (test) { fclose(test); e->hasChart = true; }
             else {
@@ -240,8 +241,12 @@ void Game_Init(HINSTANCE hInstance) {
                 char datPath[MAX_PATH], stxName[64];
                 uint32_t sz = 0;
                 snprintf(datPath, sizeof(datPath), "%s/STEP.DAT", g_game.currentDirectory);
-                snprintf(stxName, sizeof(stxName), "%s.STX", Song_DataIdStr(e->id));
+                snprintf(stxName, sizeof(stxName), "%s.SEE", Song_DataIdStr(e->id));
                 uint8_t* stx = Resource_ExtractFromPack(datPath, stxName, &sz);
+                if (!stx && Song_BaseId(e->id) >= 0) {  /* NX 0x8072380: recurso da base */
+                    snprintf(stxName, sizeof(stxName), "%s.SEE", Song_IdStr(Song_BaseId(e->id)));
+                    stx = Resource_ExtractFromPack(datPath, stxName, &sz);
+                }
                 if (stx) { free(stx); e->hasChart = true; }
             }
         }

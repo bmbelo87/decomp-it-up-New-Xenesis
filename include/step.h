@@ -14,6 +14,8 @@
 #endif
 
 #define STX_MAGIC "STF4"
+#define SEE_MAGIC "STEE"          /* NX: .SEE (CStep::LoadStep, piu 0x80717b0) */
+#define SEE_SECTION_HEADER 0x328  /* NX: 0x324 de cabecalho + u32 tamanho do 1o bloco */
 #define STX_HEADER_SIZE 288
 #define STX_TITLE_OFFSET 0x3C
 #define STX_OFFSET_TABLE 0xFC
@@ -62,6 +64,7 @@ typedef struct {
     uint32_t beatPerMeasure;
     uint32_t beatSplit;
     int32_t delay;
+    int32_t delayDiv;  // delay / delayDiv = segundos: STX 100; SEE (NX) 1000 (o piu multiplica o do STX por 10, 0x80ff454)
     uint32_t rowCount;
     StepRow* rows;
     int panelCount;
