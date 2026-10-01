@@ -102,3 +102,17 @@ Pads em `0x9e420a0 + jogador*0xccc`. Botões: **7 DL, 8 UL, 9 C, 0xA UR, 0xB DR*
 - Posições exatas das camadas do carrossel por slot (ler `arcade_special.bga`).
 - `heart%d` / `bonus` (corações = créditos/vidas da NX? — Hipótese).
 - Slot 3 da vtable (0x807ab30) e o contador de tempo (`time position`).
+
+## Implementação (src/nx_select.c)
+
+- Begin/quadro/entrada reconstruídos a partir de 0x8079710 / 0x807aee0 / 0x807cdb0.
+- Carrossel 0x807d820 com os slots exatos (parado 15/7/11; DR = "screen2 L move"
+  56/40/52/44/48; DL = "screen2 R move" 36/20/28/24/32), um objeto position.spr por slot.
+- Prévia: vídeo na textura do card central (movie.spr, 0x807bb00) — o player de vídeo
+  ganhou uma segunda instância (Movie_Select) para o BG.MOV continuar tocando.
+- Nível 0x807c820/0x807c970, dificuldade 0x807e7a0/0x807e710/0x807e5f0, tempo 0x807e8e0.
+- Correções de infraestrutura que a NX exigiu: nomes de entrada do RESPAC2 com mais de
+  15 caracteres (arcade_special.bga) e MAX_BGA_SCENES 64 (COMMON tem 46 cenas).
+- Faltam: texto artista/título/BPM em FreeType (NXTW.TTF), códigos/COMMAND.DAT, modo
+  especial (corações, FULL SONG/REMIX/ANOTHER).
+- Teste sem pad: PUMPY_AUTOSTATE=SELECT e PUMPY_SHOT=n1,n2 (capturas em pumpy_shot_n.bmp).

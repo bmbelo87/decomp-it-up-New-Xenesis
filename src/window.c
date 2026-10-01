@@ -171,7 +171,49 @@ void Window_Destroy(void) {
     Log_Print("Window: destroyed\n");
 }
 
+/* Extra deste projeto (teste): PUMPY_SHOT="n1,n2,..." grava o backbuffer
+ * em pumpy_shot_<n>.bmp nos quadros n (contados a partir do 1º swap). */
+static void window_testShot(void) {
+    static int s_frame, s_init, s_shots[16], s_nShots;
+    if (!s_init) {
+        s_init = 1;
+        const char* e = getenv("PUMPY_SHOT");
+        while (e && *e && s_nShots < 16) {
+            s_shots[s_nShots++] = atoi(e);
+            e = strchr(e, ',');
+            if (e) e++;
+        }
+    }
+    s_frame++;
+    for (int i = 0; i < s_nShots; i++) {
+        if (s_shots[i] != s_frame || !g_win) continue;
+        int w, h;
+        SDL_GL_GetDrawableSize(g_win, &w, &h);
+        unsigned char* px = (unsigned char*)malloc((size_t)w * h * 3);
+        if (!px) return;
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadBuffer(GL_BACK);
+        glReadPixels(0, 0, w, h, GL_BGR_EXT, GL_UNSIGNED_BYTE, px);
+        char name[64];
+        snprintf(name, sizeof(name), "pumpy_shot_%d.bmp", s_frame);
+        FILE* f = fopen(name, "wb");
+        if (f) {
+            int row = (w * 3 + 3) & ~3, sz = 54 + row * h;
+            unsigned char hd[54] = { 'B', 'M' };
+            *(int*)(hd + 2) = sz; *(int*)(hd + 10) = 54; *(int*)(hd + 14) = 40;
+            *(int*)(hd + 18) = w; *(int*)(hd + 22) = h; *(short*)(hd + 26) = 1; *(short*)(hd + 28) = 24;
+            fwrite(hd, 1, 54, f);
+            static const unsigned char pad[3] = { 0 };
+            for (int y = 0; y < h; y++) { fwrite(px + (size_t)y * w * 3, 1, (size_t)w * 3, f); fwrite(pad, 1, row - w * 3, f); }
+            fclose(f);
+            Log_Print("SHOT: %s (%dx%d)\n", name, w, h);
+        }
+        free(px);
+    }
+}
+
 void Window_SwapBuffers(void) {
+    window_testShot();
     if (g_win) SDL_GL_SwapWindow(g_win);
 }
 

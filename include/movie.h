@@ -13,4 +13,6 @@ void Movie_Update(float dt);
 void Movie_Render(void);
 void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alpha); /* Zero: prévia da Select */
 
+void Movie_Select(int slot);    /* NX: 0 = padrão, 1 = segunda instância (prévia da Select) */
+unsigned Movie_GLTexture(void); /* textura GL do quadro atual (0 sem quadro) */
 #endif

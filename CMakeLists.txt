@@ -158,6 +158,7 @@ add_executable(Pumpy
     # src/zero_songs.c     # Zero — desativado
     src/nx_songs.c
     src/zero_select.c
+    src/nx_select.c
     src/service_menu.c
     src/coin.c
     src/debug_console.c

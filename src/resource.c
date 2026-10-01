@@ -25,6 +25,7 @@ typedef struct {
     int fileCount;
     RESEntry* entries;
     int isPack;          /* RESPACK (Exceed): data já decifrado e descomprimido */
+    char (*longNames)[0x100]; /* RESPAC2: nome completo (RESEntry.name tem 16 e é layout do RES do Prex3) */
 } RESArchive;
 
 static RESArchive* g_resArchive = NULL;
@@ -226,6 +227,9 @@ static bool respack_load(RESArchive* res) {
         uint32_t cSize   = *(uint32_t*)(ent + 0x110);
         uint32_t off     = *(uint32_t*)(ent + 0x128);
         strncpy(res->entries[e].name, (const char*)ent, sizeof(res->entries[e].name) - 1);
+        /* NX: nomes com mais de 15 caracteres ("arcade_special.bga") */
+        if (!res->longNames) res->longNames = (char (*)[0x100])calloc(n, 0x100);
+        if (res->longNames) strncpy(res->longNames[e], (const char*)ent, 0xFF);
         if (base + off + cSize > res->fileSize) { free(idx); free(out); return false; }
 
         uint8_t* blob = (uint8_t*)malloc(cSize ? cSize : 1);
@@ -262,7 +266,8 @@ static bool respack_load(RESArchive* res) {
 
 static int res_find_by_name(RESArchive* res, const char* name) {
     for (int i = 0; i < res->fileCount; i++) {
-        if (_stricmp(res->entries[i].name, name) == 0)
+        const char* nm = res->longNames ? res->longNames[i] : res->entries[i].name;
+        if (_stricmp(nm, name) == 0)
             return i;
     }
     return -1;
@@ -381,7 +386,7 @@ int RES_Find(const char* name) {
 
 const char* RES_GetName(int index) {
     if (!g_resArchive || index < 0 || index >= g_resArchive->fileCount) return NULL;
-    return g_resArchive->entries[index].name;
+    return g_resArchive->longNames ? g_resArchive->longNames[index] : g_resArchive->entries[index].name;
 }
 
 uint32_t RES_GetSize(int index) {
@@ -411,6 +416,7 @@ void RES_Close(void) {
     if (g_resArchive) {
         free(g_resArchive->data);
         free(g_resArchive->entries);
+        free(g_resArchive->longNames);
         free(g_resArchive);
         g_resArchive = NULL;
     }
@@ -1198,8 +1204,7 @@ bool Resource_LoadBGAByName(const char* datName) {
             }
         }
     } else {
-        Log_Print("RES: no .bga in '%s', loading SPRs only\n", datName);
-        loadAllSPRsFromRES();
+        Log_Print("RES: no .bga in '%s', loading SPRs only\n", datName);        loadAllSPRsFromRES();
     }
 
     RES_Close();

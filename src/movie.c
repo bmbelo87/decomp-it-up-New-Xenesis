@@ -53,7 +53,7 @@ static fn_buffer  p_buffer;
 static fn_convert p_convert;
 static void*      p_rgb16;
 
-static struct {
+typedef struct {
     FILE*    f;
     void*    dec;
     const mp2_info* info;
@@ -68,7 +68,11 @@ static struct {
     bool     ended;
     GLuint   tex;
     bool     hasFrame;
-} g_mov;
+} MovieState;
+/* NX CSelect: fundo (BGA/BG.MOV) e prévia dentro do card tocam juntos
+ * (0x8094450 e o objeto 0xa882300): duas instâncias, 0 = padrão. */
+static MovieState  g_movs[2];
+static MovieState* g_mov = &g_movs[0];
 
 static uint8_t bitrev8(uint8_t b) {                                /* 0x4223C4 */
     uint8_t r = 0;
@@ -162,8 +166,8 @@ static double movie_fps(const uint8_t* s) {
 }
 
 static int movie_read(void) {                                      /* 0x4226A0 */
-    int n = (int)fread(g_mov.buf, 1, sizeof(g_mov.buf), g_mov.f);
-    for (int i = 0; i < n; i++) g_mov.buf[i] = g_mov.table[g_mov.buf[i]];
+    int n = (int)fread(g_mov->buf, 1, sizeof(g_mov->buf), g_mov->f);
+    for (int i = 0; i < n; i++) g_mov->buf[i] = g_mov->table[g_mov->buf[i]];
     return n;
 }
 
@@ -179,22 +183,22 @@ bool Movie_Open(const char* path, bool loop) {
         /* Exceed2 (PIU32.EXE 0x4209f0): MPEG elementar puro, sem cabeçalho nem
          * embaralhamento — fps pelos primeiros 0x40 bytes (0x420e60) e blocos de
          * 0x1000 desde o offset 0 direto no mpeg2_buffer. */
-        for (int b = 0; b < 256; b++) g_mov.table[b] = (uint8_t)b;
-        g_mov.f = f;
-        g_mov.dataStart = 0;
-        g_mov.fps = movie_fps(hdr);
+        for (int b = 0; b < 256; b++) g_mov->table[b] = (uint8_t)b;
+        g_mov->f = f;
+        g_mov->dataStart = 0;
+        g_mov->fps = movie_fps(hdr);
         fseek(f, 0, SEEK_SET);
-        g_mov.dec = p_init(0);
-        if (!g_mov.dec) { fclose(f); g_mov.f = NULL; return false; }
-        g_mov.info = p_info(g_mov.dec);
-        g_mov.loop = loop;
-        g_mov.time = 0;
-        g_mov.target = 0;
-        g_mov.decoded = 0;
-        g_mov.ended = false;
-        g_mov.hasFrame = false;
-        if (!g_mov.tex) glGenTextures(1, &g_mov.tex);
-        Log_Print("MOVIE: '%s' aberto (MPEG puro, %.3f fps, loop=%d)\n", path, g_mov.fps, loop);
+        g_mov->dec = p_init(0);
+        if (!g_mov->dec) { fclose(f); g_mov->f = NULL; return false; }
+        g_mov->info = p_info(g_mov->dec);
+        g_mov->loop = loop;
+        g_mov->time = 0;
+        g_mov->target = 0;
+        g_mov->decoded = 0;
+        g_mov->ended = false;
+        g_mov->hasFrame = false;
+        if (!g_mov->tex) glGenTextures(1, &g_mov->tex);
+        Log_Print("MOVIE: '%s' aberto (MPEG puro, %.3f fps, loop=%d)\n", path, g_mov->fps, loop);
         return true;
     }
     /* Zero (piu 0x80a30e0): "MOV3" tem 16 B de chave extra antes do lixo de
@@ -210,48 +214,50 @@ bool Movie_Open(const char* path, bool loop) {
     fseek(f, (long)n + (mov3 ? 0x10 : 0), SEEK_CUR);
     if (fread(tail, 1, sizeof(tail), f) != sizeof(tail)) { fclose(f); return false; }
     uint8_t k = bitrev8(tail[0x30]);
-    for (int b = 0; b < 256; b++) g_mov.table[b] = (uint8_t)(bitrev8((uint8_t)b) ^ k);
+    for (int b = 0; b < 256; b++) g_mov->table[b] = (uint8_t)(bitrev8((uint8_t)b) ^ k);
 
-    g_mov.f = f;
-    g_mov.dataStart = n + (mov3 ? 0xD0 : 0xC0);
-    fseek(f, (long)g_mov.dataStart, SEEK_SET);
+    g_mov->f = f;
+    g_mov->dataStart = n + (mov3 ? 0xD0 : 0xC0);
+    fseek(f, (long)g_mov->dataStart, SEEK_SET);
     uint8_t first[8];
     size_t got = fread(first, 1, sizeof(first), f);
-    for (size_t i = 0; i < got; i++) first[i] = g_mov.table[first[i]];
-    g_mov.fps = movie_fps(first);
-    fseek(f, (long)g_mov.dataStart, SEEK_SET);
+    for (size_t i = 0; i < got; i++) first[i] = g_mov->table[first[i]];
+    g_mov->fps = movie_fps(first);
+    fseek(f, (long)g_mov->dataStart, SEEK_SET);
 
-    g_mov.dec = p_init(0);
-    if (!g_mov.dec) { fclose(f); g_mov.f = NULL; return false; }
-    g_mov.info = p_info(g_mov.dec);
-    g_mov.loop = loop;
-    g_mov.time = 0;
-    g_mov.target = 0;
-    g_mov.decoded = 0;
-    g_mov.ended = false;
-    g_mov.hasFrame = false;
-    if (!g_mov.tex) glGenTextures(1, &g_mov.tex);
-    Log_Print("MOVIE: '%s' aberto (N=0x%X, %.3f fps, loop=%d)\n", path, n, g_mov.fps, loop);
+    g_mov->dec = p_init(0);
+    if (!g_mov->dec) { fclose(f); g_mov->f = NULL; return false; }
+    g_mov->info = p_info(g_mov->dec);
+    g_mov->loop = loop;
+    g_mov->time = 0;
+    g_mov->target = 0;
+    g_mov->decoded = 0;
+    g_mov->ended = false;
+    g_mov->hasFrame = false;
+    if (!g_mov->tex) glGenTextures(1, &g_mov->tex);
+    Log_Print("MOVIE: '%s' aberto (N=0x%X, %.3f fps, loop=%d)\n", path, n, g_mov->fps, loop);
     return true;
 }
 
 void Movie_Close(void) {
-    if (g_mov.dec) { p_close(g_mov.dec); g_mov.dec = NULL; }
-    if (g_mov.f) { fclose(g_mov.f); g_mov.f = NULL; }
-    g_mov.hasFrame = false;
+    if (g_mov->dec) { p_close(g_mov->dec); g_mov->dec = NULL; }
+    if (g_mov->f) { fclose(g_mov->f); g_mov->f = NULL; }
+    g_mov->hasFrame = false;
 }
 
-bool Movie_IsOpen(void) { return g_mov.f != NULL; }
-bool Movie_HasEnded(void) { return g_mov.ended; }
-int  Movie_GetDecoded(void) { return g_mov.decoded; }
+bool Movie_IsOpen(void) { return g_mov->f != NULL; }
+void Movie_Select(int slot) { g_mov = &g_movs[(slot == 1) ? 1 : 0]; }
+unsigned Movie_GLTexture(void) { return g_mov->hasFrame ? (unsigned)g_mov->tex : 0u; }
+bool Movie_HasEnded(void) { return g_mov->ended; }
+int  Movie_GetDecoded(void) { return g_mov->decoded; }
 
 static void movie_upload(void) {
-    const mp2_fbuf* fb = g_mov.info->display_fbuf;
-    const mp2_sequence* sq = g_mov.info->sequence;
+    const mp2_fbuf* fb = g_mov->info->display_fbuf;
+    const mp2_sequence* sq = g_mov->info->sequence;
     if (!fb || !fb->buf[0] || !sq) return;
-    glBindTexture(GL_TEXTURE_2D, g_mov.tex);
+    glBindTexture(GL_TEXTURE_2D, g_mov->tex);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
-    if (!g_mov.hasFrame) {
+    if (!g_mov->hasFrame) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
@@ -266,33 +272,33 @@ static void movie_upload(void) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (GLsizei)sq->width, (GLsizei)sq->height, 0,
                  GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    g_mov.hasFrame = true;
+    g_mov->hasFrame = true;
 }
 
 /* 0x422A68: decodifica até decoded > target */
 void Movie_Update(float dt) {
-    if (!g_mov.f || g_mov.ended) return;
-    g_mov.time += dt;
-    g_mov.target = (int)(g_mov.time * g_mov.fps);
+    if (!g_mov->f || g_mov->ended) return;
+    g_mov->time += dt;
+    g_mov->target = (int)(g_mov->time * g_mov->fps);
     bool newFrame = false;
-    while (g_mov.decoded <= g_mov.target) {
-        int st = p_parse(g_mov.dec);
+    while (g_mov->decoded <= g_mov->target) {
+        int st = p_parse(g_mov->dec);
         if (st == 1) {
-            if (p_convert) p_convert(g_mov.dec, p_rgb16, NULL);
+            if (p_convert) p_convert(g_mov->dec, p_rgb16, NULL);
         } else if (st == 0) {
             int n = movie_read();
             if (n <= 0) {
-                if (!g_mov.loop) {
-                    Log_Print("MOVIE: fim do arquivo (%d quadros)\n", g_mov.decoded);
-                    g_mov.ended = true; break;
+                if (!g_mov->loop) {
+                    Log_Print("MOVIE: fim do arquivo (%d quadros)\n", g_mov->decoded);
+                    g_mov->ended = true; break;
                 }
-                fseek(g_mov.f, (long)g_mov.dataStart, SEEK_SET);
+                fseek(g_mov->f, (long)g_mov->dataStart, SEEK_SET);
                 n = movie_read();
-                if (n <= 0) { g_mov.ended = true; break; }
+                if (n <= 0) { g_mov->ended = true; break; }
             }
-            p_buffer(g_mov.dec, g_mov.buf, g_mov.buf + n);
+            p_buffer(g_mov->dec, g_mov->buf, g_mov->buf + n);
         } else if (st == 7 || st == 8) {
-            g_mov.decoded++;
+            g_mov->decoded++;
             newFrame = true;
         }
     }
@@ -301,13 +307,13 @@ void Movie_Update(float dt) {
 
 /* Tela cheia 640x480. Projeção Y-UP: linha 0 do quadro (topo) vai em y=480. */
 void Movie_Render(void) {
-    if (!g_mov.hasFrame) return;
+    if (!g_mov->hasFrame) return;
     /* Restaura o blend no fim: o gameplay desenha por cima contando com o
      * estado que estava ligado (sem isso os sprites saem com fundo). */
     GLboolean blend = glIsEnabled(GL_BLEND);
     glEnable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
-    glBindTexture(GL_TEXTURE_2D, g_mov.tex);
+    glBindTexture(GL_TEXTURE_2D, g_mov->tex);
     glColor4f(1, 1, 1, 1);
     glBegin(GL_QUADS);
     glTexCoord2f(0, 0); glVertex2f(0, 480);
@@ -322,12 +328,12 @@ void Movie_Render(void) {
  * desenhado num retângulo, com glColor4f(c, c, c, alpha) e blend (fade da
  * prévia). Coordenadas Y-UP como o resto do render (y1 = topo). */
 void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alpha) {
-    if (!g_mov.hasFrame) return;
+    if (!g_mov->hasFrame) return;
     GLboolean blend = glIsEnabled(GL_BLEND);
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, g_mov.tex);
+    glBindTexture(GL_TEXTURE_2D, g_mov->tex);
     glColor4f(c, c, c, alpha);
     glBegin(GL_QUADS);
     glTexCoord2f(0, 0); glVertex2f(x0, y1);
@@ -348,6 +354,8 @@ bool Movie_Open(const char* path, bool loop) {
 }
 void Movie_Close(void) {}
 bool Movie_IsOpen(void) { return false; }
+void Movie_Select(int slot) { (void)slot; }
+unsigned Movie_GLTexture(void) { return 0u; }
 bool Movie_HasEnded(void) { return true; }
 int  Movie_GetDecoded(void) { return 0; }
 void Movie_Update(float dt) { (void)dt; }

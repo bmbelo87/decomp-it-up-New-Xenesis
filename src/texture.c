@@ -828,6 +828,30 @@ int Texture_LoadFromMemoryColorKey(const uint8_t* buf, uint32_t bufSize, const c
     return idx;
 }
 
+/* NX CSelect (0x807bb00): a textura do vídeo da prévia entra no lugar do disco
+ * do card central. Registra um id GL que não é do gerenciador (não apaga). */
+int Texture_Wrap(int slot, unsigned glId, int w, int h) {
+    if (slot < 0 || slot >= MAX_TEXTURES) slot = Texture_FindFree();
+    if (slot < 0) return -1;
+    Texture* t = &g_game.textures[slot];
+    if (!t->inUse) g_game.textureCount++;
+    t->id = glId;
+    t->width = w;
+    t->height = h;
+    t->format = 0;
+    t->hd = 0;
+    t->inUse = true;
+    t->lastFrame = g_game.frameCounter;
+    strncpy(t->name, "<movie>", sizeof(t->name) - 1);
+    return slot;
+}
+
+void Texture_Unwrap(int slot) {
+    if (slot < 0 || slot >= MAX_TEXTURES || !g_game.textures[slot].inUse) return;
+    memset(&g_game.textures[slot], 0, sizeof(Texture));
+    g_game.textureCount--;
+}
+
 void Texture_Unload(int id) {
     if (id < 0 || id >= MAX_TEXTURES || !g_game.textures[id].inUse) return;
     Texture* t = &g_game.textures[id];

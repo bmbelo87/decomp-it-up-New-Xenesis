@@ -299,7 +299,7 @@ typedef struct {
     int patFlags;
 } BGALayer;
 
-#define MAX_BGA_SCENES 32
+#define MAX_BGA_SCENES 64   /* NX: COMMON.BGA tem 46 cenas; era 32 */
 
 typedef struct {
     char name[64];
@@ -730,6 +730,9 @@ void Zero_SetSkinIndex(int n);       /* console /skin */           /* zero_selec
 void ZeroSelect_Enter(void);          /* zero_select.c — CSelect do Zero */
 void ZeroSelect_Update(float dt);
 void ZeroSelect_Render(void);
+void NxSelect_Enter(void);            /* nx_select.c — CSelect da NX */
+void NxSelect_Update(float dt);
+void NxSelect_Render(void);
 int NX_ResId(int id);               /* NX 0x8061d10: mapa chart -> recurso (0x813f860) */
 int Song_BaseId(int id);            /* Zero +0x08 (0x805a460), -1 = sem base */
 bool Song_FindFile(int id, const char* fmt, bool hex3, char* out, size_t outSize); /* id, depois base */

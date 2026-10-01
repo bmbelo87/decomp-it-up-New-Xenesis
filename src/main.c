@@ -111,7 +111,8 @@ static void LoadBGAForState(GameState state) {
     /* Exceed CSelect: SELECT.DAT + SELECT2.DAT juntos + banners do 90.DAT */
     if (state == STATE_EXSELECT) {
         BGM_Stop();
-        ZeroSelect_Enter();          /* Zero: CSelect (zero_select.c) */
+        /* ZeroSelect_Enter(); */    /* Zero: CSelect (zero_select.c) */
+        NxSelect_Enter();            /* NX: CSelect (nx_select.c) */
         /* ExSelect_Enter(); */      /* Exceed2 */
     }
 
@@ -267,6 +268,10 @@ void Game_Init(HINSTANCE hInstance) {
     /* Zero: sem R_WARN, abre direto o LOGO (BGA\81.DAT) */
     Game_ChangeState(STATE_LOGO_ENTER);
     /* era (Exceed2): Game_ChangeState(STATE_WARNING_INIT); */
+    {   /* extra deste projeto (teste): PUMPY_AUTOSTATE=SELECT abre direto a Select */
+        const char* as = getenv("PUMPY_AUTOSTATE");
+        if (as && _stricmp(as, "SELECT") == 0) Game_ChangeState(STATE_EXSELECT);
+    }
     g_game.lastTime = timeGetTime();
 }
 
@@ -433,7 +438,8 @@ void Game_Update(float dt) {
         NameInput_Update(dt);
         break;
     case STATE_EXSELECT:
-        ZeroSelect_Update(dt);
+        /* ZeroSelect_Update(dt); */
+        NxSelect_Update(dt);
         /* ExSelect_Update(dt); */
         break;
     case STATE_STATION:
@@ -817,7 +823,8 @@ void Game_Render(void) {
             NameInput_Render();
             break;
         case STATE_EXSELECT:
-            ZeroSelect_Render();
+            /* ZeroSelect_Render(); */
+            NxSelect_Render();
             /* ExSelect_Render(); */
             break;
         case STATE_STATION:
