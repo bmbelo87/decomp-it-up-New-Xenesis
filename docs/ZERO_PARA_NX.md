@@ -47,8 +47,27 @@ e há fontes TTF (`MICROGBE.TTF`, `NXTW.TTF`).
 - Classes com logs novos: `CBGA` (LoadV2/LoadV3), `CEffectManager`, `CMainEngine`, `CPlayEngine`,
   `CSetup`, `CStep`, `CTextureManager`. `CTutorial` saiu.
 
+## Tabela de músicas — Confirmado
+
+- `0x0813c200`, 192 registros de 0x48 bytes (contagem em `0x8061be0`); textos em **UTF-8**
+  (Zero: CP949) e BPM como texto. Gerada por `tools/gen_nx_songs.py` → `src/nx_songs.c`.
+- 7 canais pelo campo +0x1C (nomes por hipótese): NX 29, K-POP 45, POP 16, BANYA 38,
+  FULL SONG 8, REMIX 19, ANOTHER 37.
+- Mapa chart → recurso em `0x0813f860` (328 pares, `0x8061d10`): Another (`DB18` → `B18`),
+  World Tour (`AA011` → `103`), Training (`DDD312A` → `312`).
+
+## Steps — Confirmado (magic) / em aberto (layout)
+
+- `STEP.DAT` (RESPAC2) traz 553 arquivos **`.SEE`** (`CStep::LoadStep` abre `%s.SEE`), magic `STEE`,
+  versão 1, tabela de offsets em 0x100. **Não é STX**: precisa de loader novo.
+
+## SelectSong
+
+Ver `docs/NX_SELECT.md`.
+
 ## Próximos passos
 
-1. Tabela de músicas da NX (adaptar `tools/gen_zero_songs.py`).
+1. Loader de `.SEE`.
 2. Ajustar formatos de nome (`%03X`) no carregamento.
-3. Relocalizar as funções já reconstruídas (cifras, julgamento, skins, grade) no `piu` da NX.
+3. Nova tela de seleção (CSelect da NX).
+4. Relocalizar as funções já reconstruídas (cifras, julgamento, skins, grade) no `piu` da NX.

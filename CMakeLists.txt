@@ -155,7 +155,8 @@ add_executable(Pumpy
     src/eeprom_x2.c
     # src/exceed_songs.c   (Exceed: tabelas do exceed.exe)
     # src/exceed2_songs.c   # Exceed2 — desativado
-    src/zero_songs.c
+    # src/zero_songs.c     # Zero — desativado
+    src/nx_songs.c
     src/zero_select.c
     src/service_menu.c
     src/coin.c

@@ -134,14 +134,27 @@ typedef enum {
 #define EX_CHANNEL_COUNT  5
 #define EX_CHANNEL_MAX    53
 */
-#define EX_SONG_COUNT     149   /* Zero: 0x94 (148) da tabela 0x08119040 + 1 extra (C44, tools/gen_zero_songs.py) */
-#define EX_CHANNEL_COUNT  5     /* campo +0x24: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER */
-#define EX_CHANNEL_MAX    52    /* maior canal (K-POP, 51) + 0 final; gerado por gen_zero_songs.py */
+/* Zero (piu Zero) — DESATIVADO
+#define EX_SONG_COUNT     149   // Zero: 0x94 (148) da tabela 0x08119040 + 1 extra (C44, tools/gen_zero_songs.py)
+#define EX_CHANNEL_COUNT  5     // campo +0x24: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER
+#define EX_CHANNEL_MAX    52    // maior canal (K-POP, 51) + 0 final; gerado por gen_zero_songs.py
 #define EX_CH_BANYA   0
 #define EX_CH_KPOP    1
 #define EX_CH_POP     2
 #define EX_CH_REMIX   3
 #define EX_CH_ANOTHER 4
+*/
+#define EX_SONG_COUNT     192   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py */
+#define EX_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
+#define EX_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
+#define EX_CH_NX       0
+#define EX_CH_KPOP     1
+#define EX_CH_POP      2
+#define EX_CH_BANYA    3
+#define EX_CH_FULLSONG 4
+#define EX_CH_REMIX    5
+#define EX_CH_ANOTHER  6
+#define NX_RESMAP_COUNT 328     /* pares { recurso, chart } em 0x0813f860 (0x8061d10) */
 typedef struct {
     uint32_t    id;         /* +0x00  hex -> "%X" nos nomes de arquivo */
     const char* artistKr;   /* +0x04 */
@@ -157,8 +170,11 @@ typedef struct {
     int         channel;    /* Zero +0x24: EX_CH_* */
     int         seq;        /* Zero +0x00 */
     uint8_t     demo;       /* Zero +0x49: entra na demo (0x805a310) */
-    uint8_t     avail;      /* Zero +0x3E estático: disponível (0 nas Another); ver Zero_SongAvail */
+    uint8_t     avail;      /* Zero +0x3E estático: disponível (0 nas Another); ver Zero_SongAvail. NX +0x36 */
+    const char* bpmText;    /* NX +0x18: BPM em texto ("101~138", "???") */
+    uint32_t    length;     /* NX +0x44: hipótese — duração em segundos */
 } ExceedSong;
+extern const uint32_t g_nxResMap[NX_RESMAP_COUNT][2];
 extern const ExceedSong g_exSongs[EX_SONG_COUNT];
 extern const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX];
 
