@@ -357,6 +357,18 @@ static void exGradeSounds(int t)
  * Sons: EFF_TICK (8-1) a cada 5 quadros enquanto conta; 230 EFF_ANNOUNCE (9-5);
  *   235 EFF_RANK_x_B (9-x) + EFF_RANK_x (RANK_x) da melhor nota.
  * Fim: fade preto 600..630 (FADEOUT_START_TIME); sai em 630 ou no fim do vídeo. */
+/* NX: CDanceGrade (piu, Begin 0x8073280, quadro 0x8073820)
+ *   /SCRIPT/UI/DANCEGRADE.LUA da NX: BACKGROUND_MOVIE = "BG.MOV" (em loop; o
+ *   GRADE.MOV não é usado), SCORE_Y_1..7 = 372 322 268 210 158 103 47.
+ *   Quadro: cena "grade start" do GRADE.DAT (0..64, para no fim) todo quadro;
+ *   linhas como no Zero; letra em GRADE_DRAW_START_TIME: camadas 24/25 (P1) ou
+ *   38/39 (P2) recebem a letra (fontes S 38, A 24, B 54, C 55, D 56, F 58,
+ *   0x8073502) e toca "1p_rank" / "2p_rank" (0x807430c).
+ *   Não portado: WIN/LOSE/DRAW do BATTLE (0x8073f4x). */
+static const int k_nxDGY[7] = { 372, 322, 268, 210, 158, 103, 47 };
+static BGALayerSrc g_nxLetter[6];
+static bool g_nxLetterOk;
+
 static int g_zScoreFont = -1;
 static int g_zDigits[2][7];
 static int g_zLastTick;
@@ -431,8 +443,10 @@ static void zDanceGradeEnter(void)
     }
     if (g_zScoreFont < 0) Log_Print("DG: SCOREFONT.TGA não carregou\n");
     Movie_Close();
-    snprintf(path, sizeof(path), "%s/BGA/GRADE.MOV", g_game.currentDirectory);
-    Movie_Open(path, false);
+    /* era (Zero): BGA/GRADE.MOV sem loop */
+    snprintf(path, sizeof(path), "%s/BGA/BG.MOV", g_game.currentDirectory);
+    Movie_Open(path, true);
+    g_nxLetterOk = false;
     for (int p = 0; p < 2; p++)
         for (int i = 0; i < 7; i++) g_zDigits[p][i] = zDigitCount(zValue(p, i));
     g_zLastTick = -100;
@@ -470,8 +484,8 @@ static bool zDanceGradeUpdate(int t, float dt)
         zPlay(8 + best);                                      /* EFF_RANK_x_B */
         zPlay(2 + best);                                      /* EFF_RANK_x */
     }
-    bool movieEnd = Movie_IsOpen() && Movie_HasEnded();
-    return t >= 630 || (movieEnd && t > 235);
+    /* era (Zero): também saía no fim do GRADE.MOV; o BG.MOV da NX é em loop */
+    return t >= 630;
 }
 
 static void zDanceGradeRender(int t)
@@ -479,6 +493,18 @@ static void zDanceGradeRender(int t)
     if (Movie_IsOpen()) Movie_Render();
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (g_game.bgaPicCount > 0) {
+        if (!g_nxLetterOk) {   /* 0x8073502: S A B C D F */
+            static const int k_src[6] = { 38, 24, 54, 55, 56, 58 };
+            g_nxLetterOk = true;
+            for (int i = 0; i < 6; i++) g_nxLetterOk &= BGA_GetLayerSrc(0, k_src[i], &g_nxLetter[i]);
+            if (!g_nxLetterOk) Log_Print("DG: camadas das letras do GRADE.DAT faltando\n");
+            BGA_SceneReset(0, "grade start");
+            BGA_SceneReset(0, "1p_rank");
+            BGA_SceneReset(0, "2p_rank");
+        }
+        BGA_ScenePlay(0, "grade start", true);   /* 0x8073867 */
+    }
     static const char* const k_letter[2][6] = {
         { "1P_S", "1P_A", "1P_B", "1P_C", "1P_D", "1P_F" },
         { "2P_S", "2P_A", "2P_B", "2P_C", "2P_D", "2P_F" },
@@ -488,14 +514,20 @@ static void zDanceGradeRender(int t)
         for (int i = 0; i < 7; i++) {
             int t0 = 90 + 4 * i;
             if (t < t0) break;
-            int y = 323 - 42 * i, nd = g_zDigits[p][i];
+            int y = k_nxDGY[i], nd = g_zDigits[p][i];   /* era (Zero): 323 - 42 * i */
             if (p == 0) zNumP1(150 - (7 - nd) * 22, y, zValue(p, i), nd, t - t0);
             else        zNumP2(585, y, zValue(p, i), nd, t - t0);
         }
         if (t >= 210 && g_game.bgaPicCount > 0) {
             int g = (p == 0) ? g_gradeP1 : g_gradeP2;
             if (g < 0 || g > 5) g = 5;
-            BGA_ScenePlay(0, k_letter[p][g], true);
+            /* era (Zero): BGA_ScenePlay(0, k_letter[p][g], true); */
+            (void)k_letter;
+            if (g_nxLetterOk) {
+                BGA_SetLayerSrc(0, p ? 38 : 24, &g_nxLetter[g]);
+                BGA_SetLayerSrc(0, p ? 39 : 25, &g_nxLetter[g]);
+                BGA_ScenePlay(0, p ? "2p_rank" : "1p_rank", true);
+            }
         }
     }
     if (t >= 600) {                                           /* fade 600..630 */

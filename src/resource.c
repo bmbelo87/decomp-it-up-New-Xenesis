@@ -308,8 +308,17 @@ static FILE* res_fopen_case_insensitive(const char* path) {
 }
 #endif
 
+/* Extra deste projeto (desempenho): cache entrada -> textura do pacote aberto.
+ * Os SPRs do COMMON.DAT apontam ~200 vezes para a mesma common01.tga e cada
+ * carga extraía, gravava em _tmp_ e decodificava de novo (segundos de tela preta).
+ * Zerado a cada RES_Open, então não sobrevive à troca de pacote. */
+#define TEXCACHE_MAX 1024
+static struct { const void* arc; int idx; int tex; } s_texCache[TEXCACHE_MAX];
+static int s_texCacheN;
+
 bool RES_Open(const char* path) {
     if (g_resArchive) RES_Close();
+    s_texCacheN = 0;
 
     RESArchive* res = (RESArchive*)calloc(1, sizeof(RESArchive));
     if (!res) return false;
@@ -498,6 +507,9 @@ int loadTextureFromRES(const char* resName) {
         if (idx < 0) return -1;
     }
 
+    for (int i = 0; i < s_texCacheN; i++)
+        if (s_texCache[i].arc == g_resArchive && s_texCache[i].idx == idx) return s_texCache[i].tex;
+
     uint32_t sz = RES_GetSize(idx);
     if (sz == 0) return -1;
 
@@ -518,6 +530,11 @@ int loadTextureFromRES(const char* resName) {
         Log_Print("RES: tex loaded -> %d\n", texId);
         remove(tmpPath);
         free(buf);
+        if (texId >= 0 && s_texCacheN < TEXCACHE_MAX) {
+            s_texCache[s_texCacheN].arc = g_resArchive;
+            s_texCache[s_texCacheN].idx = idx;
+            s_texCache[s_texCacheN++].tex = texId;
+        }
         return texId;
     }
     Log_Print("RES: tex write failed for '%s'\n", tmpPath);

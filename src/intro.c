@@ -148,6 +148,16 @@ void Gamestate_UpdateIntro(float dt) {
             g_titleJoined = 0;
             g_titleFade = 0;
         }
+        /* NX CTitle::Begin (0x808c661 / 0x808c67c): já carrega BGA/COMMON.DAT e
+         * BGA/ARRO.DAT, que a CStation usa sem recarregar. Extra deste projeto:
+         * feito no 2º quadro (o 1º do CREDIT.MOV já está na tela) e o relógio é
+         * zerado depois, senão a tela fica preta durante a carga e o vídeo pula. */
+        if (g_game.stateFrame == 2) {
+            Resource_LoadBGAByName("COMMON");
+            Resource_LoadBGAByName("ARRO");
+            g_game.lastTime = timeGetTime();
+            dt = 0.0f;
+        }
         Movie_Update(dt);
 
         /* 0x41C192..0x41C1C8 / 0x41C594 / 0x41C5EC: com crédito, CENTER do

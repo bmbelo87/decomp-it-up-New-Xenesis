@@ -100,7 +100,7 @@ static int s_nxGaugeBlink[2];  /* [0xa7f4a54 + p*4]: alterna a cada quadro */
  * o life inicial (500) aparece como MEIA barra. Antes o port usava life/500 (barra cheia no início). */
 #define LIFE_BAR_SCALE      0.001f
 /* PUMPY.EXE compara life < 0xB4 (180) nos 4 pontos de desenho da barra (0x411ed2, 0x412102, 0x41223c, 0x41239f) */
-#define LIFE_DANGER         180
+#define LIFE_DANGER         334   /* source oficial DrawGauge: (int)(life/1000*33) <= 10 -> life <= 333 (era 180) */
 /* Substituídos pelas tabelas k_lifeSpeedInit/Min/Max (ver applyLife): no
  * original estes três valores variam por nível de dificuldade, e fixá-los aqui
  * deixava NORMAL e HARD com a curva do EASY.
@@ -458,6 +458,49 @@ static int arrowAnimFrame(void)
     return phase / 10;
 }
 
+/* Delay de bloco (Stop n' Go / freeze; Zero piu 0x8086170 / 0x80863d0 / carga 0x80935xx):
+ *   flag (+100) == 1 e delay > 0 -> STOP: a posição não avança por delay x 10 ms
+ *                                   (aqui: getRowAtTimeFloat fica na 1ª linha do bloco);
+ *   flag == 0 (ou delay < 0)     -> o delay vira distância no scroll (delay*10 * BPM/1000
+ *                                   batidas): as setas seguem andando e abre um vão.
+ * Devolve o vão em linhas visuais (unidade de g_visualRow = divisão do bloco 0). */
+static double g_clkAnchor;          /* relógio do gameplay: âncora congelada */
+static bool   g_clkHave, g_clkLocked;
+
+static double zeroDelayGapRows(int s)
+{
+    if (!g_chart || s < 0 || s >= (int)g_chart->segmentCount) return 0.0;
+    int32_t d = g_chart->segments[s].delay;
+    if (d == 0) return 0.0;
+    if (g_chart->segments[s].stopFlag != 0 && d > 0) return 0.0;   /* Stop (ou lixo: sem vão) */
+    /* NX (.SEE, delay em ms): delay positivo = Stop mesmo com a flag 0.
+     * Evidência (dados, sem assembly): D08 Free! seção 3 bloco 1 dl=859 flag=1 e
+     * seção 4 (CRAZY) bloco 1 dl=860 flag=0 — o mesmo Stop nas duas. */
+    if (g_chart->delayDiv == 1000 && d > 0) return 0.0;
+    double beats = (d / (double)(g_chart->delayDiv > 0 ? g_chart->delayDiv : 100)) * (double)g_chart->segments[s].bpm / 60.0;
+    /* era: (d / 100.0) — unidade da ZERO; no .SEE dava 10x o vão */
+    return beats * (double)(g_baseBeatSplit > 0 ? g_baseBeatSplit : 4);
+}
+
+/* Posição visual durante o delay de um bloco com vão: anda de (início - vão) até o
+ * início do bloco. Fora disso devolve 'fallback' (interpolação normal). */
+static double zeroVisualScrollInDelay(double t, double fallback)
+{
+    if (!g_chart || !g_visualRow) return fallback;
+    double accum = 0;
+    for (int s = 0; s < (int)g_chart->segmentCount; s++) {
+        double segDelay = getSegmentDelay(s);
+        if (segDelay > 0 && t >= accum && t < accum + segDelay) {
+            double gap = zeroDelayGapRows(s);
+            int rs = (int)g_chart->segments[s].rowStart;
+            if (gap <= 0 || rs >= g_visualRowCount) return fallback;
+            return g_visualRow[rs] - gap + gap * ((t - accum) / segDelay);
+        }
+        accum += g_chart->segments[s].rowCount * getSegmentSpr(s) + segDelay;
+    }
+    return fallback;
+}
+
 static double getRowAtTimeFloat(double t)
 {
     if (!g_chart) return t / g_secondsPerRow;
@@ -479,6 +522,75 @@ static double getRowAtTimeFloat(double t)
         accum += segDur;
     }
     return (double)g_chart->rowCount - 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Modificadores da NX na pista (piu 0x806ecf0 / 0x806cae8)
+ * ------------------------------------------------------------------------- */
+/* AC/DC (0x806f079..0x806f4a3): d = distância em px até o receptor (positiva
+ * abaixo dele). DC: d^3/1600. AC: d >= -83 -> 120000*(0.005 - 1/(2.4d + 200)). */
+static float nxAccelDist(int p, float d)
+{
+    if (g_game.cmdDecel[p]) return d * d * d / 1600.0f;
+    if (g_game.cmdAccel[p] && d >= -83.0f) return 120000.0f * (0.005f - 1.0f / (d * 2.4f + 200.0f));
+    return d;
+}
+
+/* FL (0x806cf97 + 0x806f4d5): contador +0x4f0 cai 1 por quadro;
+ * alpha das setas = 0.5 + 0.5*sin(c*0.25) */
+static int g_flashCnt[2];
+
+/* NX / UA (0x806cae8..0x806d6ab): câmera em volta de receptores e setas.
+ * 0x808fc30(75): gluPerspective(75, 640/480, 0.1, 5000) + Translate(-320,-240,0)
+ * na projeção e LookAt(0,0,d) com d = 240*cot(37.5); depois Rotate(-60,1,0,0) e
+ * escala 1.5 em torno de (320,240) (Y -1.5 junto com UA). UA: Translate(640,480)
+ * + Rotate(180,0,0,1) = giro de 180 graus no centro da tela. */
+static int g_nxField;   /* 0 nada, 1 só modelview, 2 projeção + modelview */
+static void nxFieldBegin(void)
+{
+    bool nx = g_game.cmdNXMode[0] || g_game.cmdNXMode[1];
+    bool ua = g_game.cmdUnderAttack[0] || g_game.cmdUnderAttack[1];
+    g_nxField = 0;
+    if (!nx && !ua) return;
+    if (nx) {
+        const double fov = 75.0, n = 0.1, f = 5000.0;
+        double t = n * tan(fov * 0.5 * 3.14159265358979 / 180.0);
+        double d = 240.0 / tan(fov * 0.5 * 3.14159265358979 / 180.0);
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glFrustum(-t * 640.0 / 480.0, t * 640.0 / 480.0, -t, t, n, f);
+        glTranslatef(-320.0f, -240.0f, 0.0f);
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        glTranslatef(0.0f, 0.0f, (float)-d);   /* = gluLookAt(0,0,d, 0,0,0, 0,1,0) */
+        glRotatef(-60.0f, 1.0f, 0.0f, 0.0f);
+        glTranslatef(320.0f, 240.0f, 0.0f);
+        glScalef(1.5f, ua ? -1.5f : 1.5f, 1.5f);
+        glTranslatef(-320.0f, -240.0f, 0.0f);
+        g_nxField = 2;
+    } else {
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        g_nxField = 1;
+    }
+    if (ua) {
+        glTranslatef(640.0f, 480.0f, 0.0f);
+        glRotatef(180.0f, 0.0f, 0.0f, 1.0f);
+    }
+}
+static void nxFieldEnd(void)
+{
+    if (g_nxField == 0) return;
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    if (g_nxField == 2) {
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+    }
+    g_nxField = 0;
 }
 
 static NoteHit g_noteHits[2][MAX_PANELS][2048];
@@ -696,6 +808,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
 
     g_chart = &g_playSong.charts[g_chartIdx];
     g_songTime = 0.0;
+    g_clkHave = g_clkLocked = false;
     g_maxSongTime = 0.0;
     g_stagnantFrames = 0;
     g_lastPosMs = 0;
@@ -761,6 +874,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         double vRow = 0;
         for (int s = 0; s < g_chart->segmentCount; s++) {
             double beatRatio = (double)g_baseBeatSplit / (double)g_chart->segments[s].beatSplit;
+            vRow += zeroDelayGapRows(s);   /* delay sem Stop = vão no scroll */
             for (uint32_t r = g_chart->segments[s].rowStart; r < g_chart->segments[s].rowStart + g_chart->segments[s].rowCount; r++) {
                 if ((int)r < g_visualRowCount) g_visualRow[r] = vRow;
                 vRow += beatRatio;
@@ -1984,8 +2098,8 @@ void Gameplay_Start(int songId)
     g_stageBreakFreezeTimer = -1.0f;
     memset(&g_game.stats, 0, sizeof(g_game.stats));
     memset(s_exPrev, 0, sizeof(s_exPrev));
-    g_game.stats.life[0]      = 224; /* baseline visual: 11+2/3 de 26 retangulos ao inicio da musica. */
-    g_game.stats.life[1]      = 224;
+    g_game.stats.life[0]      = LIFE_INITIAL; /* source oficial: m_Gauge = 500 (era 224, ajuste visual) */
+    g_game.stats.life[1]      = LIFE_INITIAL;
     if (g_exceedSongIds) {
         /* exceed.exe 0x4026D6 / 0x4026EE: [player+0x168] = 500 (0x1F4) para
          * cada jogador ativo — o mesmo m_Gauge = 500 do playengine.cpp. */
@@ -2152,6 +2266,19 @@ void Gameplay_Exit(void)
     Log_Print("Gameplay: exit\n");
 }
 
+/* Chamado antes de cada desenho: com a âncora já congelada, põe g_songTime no
+ * instante atual (contador de alta resolução), para a rolagem ficar lisa em
+ * qualquer refresh. Só avança (nunca volta) e não mexe na âncora. */
+void Gameplay_RefreshClock(void)
+{
+    if (g_game.state != STATE_GAMEPLAY || !g_songLoaded || !g_clkLocked) return;
+    if (!BGM_IsDSActive() || g_stageBreakFreezeTimer >= 0.0f) return;
+    double now;
+    if (BGM_ClockAnchorSec(&now) < 0.0) return;
+    double t = (now - g_clkAnchor) - (g_game.audioOffsetMs / 1000.0);
+    if (t > g_songTime) g_songTime = t;
+}
+
 void Gameplay_Update(float dt)
 {
     if (g_game.state != STATE_GAMEPLAY) return;
@@ -2298,12 +2425,50 @@ void Gameplay_Update(float dt)
         }
     }
 
+    /* era:
+     *     if (BGM_IsDSActive()) {
+     *         /* era: g_songTime = posMs/1000 - offset todo frame (ms inteiros +
+     *          * clamps do callback = delta irregular por frame -> setas trepidando).
+     *          * Agora avança por dt e só puxa suavemente pro relógio do áudio
+     *          * (mesma correção da Prex3). * /
+     *         double posMs = BGM_GetPositionMsF();
+     *         g_songTime += dt;
+     *         if (posMs > 100.0) { // ignore first 100ms (startup)
+     *             double audioT = posMs / 1000.0 - (g_game.audioOffsetMs / 1000.0); /* offset configuravel em PUMPY.INI (AudioOffset=X ms) * /
+     *             double err = audioT - g_songTime;
+     *             if (err > 0.05 || err < -0.05)
+     *                 g_songTime = audioT;          /* desvio grande: ressincroniza * /
+     *             else
+     *                 g_songTime += err * 0.1;      /* desvio pequeno: corrige suave * /
+     *         }
+     *     } else {
+     *         g_songTime += dt;
+     *     }
+     */
     if (BGM_IsDSActive()) {
-        uint32_t posMs = BGM_GetPositionMs();
-        if (posMs > 100) // ignore first 100ms (startup)
-            g_songTime = posMs / 1000.0 - (g_game.audioOffsetMs / 1000.0); /* offset configuravel em PUMPY.INI (AudioOffset=X ms) */
-        else
+        /* Relógio fixo (sem ajuste de ms durante a música):
+         *   âncora = instante em que a amostra 0 saiu, medida a cada callback.
+         *   Callbacks atrasados dão âncora maior, então no 1º segundo fica a
+         *   MENOR; depois ela congela e g_songTime = agora - âncora, avançando
+         *   pelo contador de alta resolução, sem tremer nem ser corrigido.
+         *   Só reancora num desvio real (> 100 ms: travada do áudio/loop). */
+        double now, anc = BGM_ClockAnchorSec(&now);
+        if (anc >= 0.0) {
+            if (!g_clkLocked) {
+                if (!g_clkHave || anc < g_clkAnchor) g_clkAnchor = anc;
+                g_clkHave = true;
+                if (now - g_clkAnchor >= 1.0) g_clkLocked = true;
+            } else {
+                double d = anc - g_clkAnchor;
+                if (d > 0.1 || d < -0.1) {
+                    Log_Print("GP: relogio reancorado (desvio %.1f ms)\n", d * 1000.0);
+                    g_clkAnchor = anc;
+                }
+            }
+            g_songTime = (now - g_clkAnchor) - (g_game.audioOffsetMs / 1000.0); /* offset configuravel em PUMPY.INI (AudioOffset=X ms) */
+        } else {
             g_songTime += dt;
+        }
     } else {
         g_songTime += dt;
     }
@@ -2401,6 +2566,7 @@ void Gameplay_Update(float dt)
         if (g_judgeFrame[p] > 0)
             g_judgeFrame[p]--;
         if (g_exJudgeCnt[p] < 1000) g_exJudgeCnt[p]++;   /* 0x407439 */
+        if (g_game.cmdFlash[p]) g_flashCnt[p]--; else g_flashCnt[p] = 0;   /* 0x806cf97 */
         for (int pan = 0; pan < MAX_PANELS; pan++) {
             if (g_hitTimer[p][pan] > 0)
                 g_hitTimer[p][pan]--;
@@ -2814,6 +2980,7 @@ void Gameplay_Render(void)
         visualScrollRow = g_visualRow[vr];
         if (vr + 1 < g_visualRowCount)
             visualScrollRow += (g_visualRow[vr + 1] - g_visualRow[vr]) * frac;
+        visualScrollRow = zeroVisualScrollInDelay(g_songTime, visualScrollRow);
     }
     float currentPixelsPerSec = (float)(pixelsPerRow / currentSpr);
 
@@ -2984,6 +3151,7 @@ void Gameplay_Render(void)
         }
         */
 
+        nxFieldBegin();   /* NX/UA: só receptores e setas (0x806a150 / 0x8069d20) */
         // 01.SPR receptor (g_fontSpr01) — renderiza ANTES das notas (abaixo delas)
         // Freedom: oculta o receptor completamente (sprites não são desenhados)
         // Para single (não HD/DN): srcX baked para P1-solo (base=38). Offset por player.
@@ -3107,6 +3275,9 @@ void Gameplay_Render(void)
          * original; o código passa o sinal pelo 1º argumento de 0x406190). */
         float xmS = 0.0f;
         if (g_exceedSongIds && ExSelect_IsXMode()) xmS = (p == 0) ? 1.0f : -1.0f;
+        if (g_game.cmdXMode[p]) xmS = (p == 0) ? 1.0f : -1.0f;   /* NX: 0x1000 */
+        /* FL: alpha das setas (0x806f4d5) */
+        g_drawAlphaMul = g_game.cmdFlash[p] ? 0.5f + 0.5f * sinf((float)g_flashCnt[p] * 0.25f) : 1.0f;
         float xmY0 = (float)(receptorY + rh2 / 2);
         #define XM_S(pn) ((isDoubleOrNightmare && (pn) >= 5) ? -xmS : xmS)
         #define XM_DX(yy) (xmS * ((yy) - xmY0))
@@ -3123,7 +3294,7 @@ void Gameplay_Render(void)
          *     fica no receptor e o corpo sai dele. */
         if (g_zeroSkinArrows && !isHalfDouble && !g_game.cmdNonStep[p]) {
             #define Z_PV(r, pn) (isDoubleOrNightmare ? getDNPanelValue(&g_chart->rows[r], pn)                                                     : getPanelValue(&g_chart->rows[r], pn, p))
-            #define Z_ROWY(r) ((float)(receptorY + rh2 / 2) +                 (((r) < g_visualRowCount && g_visualRow) ? (float)g_visualRow[r] : (float)(r)) * pPixelsPerRow                 - visualScrollRow * pPixelsPerRow)
+            #define Z_ROWY(r) ((float)(receptorY + rh2 / 2) + nxAccelDist(p,                 (((r) < g_visualRowCount && g_visualRow) ? (float)g_visualRow[r] : (float)(r)) * pPixelsPerRow                 - (float)(visualScrollRow * pPixelsPerRow)))
             for (int panel = 0; panel < panelCount; panel++) {
                 int col = panel % 5;
                 if (g_skinL2[col] < 0 || g_skinL3[col] < 0) continue;
@@ -3183,8 +3354,8 @@ void Gameplay_Render(void)
 
                     float vri = (ri < g_visualRowCount && g_visualRow) ? (float)g_visualRow[ri] : (float)ri;
                     float vendRi = (endRi < g_visualRowCount && g_visualRow) ? (float)g_visualRow[endRi] : (float)endRi;
-                    float y1 = (float)(receptorY + rh2 / 2 + (vri - visualScrollRow) * pPixelsPerRow);
-                    float y2 = (float)(receptorY + rh2 / 2 + (vendRi - visualScrollRow) * pPixelsPerRow);
+                    float y1 = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vri - visualScrollRow) * pPixelsPerRow)));
+                    float y2 = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vendRi - visualScrollRow) * pPixelsPerRow)));
                     if (y2 < y1) { float t = y1; y1 = y2; y2 = t; }
 
                     /* O clamp abaixo só vale para o body do hold que está sendo
@@ -3221,7 +3392,7 @@ void Gameplay_Render(void)
                                        : getPanelValue(&g_chart->rows[headRi], panel, p));
                             if (hv == NT_HOLD_H) {
                                 float vhRi = (headRi < g_visualRowCount && g_visualRow) ? (float)g_visualRow[headRi] : (float)headRi;
-                                float headY = (float)(receptorY + rh2 / 2 + (vhRi - visualScrollRow) * pPixelsPerRow);
+                                float headY = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vhRi - visualScrollRow) * pPixelsPerRow)));
                                 if (headY < y1) y1 = headY;
                                 else if (headY > y2) y2 = headY;
                             }
@@ -3304,7 +3475,7 @@ void Gameplay_Render(void)
                 if (tailRi < 0 || g_zeroSkinArrows) continue;   /* Zero: corpo já desenhado acima */
                 float vt = (tailRi < g_visualRowCount && g_visualRow) ? (float)g_visualRow[tailRi] : (float)tailRi;
                 float y1 = (float)(receptorY + rh2 / 2);
-                float y2 = (float)(receptorY + rh2 / 2 + (vt - visualScrollRow) * pPixelsPerRow);
+                float y2 = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vt - visualScrollRow) * pPixelsPerRow)));
                 if (y2 <= y1) continue;
                 int arrowIdx = isDoubleOrNightmare ? (panel % 5) : panel;
                 int idx = g_fontArrowETC + (isHalfDouble ? kHDBodyTile[panel] : kBodyTile[arrowIdx]);
@@ -3334,7 +3505,7 @@ void Gameplay_Render(void)
         {
             if (g_fontArrowETC < 0 || g_zeroSkinArrows) break;   /* Zero: ponta no bloco acima */
                 float vri = (ri < g_visualRowCount && g_visualRow) ? (float)g_visualRow[ri] : (float)ri;
-            float y = (float)(receptorY + rh2 / 2 + (vri - visualScrollRow) * pPixelsPerRow);
+            float y = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vri - visualScrollRow) * pPixelsPerRow)));
             if (y < receptorY - rh2 / 2 - 50 || y > scrollBottom + PANEL_SIZE) continue;
             for (int rio = 0; rio < panelCount; rio++)
             {
@@ -3383,7 +3554,7 @@ void Gameplay_Render(void)
                                    : getPanelValue(&g_chart->rows[hr], panel, p));
                         if (hv == NT_HOLD_H) {
                             float vh = (hr < g_visualRowCount && g_visualRow) ? (float)g_visualRow[hr] : (float)hr;
-                            headY = (float)(receptorY + rh2 / 2 + (vh - visualScrollRow) * pPixelsPerRow);
+                            headY = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vh - visualScrollRow) * pPixelsPerRow)));
                             break;
                         }
                         if (hv != NT_HOLD_B) break;
@@ -3398,7 +3569,7 @@ void Gameplay_Render(void)
         for (int ri = startRow; ri <= endRow; ri++)
         {
             float vri = (ri < g_visualRowCount && g_visualRow) ? (float)g_visualRow[ri] : (float)ri;
-            float y = (float)(receptorY + rh2 / 2 + (vri - visualScrollRow) * pPixelsPerRow);
+            float y = (float)(receptorY + rh2 / 2 + nxAccelDist(p, (float)((vri - visualScrollRow) * pPixelsPerRow)));
             if (y < receptorY - rh2 / 2 - 50 || y > scrollBottom + PANEL_SIZE) continue;
             for (int rio = 0; rio < panelCount; rio++)
             {
@@ -3499,6 +3670,8 @@ void Gameplay_Render(void)
         #undef XM_DX
         #undef XM_DXP
         #undef XM_S
+        g_drawAlphaMul = 1.0f;
+        nxFieldEnd();
 
         int centerY = g_game.screenHeight / 2;
     int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */ // Same as in rendering loop
@@ -3612,6 +3785,8 @@ void Gameplay_Render(void)
             int cnt = g_exJudgeCnt[p];
             JudgeType jt = g_judgeDisplayType[p];
             if (cnt < 50 && jt > JT_NONE && jt <= JT_MISS) {
+                bool rg = g_game.cmdGradeRev[p];   /* 0x806f856: sprite 5 - t (só visual) */
+                if (rg) jt = (JudgeType)(JT_MISS + JT_PERFECT - jt);
                 const char* jn = isDoubleOrNightmare ? k_jD[jt] : (p == 0 ? k_j1P[jt] : k_j2P[jt]);
                 BGA_ScenePlayAt(g_exJudgeBga, jn, cnt);                         /* 0x4074FE */
 
@@ -3619,8 +3794,9 @@ void Gameplay_Render(void)
                 int miss  = (int)g_game.stats.missCombo[p];
                 if (combo >= 4 || miss >= 4) {
                     int val = 0;
-                    if (combo >= 4) { BGA_SetColor4(g_exJudgeBga, 1.0f, 1.0f, 1.0f, 1.0f); val = combo; }
-                    if (miss >= 4)  { BGA_SetColor4(g_exJudgeBga, 1.0f, 0.3f, 0.3f, 1.0f); val = miss; }
+                    /* RG (0x806f91e): combo em vermelho e sequência de MISS em branco */
+                    if (combo >= 4) { if (rg) BGA_SetColor4(g_exJudgeBga, 1.0f, 0.3f, 0.3f, 1.0f); else BGA_SetColor4(g_exJudgeBga, 1.0f, 1.0f, 1.0f, 1.0f); val = combo; }
+                    if (miss >= 4)  { if (rg) BGA_SetColor4(g_exJudgeBga, 1.0f, 1.0f, 1.0f, 1.0f); else BGA_SetColor4(g_exJudgeBga, 1.0f, 0.3f, 0.3f, 1.0f); val = miss; }
                     BGALayerSrc dig[10];
                     for (int d = 0; d < 10; d++) BGA_GetLayerSrc(g_exJudgeBga, 14 + d, &dig[d]);
                     int v = val;

@@ -19,7 +19,13 @@
 #include "bga.h"
 #include "movie.h"
 
-enum { NS_COMMON = 0, NS_ARRO = 1 };
+static int NS_COMMON = 0, NS_ARRO = 1;   /* índices dos BGAs (os da CTitle, se existirem) */
+
+static int findBGA(const char* name) {
+    for (int i = 0; i < g_game.bgaPicCount; i++)
+        if (_stricmp(g_game.bgaPics[i].name, name) == 0) return i;
+    return -1;
+}
 
 /* SFX_GLOBAL.LUA / SFX_SELECT.LUA */
 enum { SS_PUSH, SS_SELECT, SS_WRONG, SS_JOIN, SS_START, SS_STATION, SS_TIME, SS_COUNT };
@@ -40,7 +46,7 @@ static int  s_exitFrames;        /* +0xc (float no original) */
 
 static BGALayerSrc s_card[4];    /* +0x38..+0x44: COMMON 37, 40, 38, 39 */
 static BGALayerSrc s_text[4];    /* +0x48..+0x54: COMMON 53, 52, 54, 55 */
-static BGALayerSrc s_bar[4];     /* +0x58/+0x60/+0x68/+0x70: COMMON 52, 52, 52, 55 */
+static BGALayerSrc s_bar[4];     /* +0x58/+0x60/+0x68/+0x70: COMMON 9, 1, 8, 7 (channel4/1/3/2, 0x808ac60..0x808ad1d) */
 static BGALayerSrc s_name[4];    /* +0x5c/+0x64/+0x6c/+0x74: COMMON 81, 65, 80, 66 */
 static BGALayerSrc s_digit[10];  /* +0x10..: COMMON 82, 89..97 */
 static BGALayerSrc s_arro[4];    /* +0x84..+0x90: ARRO 18..21 */
@@ -76,20 +82,25 @@ static void cards(int anim) {
     }
 }
 
-static void stationEnter(void) {
-    Title_StopMusic();
+void NxStation_Enter(void) {
+    /* A CStation não carrega BGA: usa os objetos da CTitle (0x808c661 / 0x808c67c).
+     * Só carrega aqui se não vier da Title (ex.: PUMPY_AUTOSTATE). O EFF_TITLE segue. */
     Movie_Select(1); Movie_Close(); Movie_Select(0);
-    Movie_Close();
     BGM_Stop();
-    Resource_ClearBGA();
-    /* CTitle 0x808c661 / 0x808c67c */
-    if (!Resource_LoadBGAByName("COMMON")) Log_Print("NXSTATION: falha ao carregar BGA\\COMMON.DAT\n");
-    if (!Resource_LoadBGAByName("ARRO"))   Log_Print("NXSTATION: falha ao carregar BGA\\ARRO.DAT\n");
+    NS_COMMON = findBGA("COMMON");
+    NS_ARRO = findBGA("ARRO");
+    if (NS_COMMON < 0 || NS_ARRO < 0) {
+        Resource_ClearBGA();
+        if (!Resource_LoadBGAByName("COMMON")) Log_Print("NXSTATION: falha ao carregar BGA\\COMMON.DAT\n");
+        if (!Resource_LoadBGAByName("ARRO"))   Log_Print("NXSTATION: falha ao carregar BGA\\ARRO.DAT\n");
+        NS_COMMON = findBGA("COMMON");
+        NS_ARRO = findBGA("ARRO");
+    }
     BGA_Reset();
 
     bool ok = true;
     static const int k_card[4] = { 37, 40, 38, 39 }, k_text[4] = { 53, 52, 54, 55 };
-    static const int k_bar[4] = { 52, 52, 52, 55 }, k_name[4] = { 81, 65, 80, 66 };
+    static const int k_bar[4] = { 9, 1, 8, 7 }, k_name[4] = { 81, 65, 80, 66 };
     for (int i = 0; i < 4; i++) {
         ok &= BGA_GetLayerSrc(NS_COMMON, k_card[i], &s_card[i]);
         ok &= BGA_GetLayerSrc(NS_COMMON, k_text[i], &s_text[i]);
@@ -183,7 +194,6 @@ static void leave(void) {   /* 0x808b68e */
 }
 
 void Station_Update(float dt) {
-    if (g_game.stateFrame == 1) stationEnter();
     Movie_Update(dt);
     if (s_phase == 2) {
         if (++s_exitFrames > 0x27) leave();
@@ -214,7 +224,7 @@ void Station_Update(float dt) {
 }
 
 void Station_Render(void) {
-    if (g_game.bgaPicCount < 2) return;
+    if (NS_COMMON < 0 || NS_ARRO < 0) return;
     Movie_Render();
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -223,6 +233,16 @@ void Station_Render(void) {
         BGA_ScenePlay(NS_COMMON, "channel text end", true);
         BGA_ScenePlay(NS_ARRO, "arro end", true);
         BGA_ScenePlay(NS_COMMON, "channel end", true);
+        /* escurece até preto antes da próxima tela */
+        float a = (float)s_exitFrames / 0x27;
+        if (a > 1.0f) a = 1.0f;
+        glDisable(GL_TEXTURE_2D);
+        glColor4f(0, 0, 0, a);
+        glBegin(GL_QUADS);
+        glVertex2f(0, 0); glVertex2f(640, 0); glVertex2f(640, 480); glVertex2f(0, 480);
+        glEnd();
+        glEnable(GL_TEXTURE_2D);
+        glColor4f(1, 1, 1, 1);
         return;
     }
     /* canal */
@@ -240,12 +260,21 @@ void Station_Render(void) {
     BGA_SetLayerSrc(NS_COMMON, 0x58, &s_digit[s_time % 10]);
     BGA_SetLayerSrc(NS_COMMON, 0x57, &s_digit[(s_time / 10) % 10]);
     BGA_ScenePlay(NS_COMMON, "time position", true);
-    /* cards */
-    if (s_phase == 0) BGA_ScenePlay(NS_COMMON, "screen start", true);
-    else if (s_anim == 1) BGA_ScenePlay(NS_COMMON, "screen L move", true);
-    else if (s_anim == 2) BGA_ScenePlay(NS_COMMON, "screen R move", true);
-    else BGA_ScenePlay(NS_COMMON, s_confirmed ? "screen click" : "screen hold", true);
-    BGA_ScenePlay(NS_COMMON, BGA_SceneDone(NS_COMMON, "name text start") ? "name text hold" : "name text start", true);
-    if (s_confirmed) BGA_ScenePlay(NS_COMMON, "center step", true);
+    /* nome e cards (0x808b445..0x808b4a5 / 0x808b520): primeiro o texto do nome
+     * ([+0xe0] start parado, [+0xe8] end na troca), depois o card ([+0xb0] hold,
+     * [+0xa8] L move, [+0xac] R move); confirmado, "screen click" [+0xb8] e
+     * "center step" [+0x11c] por cima do hold. */
+    if (s_phase == 0) {
+        BGA_ScenePlay(NS_COMMON, "name text start", true);
+        BGA_ScenePlay(NS_COMMON, "screen start", true);
+    } else {
+        BGA_ScenePlay(NS_COMMON, s_anim != 0 ? "name text end" : "name text start", true);
+        BGA_ScenePlay(NS_COMMON, s_anim == 1 ? "screen L move" : s_anim == 2 ? "screen R move" : "screen hold", true);
+        if (s_confirmed) {
+            BGA_ScenePlay(NS_COMMON, "screen click", true);
+            BGA_ScenePlay(NS_COMMON, "center step", true);
+        }
+    }
+    /* era: start -> "name text hold" depois dos cards; "screen click" no lugar do hold */
     glColor4f(1, 1, 1, 1);
 }

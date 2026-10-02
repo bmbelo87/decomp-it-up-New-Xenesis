@@ -124,6 +124,7 @@ Pads em `0x9e420a0 + jogador*0xccc`. Botões: **7 DL, 8 UL, 9 C, 0xA UR, 0xB DR*
 - 4 estações (+0x12c): 0 TRAINING, 1 ARCADE, 2 WORLD TOUR, 3 SPECIAL ZONE; modo de jogo
   [0x81f8998] pela tabela 0x8114978 = {3, 0, 2, 1}. UR/DR avançam ("screen L move"),
   UL/DL voltam ("screen R move"); rotação dos cards em 0x808bf90.
-- Dúvida: o slot 1 do COMMON recebe a camada 52 (text_arc) nas estações 0..2 — é o que o
-  código lê (ebx preservado), mas não foi conferido no jogo real.
+- Slot 1 do COMMON (painel de cima) recebe `+0x58/+0x60/+0x68/+0x70` = camadas 9, 1, 8, 7
+  (`channel4/1/3/2.spr`, 0x808ac60..0x808ad1d). Antes lia 52/55 (`text_*`) por um `ebx` mal rastreado:
+  o painel ficava transparente e o texto do canal aparecia no topo. Corrigido em 01/10/2026.
 - TRAINING (CSelectEz), WORLD TOUR (CSelectWorld) e SPECIAL ZONE ainda vão para a Select arcade.

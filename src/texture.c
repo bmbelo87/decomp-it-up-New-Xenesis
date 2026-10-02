@@ -830,6 +830,8 @@ int Texture_LoadFromMemoryColorKey(const uint8_t* buf, uint32_t bufSize, const c
 
 /* NX CSelect (0x807bb00): a textura do vídeo da prévia entra no lugar do disco
  * do card central. Registra um id GL que não é do gerenciador (não apaga). */
+float g_drawAlphaMul = 1.0f;   /* FL da NX: alpha das setas (gameplay.c) */
+
 int Texture_Wrap(int slot, unsigned glId, int w, int h) {
     if (slot < 0 || slot >= MAX_TEXTURES) slot = Texture_FindFree();
     if (slot < 0) return -1;
@@ -898,6 +900,7 @@ void Texture_InsetUV(int texW, int texH, float* u1, float* v1, float* u2, float*
 
 void Texture_DrawUV(int id, float x, float y, float w, float h,
                      float u1, float v1, float u2, float v2, float r, float g, float b, float alpha) {
+    alpha *= g_drawAlphaMul;
     if (id < 0 || id >= MAX_TEXTURES || !g_game.textures[id].inUse) return;
     Texture* t = &g_game.textures[id];
     float yUp = 480.0f - y - h;

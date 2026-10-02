@@ -1,4 +1,5 @@
 #include "pumpy.h"
+#include "testbga.h"
 #include "movie.h"
 #include "vsl.h"
 #include <SDL.h>
@@ -50,7 +51,7 @@ static void LoadBGAForState(GameState state) {
     case STATE_CREDIT:       bgaName = "82"; break;
     case STATE_NAMEINPUT:    bgaName = "085"; break;    /* CNameInput 0x414012: BGA\085.DAT */
     case STATE_IR:           bgaName = "IR"; break;     /* CInternetRanking 0x41371B: BGA\IR.DAT */
-    case STATE_STATION:      bgaName = ""; break;       /* STATION.DAT carregado em Station_Enter */
+    case STATE_STATION:      bgaName = NULL; break;     /* NX: usa o COMMON/ARRO que a CTitle deixou (era: "" + STATION.DAT) */
     case STATE_HIGHSCORE:    bgaName = "HS"; break;     /* CHighscore 0x4126E7: BGA\HS.DAT */     /* CTitle::Begin 0x41C04A: BGA\82.DAT sobre o CREDIT.MOV */
     case STATE_LOGO_ENTER:   bgaName = "81"; break;
     case STATE_MENU_ENTER:
@@ -116,6 +117,9 @@ static void LoadBGAForState(GameState state) {
         /* ExSelect_Enter(); */      /* Exceed2 */
     }
 
+    /* NX CStation: Begin no próprio quadro da troca (sem quadro preto entre Title e Station) */
+    if (state == STATE_STATION) NxStation_Enter();
+
     if (state == STATE_MENU_ENTER) {
         char path[MAX_PATH];
         snprintf(path, sizeof(path), "%s/AUDIO/082.AUD", g_game.currentDirectory);
@@ -163,6 +167,10 @@ void Game_ResetAllCheats(void) {
         g_game.cmdFreedom[_p]        = false;
         g_game.cmdVanish[_p]         = false;
         g_game.cmdNonStep[_p]        = false;
+        g_game.cmdTestBGA[_p]        = false;
+        g_game.cmdXMode[_p] = g_game.cmdAccel[_p] = g_game.cmdDecel[_p] = false;
+        g_game.cmdFlash[_p] = g_game.cmdGradeRev[_p] = false;
+        g_game.cmdNXMode[_p] = g_game.cmdUnderAttack[_p] = false;
     }
     Log_Print("CHEATS: reset global (ESC/GameOver)\n");
 }
@@ -745,6 +753,7 @@ static void Render_StateInfo(void) {
 }
 
 void Game_Render(void) {
+    Gameplay_RefreshClock();
     /* Rendering subsystems such as VSL may leave either matrix selected.
      * Re-establish the fixed 640x480 2D transform for every frame. */
     glMatrixMode(GL_PROJECTION);
@@ -789,7 +798,10 @@ void Game_Render(void) {
         glColor4f(1, 1, 1, 1);
     }
 
-    if (g_game.isVSL && g_vsl.active) {
+    if ((g_game.cmdTestBGA[0] || g_game.cmdTestBGA[1]) &&
+               (g_game.state == STATE_GAMEPLAY || g_game.state == STATE_GAMEPLAY_BEGIN)) {
+        DrawStar(); /* Extra do port: BGA Off (TestBGA) substitui o BGA/VSL da música */
+    } else if (g_game.isVSL && g_vsl.active) {
         VSL_Render(g_game.bgaFrame);
     } else if (g_game.bgaPicCount > 0 &&
         g_game.state != STATE_LOGO_SKIP &&
@@ -845,7 +857,8 @@ void Game_Render(void) {
         Loading_Render();
         break;
     case STATE_GAMEPLAY:
-        if (Movie_IsOpen()) Movie_Render();     /* fundo no lugar do .DAT */
+        if (Movie_IsOpen() && !g_game.cmdTestBGA[0] && !g_game.cmdTestBGA[1])
+            Movie_Render();     /* fundo no lugar do .DAT; TestBGA (extra do port) substitui */
         Gameplay_Render();
         break;
     case STATE_STAGE_BREAK:
@@ -958,8 +971,20 @@ void Game_MainLoop(void) {
         if (steps == MAX_CATCHUP)
             accumulator = 0.0;   /* desistiu de alcançar: não acumula dívida */
 
-        if (steps > 0) {
+        /* era: só desenhava com steps > 0. O timeGetTime (1 ms) e o refresh do
+         * monitor não andam juntos, então às vezes um refresh ficava sem quadro
+         * novo e a imagem repetia (engasgo das setas). Com vsync agora desenha
+         * em TODO refresh; o swap bloqueia e dá o ritmo. As setas pegam o
+         * relógio da música no momento do desenho (Gameplay_RefreshClock). */
+        /* Desenho extra entre passos (refresh > 60 Hz) só no gameplay, para as
+         * setas; nesses desenhos g_renderTick = false e as cenas do BGA não
+         * avançam, então animações, judge e spark ficam em 60 Hz. Fora do
+         * gameplay volta ao ritmo de 60 Hz (várias telas avançam no desenho). */
+        bool extra = g_game.vsync && g_game.state == STATE_GAMEPLAY;
+        if (steps > 0 || extra) {
+            g_renderTick = (steps > 0);
             Game_Render();       /* o swap com vsync bloqueia até o refresh */
+            g_renderTick = true;
         } else {
             Sleep(1);            /* nada a fazer neste giro */
         }

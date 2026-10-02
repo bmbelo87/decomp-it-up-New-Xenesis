@@ -195,9 +195,9 @@ static void dcCmdSet(void)
  * música, sem precisar do desbloqueio dos códigos da Select. */
 static void dcCmdSkin(void)
 {
-    if (g_dcArgc < 2) { Debug_PrintString("skin = %d (uso: /skin 0..7)", Zero_SkinIndex()); return; }
+    if (g_dcArgc < 2) { Debug_PrintString("skin = %d (uso: /skin 0..8)", Zero_SkinIndex()); return; }
     int n = atoi(g_dcArgv[1]);
-    if (n < 0 || n > 7) { Debug_PrintString("skin: 0..7"); return; }
+    if (n < 0 || n > 8) { Debug_PrintString("skin: 0..8"); return; }
     Zero_SetSkinIndex(n);
     Debug_PrintString("skin = %d (vale a partir da próxima música)", n);
 }

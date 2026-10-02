@@ -115,9 +115,46 @@ static uint32_t g_svcHeldBits;
 static uint32_t svcBitsHit(void)  { return g_svcHitBits;  }
 static uint32_t svcBitsHeld(void) { return g_svcHeldBits; }
 
+/* NX: o texto do setup usa a grade ASCII do SCOREFONT.TGA (BGA/SCOREFONT.DAT,
+ * carregado em 0x8060c20). Grade medida na imagem: 0x20..0x7F em 3 linhas de
+ * 32 colunas, célula 8x15 px a partir do topo (V=0 = topo, sem inversão).
+ * (x,y) = canto de baixo à esquerda, Y para cima, avanço 8 px — mesma convenção
+ * do Font_DrawText que era usado. A célula 8x15 é medida, não confirmada no
+ * assembly da rotina de texto do setup. */
+static int g_svcFontTex = -2;   /* -2 = ainda não tentou */
+
 static void svcText(float x, float y, const char* s)
 {
-    Font_DrawText(x, y, s);
+    /* era: Font_DrawText(x, y, s); */
+    if (g_svcFontTex == -2) {
+        char path[MAX_PATH];
+        g_svcFontTex = -1;
+        snprintf(path, sizeof(path), "%s/BGA/SCOREFONT.DAT", g_game.currentDirectory);
+        if (RES_Open(path)) {
+            g_svcFontTex = loadTextureFromRES("SCOREFONT.TGA");
+            RES_Close();
+        }
+        if (g_svcFontTex < 0) Log_Print("SVC: SCOREFONT.TGA não carregou, usando font.tga\n");
+    }
+    if (g_svcFontTex < 0 || !s) { Font_DrawText(x, y, s); return; }
+
+    Texture_Bind(g_svcFontTex);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBegin(GL_QUADS);
+    for (; *s; s++, x += 8.0f) {
+        unsigned char ch = (unsigned char)*s;
+        if (ch < 0x20 || ch >= 0x80) continue;
+        int idx = ch - 0x20;
+        float u0 = (float)((idx % 32) * 8) / 256.0f, u1 = u0 + 8.0f / 256.0f;
+        float vt = (float)((idx / 32) * 15) / 256.0f, vb = vt + 15.0f / 256.0f;
+        glTexCoord2f(u0, vb); glVertex2f(x, y);
+        glTexCoord2f(u1, vb); glVertex2f(x + 8.0f, y);
+        glTexCoord2f(u1, vt); glVertex2f(x + 8.0f, y + 15.0f);
+        glTexCoord2f(u0, vt); glVertex2f(x, y + 15.0f);
+    }
+    glEnd();
 }
 
 static void svcColor(const float* c)

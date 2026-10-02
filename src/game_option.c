@@ -5,7 +5,7 @@ static int go_counter;
 static int go_animCounter;
 
 /* ---------- persistência ----------
- * As opções do SETUP MENU e o bookkeeping ficam na imagem "pumpprex3.ini" no formato
+ * As opções do SETUP MENU e o bookkeeping ficam na imagem "SETTINGS/PIUNX.INI" (NX) no formato
  * do original (ver eeprom.c). O PUMPY.INI passou a guardar só o AudioOffset, que é uma
  * extensão do port (o original não tem ajuste de latência de áudio). */
 
@@ -89,9 +89,9 @@ void GameOption_Load(void)
     int r = Eeprom_Load();
     if (r < 0) {
         /* Primeira execução com a imagem nova: importa o PUMPY.INI antigo, se existir,
-         * para não perder as opções (inclusive FREE PLAY), e cria pumpprex3.ini. */
+         * para não perder as opções (inclusive FREE PLAY), e cria SETTINGS/PIUNX.INI. */
         if (loadIni(true))
-            Log_Print("GameOption: imported legacy PUMPY.INI into pumpprex3.ini\n");
+            Log_Print("GameOption: imported legacy PUMPY.INI into PIUNX.INI\n");
         Eeprom_Save();
     }
     loadIni(false);

@@ -199,6 +199,7 @@ bool Movie_Open(const char* path, bool loop) {
         g_mov->hasFrame = false;
         if (!g_mov->tex) glGenTextures(1, &g_mov->tex);
         Log_Print("MOVIE: '%s' aberto (MPEG puro, %.3f fps, loop=%d)\n", path, g_mov->fps, loop);
+        Movie_Update(0.0f);
         return true;
     }
     /* Zero (piu 0x80a30e0): "MOV3" tem 16 B de chave extra antes do lixo de
@@ -236,6 +237,7 @@ bool Movie_Open(const char* path, bool loop) {
     g_mov->hasFrame = false;
     if (!g_mov->tex) glGenTextures(1, &g_mov->tex);
     Log_Print("MOVIE: '%s' aberto (N=0x%X, %.3f fps, loop=%d)\n", path, n, g_mov->fps, loop);
+    Movie_Update(0.0f);   /* NX 0x8094990: já sai com o 1º quadro (sem quadro preto na troca) */
     return true;
 }
 

@@ -477,6 +477,15 @@ typedef struct {
     bool cmdFreedom[2];          /* Freedom ativo por jogador (oculta receptor) */
     bool cmdVanish[2];           /* Vanish ativo por jogador */
     bool cmdNonStep[2];          /* Non-Step ativo por jogador */
+    bool cmdTestBGA[2];          /* Extra do port: starfield (testbga.c) no lugar do BGA */
+    /* NX (piu 0x807c050, bits do jogador +0x494): */
+    bool cmdXMode[2];            /* 0x1000 X-MODE ([0xa7f4a6c]) */
+    bool cmdAccel[2];            /* 0x400 AC (0x806f460) */
+    bool cmdDecel[2];            /* 0x200 DC (0x806f079) */
+    bool cmdFlash[2];            /* 0x004 FL (0x806cf97 / 0x806f4d5) */
+    bool cmdGradeRev[2];         /* 0x100 RG: só o sprite do julgamento (0x806f856) */
+    bool cmdNXMode[2];           /* 0x2000 NX: perspectiva da pista ([0xa7f4a6d]) */
+    bool cmdUnderAttack[2];      /* 0x080 UA: pista girada 180 graus (modo 0x13) */
     int  activePlayerMask; /* 0x1=P1 ativo, 0x2=P2 ativo (ambos=0x3). Default=0x1 */
     bool isBattleMode;    /* true quando BATTLE selecionado (P1+P2, HARD steps em half1 duplicado em half2) */
     bool isVSL;           // true when current song uses 3D VSL instead of BGA
@@ -638,6 +647,11 @@ void BGM_Update(void);   /* por frame: refaz o loop no caminho DirectShow */
 void BGM_Stop(void);
 bool BGM_IsPlaying(void);
 uint32_t BGM_GetPositionMs(void);
+double BGM_ClockAnchorSec(double* nowSec);
+void Gameplay_RefreshClock(void);
+extern float g_drawAlphaMul;         /* texture.c: multiplica o alpha do Texture_DrawUV (FL) */
+extern bool g_renderTick;           /* bga.c: false no desenho extra entre passos de 60 Hz */   /* gameplay.c: relógio das setas no instante do desenho */
+double BGM_GetPositionMsF(void);
 uint32_t BGM_GetDurationMs(void);
 bool BGM_HasEnded(void);
 bool BGM_IsDSActive(void);
@@ -718,6 +732,7 @@ unsigned Title_GetJoinedMask(void); /* intro.c — [0x568FF4] bits 0/1 */
 void Title_SetJoinedMask(unsigned m);
 void Station_Update(float dt);      /* station.c — CStation do Exceed2 */
 void Station_Render(void);
+void NxStation_Enter(void);           /* nx_station.c — chamado na troca de estado */
 /* Exceed: songDB sintético montado das tabelas do exceed.exe quando não há
  * Stage.cfg. Com ele, os IDs são hex e os arquivos saem em "%X"
  * (STEP\%X.STX, AUDIO\%X.AUD, BGA\%X.DAT, TITLE\T%X.PNZ). */
@@ -797,7 +812,7 @@ void Gamestate_RenderGameOption(void);
 void Gamestate_InitGameOption(void);
 void GameOption_Load(void);
 
-/* eeprom.c — imagem de 2048 bytes no formato do PUMPY.EXE (pumpprex3.ini) */
+/* eeprom.c — imagem de 4096 bytes no formato da NX (SETTINGS/PIUNX.INI) */
 int  Eeprom_Load(void);   /* 1=ok, 0=inválido (resetado), -1=ausente */
 void Eeprom_Save(void);   /* lê PUMPY.INI; chama-se na inicialização do jogo */
 void GameOption_Save(void);   /* escreve PUMPY.INI; chama-se em cada alteração */

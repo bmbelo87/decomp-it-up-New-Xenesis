@@ -164,6 +164,11 @@ sons do `PUMPY.EXE` (descompactado) para `WAVE/`, e o log mostra 0 falhas.
   nenhuma função do original toca fora do carregador (só a tela de resultado toca os `RANK_*`), então parecem sobras.
 
 ### 5.1 EEPROM / persistência (corrigido)
+
+> **02/10/2026 — NX:** o save agora é o da NX, `SETTINGS/PIUNX.INI` (4096 bytes, versão `"NX10"` em +0xB9D,
+> Adler-32 de +0xECE..+0xED5 em +0xBA1; piu `0x8061950` load, `0x8061ac0` save, `0x8061730` padrão).
+> Layout completo no cabeçalho de `src/eeprom.c`. No 1º boot importa as opções do `pumpprex3.ini`.
+> A tabela abaixo é a do Prex3, que ficou em `#if 0` no `eeprom.c`.
 O original persiste uma imagem binária de **2048 bytes** (`c:\pumpprex3.ini`, `fread(…,1,0x800,…)`).
 Agora o port grava `pumpprex3.ini` na pasta do jogo, no mesmo formato (`src/eeprom.c`):
 
