@@ -123,14 +123,22 @@ void Loading_Update(float dt) {
             g_game.state = STATE_GAMEPLAY;
             Gameplay_Start(g_loadingSongId);
 
+            /* Extra do port: o vídeo é aberto, lido inteiro para a memória e tem o
+             * 1º quadro decodificado AQUI, com o PNZ na tela e antes da espera
+             * (que absorve o tempo). Sem isso a leitura de disco (blocos de 4 KB
+             * durante a música) caía dentro do gameplay.
+             * era: Movie_Open depois da espera. */
+            if (useMov) {
+                Log_Print("Loading: loading MOV '%s'\n", movPath);
+                if (Movie_Open(movPath, movLoop)) {
+                    Movie_Preload();
+                    Movie_Prime();
+                }
+            }
+
             /* Espera ativa como no original (0x4116b5): nada é desenhado. */
             while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
                 Sleep(1);
-
-            if (useMov) {
-                Log_Print("Loading: loading MOV '%s'\n", movPath);
-                Movie_Open(movPath, movLoop);
-            }
             if (audOk && !(g_exDemo && !Demo_SoundOn()))   /* 0x40236A */
                 BGM_Play(false);
             g_game.stateFrame = 0;

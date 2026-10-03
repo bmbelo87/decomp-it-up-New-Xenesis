@@ -15,4 +15,6 @@ void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alp
 
 void Movie_Select(int slot);    /* NX: 0 = padrão, 1 = segunda instância (prévia da Select) */
 unsigned Movie_GLTexture(void); /* textura GL do quadro atual (0 sem quadro) */
+bool Movie_Preload(void);       /* extra do port: vídeo inteiro em memória */
+void Movie_Prime(void);         /* extra do port: 1º quadro pronto antes do gameplay */
 #endif

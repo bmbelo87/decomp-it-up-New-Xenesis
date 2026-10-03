@@ -144,7 +144,7 @@ typedef enum {
 #define EX_CH_REMIX   3
 #define EX_CH_ANOTHER 4
 */
-#define EX_SONG_COUNT     192   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py */
+#define EX_SONG_COUNT     193   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão */
 #define EX_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
 #define EX_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
 #define EX_CH_NX       0
@@ -660,6 +660,19 @@ void BGM_Shutdown(void);
 
 bool Input_LoadPumpPad(void);
 void Input_LoadKeyConfig(void); /* lê piukey.cfg (teclas do pad, formato do original); chamado sozinho no 1º uso */
+void Input_SaveKeyConfig(void);
+void Input_LoadJoyConfig(void);
+void Input_SaveJoyConfig(void);
+void Input_WriteJoyConfigToIni(FILE* f);
+uint8_t Input_GetButtonKey(int player, PadButton b);
+void Input_SetButtonKey(int player, PadButton b, uint8_t code);
+void Input_GetButtonKeyName(int player, PadButton b, char* out, size_t outSize);
+void Input_GetButtonJoyName(int player, PadButton b, char* out, size_t outSize);
+void Input_ClearJoyBindings(void);
+void Input_RestoreDefaultConfig(void);
+bool Input_IsListening(void);
+void Input_StartListen(int player, PadButton b);
+void Input_CancelListen(void);
 void Input_Update(void);
 bool Input_IsPadHit(int player, PadButton button);
 bool Input_IsPadDown(int player, PadButton button);

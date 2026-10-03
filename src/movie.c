@@ -13,6 +13,10 @@
  */
 #include "pumpy.h"
 #include "movie.h"
+#include <SDL.h>
+
+/* Extra do port: tempo gasto no vídeo (ms), lido pelo detector de travadas (main.c) */
+double g_movieMs = 0.0;
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -68,6 +72,11 @@ typedef struct {
     bool     ended;
     GLuint   tex;
     bool     hasFrame;
+    /* Extra do port: vídeo da música inteiro em memória (já desembaralhado),
+     * carregado com o título (PNZ) na tela — ver Movie_Preload. */
+    uint8_t* mem;
+    uint32_t memSize;
+    uint32_t memPos;
 } MovieState;
 /* NX CSelect: fundo (BGA/BG.MOV) e prévia dentro do card tocam juntos
  * (0x8094450 e o objeto 0xa882300): duas instâncias, 0 = padrão. */
@@ -166,6 +175,13 @@ static double movie_fps(const uint8_t* s) {
 }
 
 static int movie_read(void) {                                      /* 0x4226A0 */
+    if (g_mov->mem) {   /* pré-carregado: mesmos blocos de 0x1000, sem disco */
+        uint32_t left = g_mov->memSize - g_mov->memPos;
+        int n = (int)(left < sizeof(g_mov->buf) ? left : sizeof(g_mov->buf));
+        memcpy(g_mov->buf, g_mov->mem + g_mov->memPos, (size_t)n);
+        g_mov->memPos += (uint32_t)n;
+        return n;
+    }
     int n = (int)fread(g_mov->buf, 1, sizeof(g_mov->buf), g_mov->f);
     for (int i = 0; i < n; i++) g_mov->buf[i] = g_mov->table[g_mov->buf[i]];
     return n;
@@ -244,7 +260,44 @@ bool Movie_Open(const char* path, bool loop) {
 void Movie_Close(void) {
     if (g_mov->dec) { p_close(g_mov->dec); g_mov->dec = NULL; }
     if (g_mov->f) { fclose(g_mov->f); g_mov->f = NULL; }
+    free(g_mov->mem); g_mov->mem = NULL; g_mov->memSize = g_mov->memPos = 0;
     g_mov->hasFrame = false;
+}
+
+/* Extra do port: lê o vídeo (dataStart..EOF) para a memória e desembaralha de
+ * uma vez. Chamado no loading da música, com o PNZ na tela. O Movie_Open da
+ * NX já decodificou o 1º quadro lendo alguns blocos do disco: a leitura em
+ * memória continua exatamente de onde o arquivo parou (sem repetir blocos). */
+bool Movie_Preload(void) {
+    if (!g_mov->f || g_mov->mem) return g_mov->mem != NULL;
+    long cur = ftell(g_mov->f);
+    fseek(g_mov->f, 0, SEEK_END);
+    long end = ftell(g_mov->f);
+    if (cur < (long)g_mov->dataStart || end <= (long)g_mov->dataStart) {
+        fseek(g_mov->f, cur, SEEK_SET); return false;
+    }
+    uint32_t size = (uint32_t)(end - (long)g_mov->dataStart);
+    uint8_t* m = (uint8_t*)malloc(size);
+    if (!m) { fseek(g_mov->f, cur, SEEK_SET); return false; }
+    uint32_t t0 = timeGetTime();
+    fseek(g_mov->f, (long)g_mov->dataStart, SEEK_SET);
+    size_t got = fread(m, 1, size, g_mov->f);
+    for (size_t i = 0; i < got; i++) m[i] = g_mov->table[m[i]];
+    g_mov->mem = m;
+    g_mov->memSize = (uint32_t)got;
+    g_mov->memPos = (uint32_t)(cur - (long)g_mov->dataStart);
+    if (g_mov->memPos > g_mov->memSize) g_mov->memPos = g_mov->memSize;
+    Log_Print("MOVIE: pre-carregado %u bytes em %u ms (continua em %u)\n",
+              (unsigned)got, timeGetTime() - t0, g_mov->memPos);
+    return true;
+}
+
+/* Extra do port (paridade com Exceed/Exceed2/Zero): na NX o Movie_Open já sai
+ * com o 1º quadro (0x8094990), então aqui não há nada a fazer. */
+void Movie_Prime(void) {
+    if (!g_mov->f || g_mov->ended || g_mov->decoded > 0) return;
+    g_mov->target = 0;
+    Movie_Update(0.0f);
 }
 
 bool Movie_IsOpen(void) { return g_mov->f != NULL; }
@@ -271,8 +324,17 @@ static void movie_upload(void) {
     if (!g_rgb16) return;
     pixels = g_rgb16;
 #endif
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (GLsizei)sq->width, (GLsizei)sq->height, 0,
-                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
+    /* Extra do port: aloca a textura só no 1º quadro do vídeo e depois só
+     * reescreve os pixels. Recriar a textura a cada quadro obriga o driver a
+     * realocar memória de vídeo e pode travar um frame.
+     * era: glTexImage2D em todo quadro. */
+    if (!g_mov->hasFrame) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (GLsizei)sq->width, (GLsizei)sq->height, 0,
+                     GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
+    } else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)sq->width, (GLsizei)sq->height,
+                        GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
+    }
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     g_mov->hasFrame = true;
 }
@@ -282,6 +344,7 @@ void Movie_Update(float dt) {
     if (!g_mov->f || g_mov->ended) return;
     g_mov->time += dt;
     g_mov->target = (int)(g_mov->time * g_mov->fps);
+    uint64_t hz0 = SDL_GetPerformanceCounter();
     bool newFrame = false;
     while (g_mov->decoded <= g_mov->target) {
         int st = p_parse(g_mov->dec);
@@ -294,7 +357,8 @@ void Movie_Update(float dt) {
                     Log_Print("MOVIE: fim do arquivo (%d quadros)\n", g_mov->decoded);
                     g_mov->ended = true; break;
                 }
-                fseek(g_mov->f, (long)g_mov->dataStart, SEEK_SET);
+                if (g_mov->mem) g_mov->memPos = 0;
+                else fseek(g_mov->f, (long)g_mov->dataStart, SEEK_SET);
                 n = movie_read();
                 if (n <= 0) { g_mov->ended = true; break; }
             }
@@ -305,6 +369,7 @@ void Movie_Update(float dt) {
         }
     }
     if (newFrame) movie_upload();
+    g_movieMs += (double)(SDL_GetPerformanceCounter() - hz0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 }
 
 /* Tela cheia 640x480. Projeção Y-UP: linha 0 do quadro (topo) vai em y=480. */
@@ -362,6 +427,8 @@ bool Movie_HasEnded(void) { return true; }
 int  Movie_GetDecoded(void) { return 0; }
 void Movie_Update(float dt) { (void)dt; }
 void Movie_Render(void) {}
+bool Movie_Preload(void) { return false; }
+void Movie_Prime(void) {}
 void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alpha) {
     (void)x0; (void)y0; (void)x1; (void)y1; (void)c; (void)alpha;
 }

@@ -547,9 +547,13 @@ void NxSelect_Enter(void) {
 
     buildList();
     s_cursor = 0;
+    bool newGame = (g_game.stageCount == 3 && !g_game.isBonusSong);
+    /* era: sempre voltava para s_lastId, que muda a cada DL/DR; depois de um ESC
+     * a lista reabria na última música só navegada. Agora o crédito novo começa
+     * no início e só os stages seguintes voltam para a música jogada. */
+    if (newGame) s_lastId = -1;
     for (int i = 0; i < s_count; i++)
         if ((int)g_exSongs[s_list[i]].id == s_lastId) s_cursor = i;
-    bool newGame = (g_game.stageCount == 3 && !g_game.isBonusSong);
     if (newGame) {
         s_diff[0] = s_diff[1] = 0;
         s_nxFlags[0] = s_nxFlags[1] = 0;
