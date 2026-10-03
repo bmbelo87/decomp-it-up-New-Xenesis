@@ -98,12 +98,12 @@ bool Window_Create(HINSTANCE hInstance, int width, int height, bool fullscreen) 
     /* Compatibility profile is only valid for GL >= 3.2 on some drivers; retry
      * without it if creation fails. */
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
-    g_win = SDL_CreateWindow("Pump it Up: ZERO",
+    g_win = SDL_CreateWindow("Pump it Up: New Xenesis",   /* era: "Pump it Up: ZERO" */
                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               width, height, flags);
     if (!g_win) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, 0);
-        g_win = SDL_CreateWindow("Pump it Up: ZERO",
+        g_win = SDL_CreateWindow("Pump it Up: New Xenesis",   /* era: "Pump it Up: ZERO" */
                                  SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                  width, height, flags);
     }

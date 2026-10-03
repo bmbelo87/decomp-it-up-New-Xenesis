@@ -123,7 +123,9 @@ static StepRow* stepParseRows(const uint8_t* dec, uint32_t n, bool mirror)
                r[ri].half2.ur = src[8]; r[ri].half2.dr = src[9]; }
     }
     /* O original lê só k < NumLines - 1: a última linha fica zerada (memset). */
-    if (n) memset(&r[n - 1], 0, sizeof(StepRow));
+    /* NX (.SEE): piu 0x8071ce2..0x8071d36 copia as linhas de 0 até NumLines
+     * inteiro; a regra "k < NumLines - 1" é do PUMPY.EXE e só vale para STX. */
+    if (n && !s_see) memset(&r[n - 1], 0, sizeof(StepRow));
     return r;
 }
 
@@ -351,7 +353,9 @@ bool Step_LoadSong(const char* path, StepSong* song)
         }
 
         /* O original lê só k < NumLines - 1: a última linha do bloco fica zerada. */
-        memset(&chart->rows[rowCount - 1], 0, sizeof(StepRow));
+        /* NX (.SEE) lê todas as linhas (piu 0x8071d30: k < NumLines); zerar a
+         * última apagava caudas de long no fim do bloco (ex.: Up Up Crazy). */
+        if (!s_see) memset(&chart->rows[rowCount - 1], 0, sizeof(StepRow));
 
         if (isDiv) {
             chart->divPageCount = divPages;
@@ -492,7 +496,8 @@ bool Step_LoadSong(const char* path, StepSong* song)
                     }
                 }
                 /* Última linha do bloco zerada, como no original (k < NumLines - 1). */
-                memset(&chart->rows[rowCount + sRowCount - 1], 0, sizeof(StepRow));
+                /* Só STX: o NX (.SEE) lê todas as linhas (piu 0x8071d30). */
+                if (!s_see) memset(&chart->rows[rowCount + sRowCount - 1], 0, sizeof(StepRow));
                 rowCount += sRowCount;
                 chart->rowCount = rowCount;
                 free(bDec);

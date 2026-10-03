@@ -476,7 +476,11 @@ static double zeroDelayGapRows(int s)
     /* NX (.SEE, delay em ms): delay positivo = Stop mesmo com a flag 0.
      * Evidência (dados, sem assembly): D08 Free! seção 3 bloco 1 dl=859 flag=1 e
      * seção 4 (CRAZY) bloco 1 dl=860 flag=0 — o mesmo Stop nas duas. */
-    if (g_chart->delayDiv == 1000 && d > 0) return 0.0;
+    /* Exceção: o delay do PRIMEIRO bloco sem a flag de Stop é só o offset/lag
+     * do início do step (ex.: 312 Don't Bother Me HARD, dl=2230, 1ª nota na
+     * linha 0) -> vira linhas em branco e as setas entram deslizando.
+     * era: if (g_chart->delayDiv == 1000 && d > 0) return 0.0; */
+    if (g_chart->delayDiv == 1000 && d > 0 && s > 0) return 0.0;
     double beats = (d / (double)(g_chart->delayDiv > 0 ? g_chart->delayDiv : 100)) * (double)g_chart->segments[s].bpm / 60.0;
     /* era: (d / 100.0) — unidade da ZERO; no .SEE dava 10x o vão */
     return beats * (double)(g_baseBeatSplit > 0 ? g_baseBeatSplit : 4);
@@ -703,16 +707,24 @@ static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, boo
     int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
     /* segurado (cabeça já passou, 0xC sozinho em 0x8087520): o corpo sai do MEIO
      * da step zone (y = 32 da seta do receptor), não da base da cabeça */
-    float headBase = held ? yh : yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
+    /* era: headBase = held ? yh : yh + 32. A cabeça (skinN_l1) tem 62-63 px a
+     * partir de y = 1 na célula de 64, então o corpo começando na base exata
+     * deixava 1 px de fresta (a "linha preta" sob a cabeça). Começa 2 px antes,
+     * por baixo da cabeça, que é desenhada depois. */
+    float headBase = held ? yh : yh + 30.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
+    /* Deslocamento X do próprio tile no .spr ("T tex x y w h ..."): skin4_l2/skin5_l2
+     * têm x = 1 e a ponta x = 0; sem ele corpo e ponta ficavam 1 px desalinhados.
+     * era: corpo e ponta em 'left' sem o deslocamento. */
+    float bodyL = left + (float)bt->srcX, tailL = left + (float)tt->srcX;
     if (tailTop > headBase) {
-        Texture_DrawUV(bt->texId, left, headBase, (float)bt->srcW, tailTop - headBase,
+        Texture_DrawUV(bt->texId, bodyL, headBase, (float)bt->srcW, tailTop - headBase,
                        bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
-        Texture_DrawUV(tt->texId, left, tailTop, (float)tt->srcW, (float)tt->srcH,
+        Texture_DrawUV(tt->texId, tailL, tailTop, (float)tt->srcW, (float)tt->srcH,
                        tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
     } else if (tailBase > headBase) {
         float frac = (tailBase - headBase) / 64.0f;
         float vTop = tt->v2 - frac * (tt->v2 - tt->v1);
-        Texture_DrawUV(tt->texId, left, headBase, (float)tt->srcW, tailBase - headBase,
+        Texture_DrawUV(tt->texId, tailL, headBase, (float)tt->srcW, tailBase - headBase,
                        tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
     }
 }
@@ -2993,6 +3005,28 @@ static void nxLifebarDraw(int p, float t, bool otherActive)
     s_nxGaugeBlink[p] = 1 - s_nxGaugeBlink[p];
 }
 
+/* Zero 0x807ff20 (arrowp.spr ao pisar). Separado do bloco do receptor para ser
+ * desenhado depois das notas (NX2: DrawStep -> DrawPushArrow -> DrawFadeArrow). */
+static void nxPushArrowDraw(int p, int panelCount, bool isDoubleOrNightmare)
+{
+    static const float k_alpha[9] = { 0.0f, 1.0f, 0.9f, 0.8f, 0.7f, 0.6f, 0.4f, 0.2f, 0.0f };
+    for (int pan = 0; pan < panelCount; pan++) {
+        int ft = g_p1FlashTimer[p][pan];
+        if (ft <= 0) continue;
+        int col = pan % 5;
+        int t = 17 - ft;                       /* 1..16 */
+        float field;
+        if (isDoubleOrNightmare) field = (pan < 5) ? 65.0f + g_skinFieldX[0] : 312.0f + g_skinFieldX[1];
+        else                     field = (p == 1 ? 348.0f : 28.0f) + g_skinFieldX[0];
+        float sc = (float)t * 0.01875f + 0.8f;
+        int idx = g_skinArrowP + col;
+        float w = (float)g_game.sprTiles[idx].srcW, h = (float)g_game.sprTiles[idx].srcH;
+        float cx = field + col * 49.0f + g_skinOffX[col] + w * 0.5f;
+        float cy = 480.0f - 378.0f - (g_skinOffY + h * 0.5f);
+        Sprite_DrawTileUV(idx, cx, cy, w * sc, h * sc, k_alpha[t / 2]);
+    }
+}
+
 void Gameplay_Render(void)
 {
     if (g_game.state != STATE_GAMEPLAY) return;
@@ -3261,22 +3295,9 @@ void Gameplay_Render(void)
          * glTranslatef) + deslocamento da skin; tile 70x70 escalado em torno de
          * (35, 35) por t * 0.01875 + 0.8, alfa = [0x0811ce40][t / 2], t = 1..16. */
         if (g_skinArrowP >= 0 && !isHalfDouble) {
-            static const float k_alpha[9] = { 0.0f, 1.0f, 0.9f, 0.8f, 0.7f, 0.6f, 0.4f, 0.2f, 0.0f };
-            for (int pan = 0; pan < panelCount; pan++) {
-                int ft = g_p1FlashTimer[p][pan];
-                if (ft <= 0) continue;
-                int col = pan % 5;
-                int t = 17 - ft;                       /* 1..16 */
-                float field;
-                if (isDoubleOrNightmare) field = (pan < 5) ? 65.0f + g_skinFieldX[0] : 312.0f + g_skinFieldX[1];
-                else                     field = (p == 1 ? 348.0f : 28.0f) + g_skinFieldX[0];
-                float sc = (float)t * 0.01875f + 0.8f;
-                int idx = g_skinArrowP + col;
-                float w = (float)g_game.sprTiles[idx].srcW, h = (float)g_game.sprTiles[idx].srcH;
-                float cx = field + col * 49.0f + g_skinOffX[col] + w * 0.5f;
-                float cy = 480.0f - 378.0f - (g_skinOffY + h * 0.5f);
-                Sprite_DrawTileUV(idx, cx, cy, w * sc, h * sc, k_alpha[t / 2]);
-            }
+            /* Desenhado depois das notas (nxPushArrowDraw), como no original:
+             * NX2 CPlayEngine::Run chama DrawStep e só depois DrawPushArrow /
+             * DrawFadeArrow. Aqui antes a ponta do long chegando cobria o efeito. */
         } else
         /* Tile "p1" do ARROW54X.SP2 — borda branca/cinza da seta.
          * Original (Ghidra): ao pressionar o botão (borda de subida), aparece com
@@ -3741,6 +3762,8 @@ void Gameplay_Render(void)
                 }
             }
         }
+        /* NX2 DrawPushArrow: depois das notas, antes da seta do long segurado */
+        if (g_skinArrowP >= 0 && !isHalfDouble) nxPushArrowDraw(p, panelCount, isDoubleOrNightmare);
         /* Exceed 0x4053D5..0x405419: cabeça do hold segurado redesenhada no
          * receptor, por cima do corpo (a linha da cabeça já foi apagada). */
         for (int panel = 0; panel < panelCount; panel++) {
