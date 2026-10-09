@@ -2,125 +2,142 @@
 
 # NXReconstructed (Decomp-it-up-New-Xenesis)
 
-> Work in progress: reconstruction of **Pump It Up NX (New Xenesis)**, starting from the
-> ZeroReconstructed code base. Everything below still describes the Zero state.
-> See [docs/ZERO_PARA_NX.md](docs/ZERO_PARA_NX.md) for the Zero → NX differences found so far.
-
-## ZeroReconstructed (base)
-
-A faithful C reconstruction of **Pump It Up: Zero** (International 7th Dance Floor), based on the
-Linux arcade executable `piu` (ELF i386).
+A faithful C reconstruction of **Pump It Up NX (New Xenesis)**, based on the Linux arcade
+executable `piu` (ELF i386).
 
 This project reverse-engineers the original binary and reproduces its gameplay, rendering, audio,
 and state machine as closely as possible — no emulation, no wrappers. Native executable for
 Windows and Linux, built with SDL2 + OpenGL.
 
 It continues the series **PumpyReconstructed** (PREX 3) → **ExceedReconstructed** →
-**Exceed2Reconstructed**. Screens from earlier versions that were replaced by their Zero
-counterparts are kept in the tree, disabled (commented out or left out of the build).
+**Exceed2Reconstructed** → **ZeroReconstructed**. Screens from earlier versions that were replaced
+by their NX counterparts are kept in the tree, disabled (commented out or left out of the build).
+See [docs/ZERO_PARA_NX.md](docs/ZERO_PARA_NX.md) for the Zero → NX differences.
+
+Releases: <https://github.com/bmbelo87/decomp-it-up-New-Xenesis/releases>
 
 ## Status
 
 | Feature                                                          | Status |
 | ---------------------------------------------------------------- | ------ |
-| Asset decryption: ENC1/ENC2 (`.AUD` / `.PNZ`), RESPAC2 (`.DAT`), MOV3 (`.MOV`) | ✅ |
-| Boot straight to LOGO (`BGA\81.DAT`, no R_WARN)                  | ✅      |
-| Title: `BGA\CREDIT.MOV` background + `WAVE\TITLE.WAV`            | ✅      |
-| Station Select (CStation): EASY / ARCADE / MISSION / REMIX, voices | ✅    |
-| Song select (CSelect): disc wheel, video preview, 60 s counter   | ✅      |
-| Song select: channels, 1P/2P difficulties, modifier codes, sounds | ✅     |
-| Song table: 148 songs from `piu` (+ C44 as an extra)             | ✅      |
-| Initial unlock state (locked songs / Another charts)             | ✅      |
-| Gameplay: note skins from `BGA\SKINxx.DAT` (8 skins)             | ✅      |
-| Gameplay: row-based judgment (taps, long notes, long + tap)      | ✅      |
-| Gameplay: judgment / combo from `BGA\COMBO.DAT`                  | ✅      |
-| Gameplay: step effect (`arrowp`), explosion (`arrowf`), sparks   | ✅      |
-| Song backgrounds: `BGA\%X.DAT` → `BGA\%X.MOV` → `BGA\000.MOV`    | ✅      |
-| Dance Grade: `GRADE.MOV`, `SCOREFONT`, letters from `GRADE.DAT`  | ✅      |
-| Stage Break (`STAGEBREAK.MOV` / `.WAV`)                          | ✅      |
-| EASY Station (CSelectEz) / MISSION Station (CSelectMission)      | ❌ (falls back to ARCADE) |
-| Next Stage / Game Over / Continue / Reward in Zero style         | ⚙️ Still the Exceed 2 versions |
-| Skin selection through select codes (needs `PIUZERO.INI` unlocks) | ⚙️ Use `/skin N` in the console |
-| Modifiers in gameplay other than 2X/3X/4X/8X and RV              | ⚙️ Shown on select, not applied yet |
+| Asset decryption: RESPAC2 (`.DAT`), MOV3 (`.MOV`), `.SEE` steps (STEE + Blowfish) | ✅ |
+| Song table: 193 songs from `piu` (`0x0813c200`)                  | ✅      |
+| Station Select (CStation): TRAINING / ARCADE / WORLD TOUR / SPECIAL ZONE | ✅ |
+| Default station from the Service Menu (EEPROM `+0xECA`)          | ✅      |
+| Song select (CSelect): carousel, channels, preview, 1P/2P difficulties | ✅ |
+| Song title / artist / BPM scrolling under the disc (`MICROGBE.TTF`) | ✅   |
+| Modifier codes with `COMMAND.DAT` icons                          | ✅      |
+| SPECIAL ZONE: channels by heart cost, hearts, extra stage        | ✅      |
+| WORLD TOUR (CSelectWorld): map, regions, missions, commands, conditions | ✅ |
+| WORLD TOUR: mission objective, items, Continue, WorldGrade, Mission Clear, unlocks | ✅ |
+| WORLD TOUR: records and names per location (`SETTINGS/RANK.DAT`) | ✅      |
+| TRAINING Station (CSelectEz): lessons / parts, lesson text, codes | ✅     |
+| Gameplay: skins from `BGA\SKINxx.DAT`, row judgment, long notes   | ✅      |
+| Gameplay: NX Mode (3D track), X Mode, AC/DC, UA, Vanish, Flash, …  | ✅      |
+| Song backgrounds: `BGA\%03X.MOV` → `BGA\%03X.DAT` → `BGA\001.MOV` | ✅     |
+| Stage Break (life by Service Menu option, 51 misses), `STAGEBREAK.MOV/.AUD` | ✅ |
+| kcal screen at the end of the credit (CSports, `SPORTS.DAT`)     | ✅      |
+| Enter Your Name with the name-change animation (`NCHANGE.DAT`)   | ✅      |
+| Service Menu with the NX options (`SCRIPT\SETUP_*.LUA`)          | ✅      |
+| Settings saved in `SETTINGS/PIUNX.INI` (EEPROM image)            | ✅      |
+| Mercy ticket / score per ticket / credit limit                   | ⚙️ Saved, not used by the game yet |
+| Restriction page, Internet Ranking                               | ❌      |
 
 ## Song Select Controls
 
 | Pad | Action |
 | --- | ------ |
-| DL / DR | Previous / next song (held: 300 → 200 → 100 → 50 ms repeat) |
-| UL | Next available difficulty |
-| UR | Next channel: BANYA → K-POP → POP → (ANOTHER, when open) → BANYA. REMIX is fixed when chosen in the Station |
+| DL / DR | Previous / next song (held: repeat with acceleration) |
+| UL / UR | Difficulty / channel |
 | C | First press: READY. Second press: start |
 
 ## Modifiers (Commands)
 
-Entered on the song select screen with the pads of the player they apply to (tables
-`0x0811c3a0` / `0x0811c960` in `piu`).
+Entered on the song select (and on the TRAINING lesson select) with the pads of the player they
+apply to (check `0x804d240`, table `0x8143ca0`, effects `0x807c050` in `piu`).
 
 | Sequence | Effect |
 | -------- | ------ |
-| `UL UR UL UR C` | Speed: 2X → 3X → 4X → 8X → RV → off |
+| `UL UR UL UR C` | Speed: 2X → 3X → 4X → 8X → off |
 | `UL UR UL UR UL UR UL UR C` | RV (random velocity) |
-| `UL UR DL DR C` | Vanish → Non-Step → off |
-| `UL UR UL UR DL DR DL DR C` | RS (random step) |
-| `DL UR DL UR DR UL DR UL C` | X (global, both players) |
 | `DR DL UR UL DR UR DL UL C` | EW (earthworm) |
+| `UL UR DL DR C` | Vanish → Non-Step → off |
+| `DL UL DR DL UR DR UL UR C` | FL (flash) |
 | `UL DL UR DR DR UL UR DL C` | FD (freedom) |
+| `DR DL UR UL DR DL UR UL C` | M (mirror) |
+| `UL UR UL UR DL DR DL DR C` | RS (random step) |
 | `DL DL DR DR UL UL UR UR C` | AC (acceleration) |
 | `DR DR DL DL UR UR UL UL C` | DC (deceleration) |
-| `DR DL UR UL DR DL UR UL C` | MR (mirror) |
-| `DL UR C DL DR UL C DR C` | 1P × 2P (2 players) |
+| `UL UR C DL DR DR DL C UR UL C` | RG (grade reverse) |
+| `DL UR DL UR DR UL DR UL C` | X Mode (both players) |
+| `DL UL C DR UR DL UL C DR UR` | NX Mode (both players) |
+| `DL C DL C DL C UR C` | UA (track rotated 180°, both players) |
+| `DR DR DR DL DR UL UR DL UR` / `C` / `UL` | Skin 1 / 2 / 7 |
+| `UL UR DL C DL DR DR UR UR` | Skin 6 |
 | `DL DR DL DR DL DR` | Reset |
 
-Skin codes (`UL UR DL C DL DR DR UR x`) and grade reverse require unlocks stored in
-`PIUZERO.INI`, which are not implemented yet.
+Extras of this port (not in `piu`): `UL UL UL DL DL DL DR UL DL` = SKIN00, and the NX2 skin codes
+`UL UR DL C DL DR DR UR DL / DR / UL` = skins 3 / 5 / 4.
 
 ## Debug Console Extras
 
 | Command | Effect |
 | ------- | ------ |
-| `/skin N` | Use `BGA\SKIN0N.DAT` (0..7) from the next song on |
+| `/skin N` | Use `BGA\SKIN0N.DAT` from the next song on |
 | F8 (during a song) | Autoplay on/off |
+| F11 | Debug overlay |
 
 ## Project Structure
 
 ```
-ZeroReconstructed/
+NXReconstructed/
 ├── src/
-│   ├── main.c            # Entry point, state machine, game loop
-│   ├── intro.c / logo.c  # Attract and title
-│   ├── zero_station.c    # Station Select (CStation)
-│   ├── zero_select.c     # Song select (CSelect)
-│   ├── zero_songs.c      # Song table generated from piu (tools/gen_zero_songs.py)
-│   ├── zero_dog.c        # MicroDog "Convert" answers used by the asset ciphers
-│   ├── gameplay.c        # Input, row judgment, long notes, skins, rendering
-│   ├── result.c          # Dance Grade and stage progression
-│   ├── movie.c           # MOV2/MOV3 playback (libmpeg2)
-│   ├── resource.c        # SPR/BGA/DAT/RESPACK/RESPAC2/ENC1/ENC2 loading
-│   ├── bga.c             # BGA playback, BGA3 scenes
-│   ├── exceed_select.c   # Exceed 2 select (disabled) + shared helpers
-│   └── ...               # audio, input, render, texture, console, etc.
-├── include/              # Headers (pumpy.h = main game state)
+│   ├── main.c              # Entry point, state machine, game loop
+│   ├── intro.c / logo.c    # Attract and title
+│   ├── nx_station.c        # Station Select (CStation)
+│   ├── nx_select.c         # Song select (CSelect), SPECIAL ZONE, modifier codes
+│   ├── nx_text.c           # Song title / artist text (stb_truetype)
+│   ├── nx_world.c          # WORLD TOUR (CSelectWorld) + nx_world_data.c (generated)
+│   ├── nx_mission.c        # Mission / lesson objective, Continue, Mission Clear
+│   ├── nx_training.c       # TRAINING (CSelectEz) + nx_training_data.c (generated)
+│   ├── nx_sports.c         # kcal screen (CSports)
+│   ├── nx_rank.c           # SETTINGS/RANK.DAT (CRankManager)
+│   ├── nx_songs.c          # Song table generated from piu
+│   ├── gameplay.c          # Input, row judgment, long notes, items, NX/X mode, rendering
+│   ├── result.c            # Dance Grade, WorldGrade and stage progression
+│   ├── step.c              # .STX / .SEE step loading
+│   ├── service_menu.c      # Service Menu (SETUP)
+│   ├── eeprom.c            # SETTINGS/PIUNX.INI (EEPROM image)
+│   ├── movie.c             # MOV2/MOV3 playback (libmpeg2)
+│   ├── resource.c / bga.c  # SPR/BGA/DAT/RESPAC2 loading, BGA3 scenes
+│   └── ...                 # audio, input, render, texture, console, earlier games, etc.
+├── include/                # Headers (pumpy.h = main game state, stb_truetype.h)
 ├── tools/
-│   ├── zero_decrypt.py   # Extracts .AUD / .PNZ / .DAT / .MOV from the Zero data
-│   ├── gen_zero_songs.py # Song table generator (reads piu)
-│   ├── gen_zero_dog.py   # Generates src/zero_dog.c from tools/data/zero_dog.key
-│   └── lua50_dump.py     # Lua 5.0 bytecode dumper for SCRIPT\*.LUA
+│   ├── zero_decrypt.py     # Extracts .AUD / .PNZ / .DAT / .MOV
+│   ├── gen_nx_songs.py     # Song table generator (reads piu)
+│   ├── gen_nx_world.py     # WORLD TOUR stages / missions / texts (reads piu)
+│   ├── gen_nx_training.py  # TRAINING lessons / texts (reads piu)
+│   ├── see_notes.py        # .SEE note histogram (Blowfish decode)
+│   ├── piudis.py           # Disassembler helper for piu
+│   └── lua50_dump.py       # Lua 5.0 bytecode dumper for SCRIPT\*.LUA
 └── CMakeLists.txt
 ```
 
 ## Building (Windows and Linux)
 
 Window, input and audio use **SDL2**, rendering is **OpenGL 1.1 + GLU**, and video uses
-**libmpeg2** (the game's own `MPEG2.dll` is 32-bit and cannot be loaded by an x64 build).
+**libmpeg2**.
 
 **Windows** (Visual Studio 2019+ with [vcpkg](https://vcpkg.io))
 
 ```powershell
-vcpkg install sdl2:x64-windows zlib:x64-windows libmpeg2:x64-windows
-cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+vcpkg install sdl2:x64-windows-static zlib:x64-windows-static libmpeg2:x64-windows-static
+cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build build --target Pumpy --config Release
 ```
+
+With a `*-windows-static` triplet the result is a single `Pumpy.exe` (static C runtime, no extra
+DLLs). Use `-A Win32` with `x86-windows-static` for 32-bit.
 
 **Linux**
 
@@ -130,36 +147,35 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-The CMake target is still named `Pumpy`. Place the executable in the Zero data folder,
-next to `AUDIO/`, `BGA/`, `SCRIPT/`, `TITLE/`, `WAVE/` and `STEP.DAT`. Assets are **not**
-included — you must provide your own copy of the Pump It Up Zero data files.
+The CMake target is still named `Pumpy`. Place the executable in the NX data folder, next to
+`AUDIO/`, `BGA/`, `SCRIPT/`, `SETTINGS/`, `TITLE/`, `WAVE/` and `STEP.DAT`. Assets are **not**
+included — you must provide your own copy of the Pump It Up NX data files.
 
 ## Technical Notes
 
-### Asset ciphers
+### Steps (`.SEE`)
 
-- **ENC2** (`.AUD` = MP3, `.PNZ` = PNG): same scheme as Exceed 2, but the 4-byte seed of the key
-  function (`0x80a3dc0`) is the MicroDog 3.4 "Convert" answer for the file's own 16-byte key
-  (`0x80a6058`), so it changes per file. Answers come from the dongle table embedded in
-  pumptools' `zerohook` (`tools/data/zero_dog.key`).
-- **ENC1** (`D*.AUD` previews): 0x86-byte header, size = `u32@0x7E ^ 0xCCBB`, static 1 KB table
-  at `0x8103940`, verified with Adler-32.
-- **RESPAC2** (`.DAT`): index always at 0x28; global key also goes through the dongle.
-- **MOV3** (`.MOV`): extra 16-byte key before the padding; MPEG-2 stream at `0xD0 + N`.
+- Magic `STEE`, 9 sections (one per mode) at `0xFC`. Each section header is the level plus
+  **200** block counts (`0x324` bytes; `piu` loops up to `[0xa880dc4] = 0xC8`), then the blocks,
+  each `u32 size + zlib`, decrypted with Blowfish (`0x8067e30`, 8 bytes every `0x18`).
+- Each block has its own BPM, beats per measure, split, delay, speed (`+96`) and stop flag
+  (`+100`); line time = `60000 / (split × BPM)` ms, blocks follow each other.
+- Row notes: `0x01` tap, `0x0A..0x0C` long, `0x0D..0x10` fake / hidden, `0x14..0x28` mission
+  items (`0x1F` = random item, replaced on load from the table at `0x810fa80`).
 
-### Gameplay layout (SKIN00)
+### Gameplay
 
-- Notes are `skinN.spr` (64×64, `TYPE ani`), positioned by code: column × 50 from x = 28 (P1)
-  / 348 (P2), per-skin column offsets (`0x80806f0`). Step zone `01.spr` drawn at (32, 42).
-- Long notes (`0x8087520`): body `skinN_l2` stretched as one quad, end `skinN_l3`, head
-  `skinN_l1` on top; a held long note starts from the middle of the step zone.
-- Judgment is per row (`0x808a760`): holding the pad hits long-note parts inside the PERFECT
-  window; a row is judged once all its notes are hit; one MISS per row.
+- NX Mode: perspective camera (75°, track tilted 60°, scale 1.5); judgment and combo move to
+  `y = 20 ± 110`. X Mode shifts notes sideways by the distance before the AC/DC curve.
+- UA and the `dd` item share the same track state (`0x13`); the `ud` item restores it.
+- Stage Break: life only counts when the Service Menu option is on and `stage + 1 ≥ option`;
+  51 misses in a row always break (except WORLD TOUR); TRAINING and EVENT mode never break.
 
-### Scoring and grade
+### Scoring, grade and kcal
 
 - PERFECT +1000, GREAT +500 (each +1000 more with combo ≥ 4), GOOD +100, BAD −700, MISS −1000
-- Grade: S ≥ 1.0 with no MISS, A ≥ 0.95, B ≥ 0.90, C ≥ 0.85, D ≥ 0.75, else F
+- kcal per stage = `(0.475·level + 7.414 + m) · minutes · (steps − miss) / steps`, VO2 with
+  `1.335·level + 19.829`; `m = 0.931` on CRAZY (`0x80735c9`).
 
 ## License
 
