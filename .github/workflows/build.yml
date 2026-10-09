@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependências
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libgl-dev libglu1-mesa-dev zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libgl-dev libglu1-mesa-dev zlib1g-dev libmpeg2-4-dev
       - name: Configurar e compilar
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

@@ -1,5 +1,11 @@
 #include "pumpy.h"
+/* era: #include <direct.h>  (só existe no Windows: quebrava o build Linux do CI) */
+#ifdef _WIN32
 #include <direct.h>
+#else
+#include <sys/stat.h>
+#define _mkdir(d) mkdir((d), 0755)
+#endif
 
 /* Persistência no formato da NX (piu, Linux): "/SETTINGS/PIUNX.INI".
  *
