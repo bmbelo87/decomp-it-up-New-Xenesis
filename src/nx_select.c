@@ -302,6 +302,7 @@ void NxCmd_Begin(void) {
     if (g_game.stageCount == 3) {
         s_nxFlags[0] = s_nxFlags[1] = 0;
         s_nxSpeed[0] = s_nxSpeed[1] = 4;
+        s_nxSkinIcon[0] = s_nxSkinIcon[1] = -1;   /* a skin volta à padrão no Menu_ResetState */
     }
     s_histLen[0] = s_histLen[1] = 0;
     s_cmdOk = true;
@@ -410,6 +411,20 @@ static void carousel(int dir) {
 /* ---------------------------------------------------------------------------
  * Canal (0x807d5a0)
  * ------------------------------------------------------------------------- */
+/* Barras do canal no COMMON: 1P/single (k_bar1P) ou 2P (k_bar2P). Escolhidas na
+ * entrada e de novo quando o 2º jogador entra (0x807e420 -> 0x807d5a0). */
+static bool loadChBars(void) {
+    static const int k_bar1P[7][2] = { {1,4}, {7,15}, {8,16}, {9,17}, {1,4}, {7,15}, {8,16} };
+    static const int k_bar2P[7][2] = { {10,18}, {11,19}, {12,20}, {13,21}, {10,18}, {11,19}, {12,20} };
+    bool ok = true;
+    for (int c = 0; c < 7; c++) {
+        const int* b = twoPlayers() ? k_bar2P[c] : k_bar1P[c];
+        ok &= BGA_GetLayerSrc(NB_COMMON, b[0], &s_chBar[c][0]);
+        ok &= BGA_GetLayerSrc(NB_COMMON, b[1], &s_chBar[c][1]);
+    }
+    return ok;
+}
+
 static void channelUpdate(bool force) {
     const ExceedSong* e = cur();
     if (!e) return;
@@ -611,17 +626,14 @@ void NxSelect_Enter(void) {
     s_srcOk = true;
     static const int k_frame[7] = { 19, 31, 27, 23, 19, 31, 27 };
     static const int k_text[7]  = { 61, 63, 62, 64, 66, 68, 67 };
-    static const int k_bar1P[7][2] = { {1,4}, {7,15}, {8,16}, {9,17}, {1,4}, {7,15}, {8,16} };
-    static const int k_bar2P[7][2] = { {10,18}, {11,19}, {12,20}, {13,21}, {10,18}, {11,19}, {12,20} };
+    /* era: k_bar1P/k_bar2P aqui, lidos só na entrada (ver loadChBars) */
     s_joined = Title_GetJoinedMask() & 3;
     if (s_joined == 0) s_joined = 1;
     for (int c = 0; c < 7; c++) {
         s_srcOk &= BGA_GetLayerSrc(NB_ARCADE, k_frame[c], &s_chFrame[c]);
         s_srcOk &= BGA_GetLayerSrc(NB_ARCADE, k_text[c], &s_chText[c]);
-        const int* b = twoPlayers() ? k_bar2P[c] : k_bar1P[c];
-        s_srcOk &= BGA_GetLayerSrc(NB_COMMON, b[0], &s_chBar[c][0]);
-        s_srcOk &= BGA_GetLayerSrc(NB_COMMON, b[1], &s_chBar[c][1]);
     }
+    s_srcOk &= loadChBars();
     s_srcOk &= BGA_GetLayerSrc(NB_ARCADE, 69, &s_lock2);
     s_srcOk &= BGA_GetLayerSrc(NB_ARCADE, 5, &s_lock);
     s_srcOk &= BGA_GetLayerSrc(NB_ARCADE, 99, &s_movieSpr);
@@ -675,6 +687,8 @@ void NxSelect_Enter(void) {
             if (Rank_LocScore(i + 1) != 0 && g_nxWorldUnlock[i]) NxSong_Unlock(g_nxWorldUnlock[i]);
         int n = (int)(Eeprom_Get32(0xF27) / 10000) * 32;   /* [0x9e3dc27] / 10000 * 32 */
         for (int i = 0; i < n && i != 0x40; i++) if (g_nxWorldUnlock[i]) NxSong_Unlock(g_nxWorldUnlock[i]);
+        /* extra do port (Service Menu > UNLOCK SPECIAL ZONE): música e todas as dificuldades */
+        if (g_game.nxUnlockSpecial) memset(s_unl, 1, sizeof(s_unl));
     }
     buildList();
     s_cursor = 0;
@@ -689,6 +703,7 @@ void NxSelect_Enter(void) {
         s_diff[0] = s_diff[1] = 0;
         s_nxFlags[0] = s_nxFlags[1] = 0;
         s_nxSpeed[0] = s_nxSpeed[1] = 4;
+        s_nxSkinIcon[0] = s_nxSkinIcon[1] = -1;   /* a skin volta à padrão no Menu_ResetState */
     }
     s_histLen[0] = s_histLen[1] = 0;
     for (int p = 0; p < 2; p++) for (int k = 0; k < 5; k++) s_posIcon[p][k] = -1;
@@ -816,7 +831,19 @@ static void playerInput(int p) {
     }
     if (Input_IsPadHit(p, PAD_C)) {
         if (!joined) {   /* 0x807e420 */
-            if (Coin_HasCredit()) { Coin_ConsumeCredit(); s_joined |= 1u << p; sfx(SFX_JOIN); buildList(); fixDiff(); carousel(0); levelsAll(); }
+            /* era: ...; buildList(); fixDiff(); carousel(0); levelsAll(); }
+             * 0x807e420: com o 2º jogador o painel passa para 1P/2P — barras do canal
+             * (0x807d5a0), níveis (0x807d820) e o texto de modo de cada lado */
+            if (Coin_HasCredit()) {
+                Coin_ConsumeCredit(); s_joined |= 1u << p; sfx(SFX_JOIN);
+                buildList(); fixDiff(); carousel(0);
+                loadChBars();
+                channelUpdate(true);
+                s_lvNew[0] = s_lvNew[1] = 0;   /* como na entrada da tela */
+                levelsAll();
+                BGA_SceneReset(NB_COMMON, "1p mode text start");
+                BGA_SceneReset(NB_COMMON, "2p mode text start");
+            }
             return;
         }
         const ExceedSong* e = cur();

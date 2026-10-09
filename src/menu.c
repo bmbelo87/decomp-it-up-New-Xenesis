@@ -16,6 +16,9 @@ void Menu_ResetState(void) {
     g_game.nxGameMode = 0;     /* 0x8062930: +0x98 = 0 */
     g_game.nxHearts = 7;       /* +0x114 = 7 */
     g_game.nxExtra = false;    /* +0x118 = 0 */
+    /* fim do crédito: a skin escolhida por código não passa para o próximo crédito;
+     * volta à padrão do projeto (SKIN08, a mesma de s_skin em zero_select.c) */
+    Zero_SetSkinIndex(8);
 }
 
 #if 0  /* DESATIVADO (27/09/2026): código só do Prex3, fora do fluxo do Exceed
