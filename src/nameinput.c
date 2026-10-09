@@ -41,6 +41,7 @@ static const char k_cnv[BLOCK_MAX] = {
 };
 
 static uint8_t g_eep[EEP_SIZE];
+static int   g_bfontChar[64];   /* NX: bfont00..63 (uma textura por caractere, índice = cnv) */
 static int   g_bfontTex = -1, g_ifontTex[4] = { -1, -1, -1, -1 }, g_timerTex = -1;
 static bool  g_flag[2];
 static int   g_curPlayer;
@@ -50,6 +51,32 @@ static int   g_curChar, g_cursor;
 static float g_elapsed;
 static int   g_time;
 static char  g_name[2][5];
+
+/* ── NX ─────────────────────────────────────────────────────────────────────
+ * CNameInput da NX (vtable 0x8110008, Begin 0x8076920, quadro 0x8076fb0):
+ *   ranking em /SETTINGS/RANK.DAT (nx_rank.c), não na EEPROM do Exceed.
+ *   ARCADE (modo 0): entra quem acha posição no top 20 (0x805f800); insere (0x805f830).
+ *   WORLD TOUR (modo 2): só com o tour concluído e score total acima do recorde
+ *     do local (0x8076c20); grava o recorde (0x805f8c0) e mostra a animação do
+ *     BGA/NCHANGE.DAT (+0x148): "start" + "bar"; contador > 90 -> "hi-score start";
+ *     terminado -> rótulo central (slot 11) vira o slot 82, nome pela WFONT em
+ *     (315,210) e "change"; contador > 330 ou CENTER -> fim.
+ *   Outros modos: ninguém entra.
+ * ------------------------------------------------------------------------- */
+#define NI_NCH 1                       /* BGA/NCHANGE.DAT (segundo BGA) */
+static bool  g_nxWorld;                /* modo 2 */
+static int   g_nxNum;                  /* número do local (1..64) */
+static int   g_nxLoc;
+static int   g_nxDisc[64];
+/* SFX_NAMEINPUT.LUA: EFF_NAME_INPUT T2_11, EFF_MOVE 3-2, EFF_MOVE_ACC 10-2, EFF_HIDDEN_SELECTED 2-1 */
+enum { NS_NAME_INPUT, NS_MOVE, NS_MOVE_ACC, NS_HIDDEN_SELECTED, NS_COUNT };
+static int   g_nxSnd[NS_COUNT] = { -1, -1, -1, -1 };
+static void  nxSnd(int k) { if (g_nxSnd[k] >= 0) Audio_Play(g_nxSnd[k], false); }
+static int   g_wfontTex[2] = { -1, -1 };
+static float g_nxCnt;                  /* +0x1c */
+static bool  g_nxChanged;
+static const int8_t k_wfCol[64] = { 0,0,0,0,0,0,0,1,1,1,1,1,1,1,2,2,2,2,2,2,2,3,3,3,3,3,3,3,4,4,4,4,4,4,4,5,5,5,5,5,5,5,6,6,6,6,6,6,6,0,0,0,0,0,0,0,1,1,1,0,10,0,0,0 };
+static const int8_t k_wfRow[64] = { 0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,3,4,5,6,0,1,2,0,10,0,0,0 };
 
 static int cnvValueToChar(int v) { return (v < 0 || v >= BLOCK_MAX) ? 0 : k_cnv[v]; }
 static int cnvCharToValue(int c)
@@ -132,10 +159,17 @@ static void bindTex(int t)
 static void bfontCenter(float x, float y, int ch, float w, float h)
 {
     int v = cnvCharToValue(ch);
-    if (v == BLOCK_MAX || g_bfontTex < 0) return;
-    bindTex(g_bfontTex);
-    float u0 = (float)(v % 8) / 8.0f, v0 = (float)(v / 8) / 8.0f;
-    float u1 = u0 + 0.125f, v1 = v0 + 0.125f;
+    if (v == BLOCK_MAX) return;
+    float u0, v0, u1, v1;
+    if (g_bfontTex >= 0) {
+        bindTex(g_bfontTex);
+        u0 = (float)(v % 8) / 8.0f; v0 = (float)(v / 8) / 8.0f;
+        u1 = u0 + 0.125f; v1 = v0 + 0.125f;
+    } else {   /* NX: bfontNN.tga inteiro */
+        if (v >= 64 || g_bfontChar[v] < 0) return;
+        bindTex(g_bfontChar[v]);
+        u0 = 0.0f; v0 = 0.0f; u1 = 1.0f; v1 = 1.0f;
+    }
     glBegin(GL_QUADS);
     glTexCoord2f(u0, v0); glVertex2f(x - w / 2, y + h / 2);
     glTexCoord2f(u0, v1); glVertex2f(x - w / 2, y - h / 2);
@@ -248,11 +282,28 @@ static void NameInput_Enter(void)
     char path[MAX_PATH];
     eepLoad();
 
-    g_flag[0] = (g_game.activePlayerMask & 1) && hsGetGrade(g_exIrTotal[0]) != -1;
-    g_flag[1] = (g_game.activePlayerMask & 2) && hsGetGrade(g_exIrTotal[1]) != -1;
+    /* era (Exceed): hsGetGrade(g_exIrTotal[p]) != -1 na EEPROM */
+    g_nxWorld = g_game.nxGameMode == 2;
+    g_phase = 0;
+    Rank_Load();
+    if (g_game.nxGameMode == 0) {          /* 0x8076994 */
+        g_flag[0] = (g_game.activePlayerMask & 1) && Rank_Find(g_exIrTotal[0]) != -1;
+        g_flag[1] = (g_game.activePlayerMask & 2) && Rank_Find(g_exIrTotal[1]) != -1;
+    } else if (g_nxWorld) {                /* 0x8076c20 */
+        g_nxLoc = NxWorld_Loc();
+        g_nxNum = g_nxWorldStages[g_nxLoc].number;
+        int p = (g_game.activePlayerMask & 1) ? 0 : 1;
+        g_flag[0] = g_flag[1] = false;
+        if (g_exIrTotal[p] > Rank_LocScore(g_nxNum)) g_flag[p] = true;
+        Log_Print("NAMEINPUT: local %d, score %u, recorde %u\n", g_nxNum, (unsigned)g_exIrTotal[p], (unsigned)Rank_LocScore(g_nxNum));
+    } else {
+        g_flag[0] = g_flag[1] = false;
+    }
     if (!g_flag[0] && !g_flag[1]) {                      /* 0x413FD8 */
         Resource_ClearBGA();
-        Game_ChangeState(STATE_IR);
+        /* NX: sem Internet Ranking (pedido do usuário) — era: Game_ChangeState(STATE_IR); */
+        (void)hsGetGrade;
+        Game_ChangeState(STATE_GAMEOVER_ENTER);
         return;
     }
 
@@ -262,6 +313,13 @@ static void NameInput_Enter(void)
     if (RES_Open(path)) {
         static const char* k_if[4] = { "font1.tga", "font2.tga", "font3.tga", "font4.tga" };
         g_bfontTex = loadTextureFromRES("bfont.tga");
+        for (int i = 0; i < 64; i++) g_bfontChar[i] = -1;
+        if (g_bfontTex < 0)   /* NX: sem a grade bfont.tga, um arquivo por caractere */
+            for (int i = 0; i < 64; i++) {
+                char nm[16];
+                snprintf(nm, sizeof(nm), "bfont%02d.tga", i);
+                g_bfontChar[i] = loadTextureFromRES(nm);
+            }
         for (int i = 0; i < 4; i++) g_ifontTex[i] = loadTextureFromRES(k_if[i]);
         g_timerTex = g_ifontTex[3];
         RES_Close();
@@ -272,15 +330,116 @@ static void NameInput_Enter(void)
     g_name[0][4] = g_name[1][4] = '\0';
     resetForPlayer(g_flag[0] ? 0 : 1);
     BGA_SetColor(NI_BGA, 1.0f, 1.0f);
+    {   /* 0x8076aaa: AUDIO/085.AUD em loop; 0x8076b4a: EFF_NAME_INPUT */
+        static const char* const k_ns[NS_COUNT] = { "T2_11.WAV", "3-2.WAV", "10-2.WAV", "2-1.WAV" };
+        for (int k = 0; k < NS_COUNT; k++) if (g_nxSnd[k] < 0) g_nxSnd[k] = Audio_LoadWaveFile(k_ns[k]);
+        snprintf(path, sizeof(path), "%s/AUDIO/085.AUD", g_game.currentDirectory);
+        BGM_Stop();
+        if (BGM_LoadAUDDirect(path)) BGM_Play(true);
+        else Log_Print("NAMEINPUT: '%s' não abriu\n", path);
+        nxSnd(NS_NAME_INPUT);
+    }
+    if (g_nxWorld) {                       /* 0x8076a8c, 0x8078070, WFONT */
+        if (!Resource_LoadBGAByName("NCHANGE")) Log_Print("NAMEINPUT: NCHANGE.DAT não carregou\n");
+        for (int i = 0; i < 64; i++) g_nxDisc[i] = -1;
+        snprintf(path, sizeof(path), "%s/BGA/WF.DAT", g_game.currentDirectory);
+        if (RES_Open(path)) {
+            static const char k_reg[4] = { 'a', 'n', 's', 'e' };
+            for (int r = 0; r < 4; r++)
+                for (int i = 0; i < 16; i++) {
+                    char nm[16];
+                    snprintf(nm, sizeof(nm), "f-%c%02d.tga", k_reg[r], i + 1);
+                    g_nxDisc[r * 16 + i] = loadTextureFromRES(nm);
+                }
+            RES_Close();
+        }
+        snprintf(path, sizeof(path), "%s/BGA/WFONT.DAT", g_game.currentDirectory);
+        if (RES_Open(path)) {
+            g_wfontTex[0] = loadTextureFromRES("wfont01.tga");
+            g_wfontTex[1] = loadTextureFromRES("wfont02.tga");
+            RES_Close();
+        }
+    }
+}
+
+/* 0x8076c90: três cartões do NCHANGE (centro 10/11, direita 4/5, esquerda 7/8) */
+static void nxCard(int texSlot, int labelSlot, int loc)
+{
+    loc = (loc % 64 + 64) % 64;
+    BGALayerSrc s;
+    if (BGA_GetLayerSrc(NI_NCH, texSlot, &s)) {
+        if (s.isSPR && s.sprTileCount > 0 && g_nxDisc[loc] >= 0) {
+            if (g_game.sprTileCount < MAX_SPR_TILES) {   /* cópia própria do tile (o original troca obj+0x10) */
+                int t = g_game.sprTileCount++;
+                g_game.sprTiles[t] = g_game.sprTiles[s.sprTileStart];
+                g_game.sprTiles[t].texId = g_nxDisc[loc];
+                s.sprTileStart = t; s.sprTileCount = 1;
+                BGA_SetLayerSrc(NI_NCH, texSlot, &s);
+            }
+        }
+    }
+    BGALayerSrc l;
+    if (BGA_GetLayerSrc(NI_NCH, 0xe + loc, &l)) BGA_SetLayerSrc(NI_NCH, labelSlot, &l);
+}
+
+static void nxChangeSetup(void)
+{
+    nxCard(10, 11, g_nxLoc);
+    nxCard(4, 5, g_nxLoc + 1);
+    nxCard(7, 8, g_nxLoc - 1);
+}
+
+/* 0x8064a20 / 0x8064820: WFONT, células 68x71 de 512x512 (coluna/linha por
+ * caractere em 0x8140300/0x8140340, textura = valor / 49), avanço 56.8,
+ * começa em x - 113.6 */
+static void wfontPrint(float x, float y, const char* s)
+{
+    x -= 113.6f;
+    for (; *s; s++, x += 56.8f) {
+        int v = cnvCharToValue(*s);
+        if (v >= 56) continue;            /* espaço e especiais não desenham (0x8064887) */
+        int t = g_wfontTex[v / 49 > 1 ? 1 : v / 49];
+        if (t < 0) continue;
+        bindTex(t);
+        /* era: coluna/linha trocadas e célula 68x71. Na imagem: 7 x 7, linha = 0x8140300
+         * (k_wfCol), coluna = 0x8140340 (k_wfRow); x = coluna * 71, y = linha * 68 */
+        float th = (float)Texture_GetHeight(t);
+        if (th <= 0.0f) th = 512.0f;
+        float u0 = k_wfRow[v] * 71.0f / 512.0f, v0 = k_wfCol[v] * 68.0f / th;
+        float u1 = u0 + 71.0f / 512.0f, v1 = v0 + 68.0f / th;
+        float yt = 480.0f - y;
+        glBegin(GL_QUADS);
+        glTexCoord2f(u0, v0); glVertex2f(x, yt);
+        glTexCoord2f(u1, v0); glVertex2f(x + 71.0f, yt);
+        glTexCoord2f(u1, v1); glVertex2f(x + 71.0f, yt - 68.0f);
+        glTexCoord2f(u0, v1); glVertex2f(x, yt - 68.0f);
+        glEnd();
+    }
 }
 
 static void finishPlayer(void)
 {
     char* nm = g_name[g_curPlayer];
-    if (g_waveSoundIds[SND_START] >= 0) Audio_Play(g_waveSoundIds[SND_START], false); /* EFF_HIDDEN_SELECTED (HIPÓTESE: START.WAV) */
+    nxSnd(NS_HIDDEN_SELECTED);   /* 0x80777ca EFF_HIDDEN_SELECTED (2-1.WAV); era: SND_START (hipótese) */
     if (nm[0] == ' ' && nm[1] == ' ' && nm[2] == ' ' && nm[3] == ' ')
         memcpy(nm, "PUMP", 4);
-    hsAddScore(g_exIrTotal[g_curPlayer], nm);
+    for (int i = 0; i < 4; i++) if (nm[i] == '\0' || nm[i] == CNV_END || nm[i] == CNV_BS) nm[i] = ' ';
+    /* era (Exceed): hsAddScore(g_exIrTotal[g_curPlayer], nm); */
+    if (g_nxWorld) {                       /* 0x8077585 */
+        Rank_SetLoc(g_nxNum, g_exIrTotal[g_curPlayer], nm);
+        Rank_Save();
+        nxChangeSetup();
+        g_phase = 2;
+        g_nxCnt = 0.0f;
+        g_nxChanged = false;
+        BGA_SceneReset(NI_NCH, "start");
+        BGA_SceneReset(NI_NCH, "bar");
+        BGA_SceneReset(NI_NCH, "hi-score start");
+        BGA_SceneReset(NI_NCH, "change");
+        return;
+    }
+    Rank_Insert(g_exIrTotal[g_curPlayer], nm);   /* 0x80775b0 */
+    Rank_Save();
 
     bool two = (g_game.activePlayerMask & 3) == 3;
     if (g_curPlayer == 0 && g_flag[1]) {
@@ -289,13 +448,15 @@ static void finishPlayer(void)
         return;
     }
     Resource_ClearBGA();
-    Game_ChangeState(two ? STATE_GAMEOVER_ENTER : STATE_IR);
+    /* NX: sem Internet Ranking — era: Game_ChangeState(two ? STATE_GAMEOVER_ENTER : STATE_IR); */
+    (void)two;
+    Game_ChangeState(STATE_GAMEOVER_ENTER);
 }
 
 static void playMove(void)
 {
-    int s = g_accel > 2 ? SND_10_2 : SND_PUSHPANEL;      /* EFF_NAME_REPEAT / EFF_MENU_PUSH_FOOT_PANEL (HIPÓTESE) */
-    if (g_waveSoundIds[s] >= 0) Audio_Play(g_waveSoundIds[s], false);
+    /* 0x8077920 / 0x80779d8: EFF_MOVE (3-2) / EFF_MOVE_ACC (10-2); era: SND_10_2 / SND_PUSHPANEL */
+    nxSnd(g_accel > 2 ? NS_MOVE_ACC : NS_MOVE);
 }
 
 void NameInput_Update(float dt)
@@ -305,6 +466,15 @@ void NameInput_Update(float dt)
         if (g_game.state != STATE_NAMEINPUT) return;
     }
     int p = g_curPlayer;
+
+    if (g_phase == 2) {                    /* 0x80775ba: animação do nome no local */
+        if (BGA_SceneDone(NI_NCH, "start")) g_nxCnt += 1.0f;
+        if (g_nxCnt > 330.0f || (g_nxChanged && Input_IsPadHit(p, PAD_C))) {
+            Resource_ClearBGA();
+            Game_ChangeState(STATE_GAMEOVER_ENTER);
+        }
+        return;
+    }
 
     if (g_phase == 0) {
         if (++g_cnt >= NI_START_LEN) { g_phase = 1; g_cnt = 0; g_elapsed = 0.0f; }
@@ -346,7 +516,7 @@ void NameInput_Update(float dt)
         }
     }
     if (Input_IsPadHit(p, PAD_C)) {
-        if (g_waveSoundIds[SND_PUSHPANEL] >= 0) Audio_Play(g_waveSoundIds[SND_PUSHPANEL], false);
+        nxSnd(NS_MOVE);   /* 0x8077906..0x8077920: CENTER -> EFF_MOVE; era: SND_PUSHPANEL */
         switch (cnvValueToChar(g_curChar)) {
         case CNV_BS:
             if (g_cursor > 0) { g_name[p][g_cursor] = ' '; g_cursor--; }
@@ -386,6 +556,32 @@ void NameInput_Render(void)
     int p = g_curPlayer;
     if (g_game.bgaPicCount <= 0) return;
 
+    if (g_phase == 2) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(1, 1, 1, 1);
+        BGA_DrawSlot(NI_BGA, g_cnt++ % 56, 0);   /* fundo do 085 (o original segue desenhando o BGA da tela) */
+        BGA_ScenePlay(NI_NCH, "start", true);
+        BGA_ScenePlay(NI_NCH, "bar", true);
+        if (g_nxCnt > 90.0f) {
+            BGA_ScenePlay(NI_NCH, "hi-score start", true);
+            if (BGA_SceneDone(NI_NCH, "hi-score start")) {
+                if (!g_nxChanged) {
+                    BGALayerSrc s;
+                    if (BGA_GetLayerSrc(NI_NCH, 0x52, &s)) BGA_SetLayerSrc(NI_NCH, 11, &s);
+                    g_nxChanged = true;
+                }
+                char nm[8];
+                snprintf(nm, sizeof(nm), "%c%c%c%c", g_name[p][0], g_name[p][1], g_name[p][2], g_name[p][3]);
+                glColor4f(1, 1, 1, 1);
+                wfontPrint(315.0f, 210.0f, nm);
+                BGA_ScenePlay(NI_NCH, "change", true);
+            }
+        }
+        glColor4f(1, 1, 1, 1);
+        return;
+    }
+
     if (g_phase == 0) {
         BGA_Render(NI_BGA, g_cnt);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
@@ -421,7 +617,7 @@ void NameInput_Render(void)
     BGA_DrawSlot(NI_BGA, 230 + (g_moveDir == MOVE_RIGHT ? g_moveCnt : 0), 18);
 
     glColor4f(1.0f, 1.0f, 1.0f, 0.7f);
-    snprintf(buf, sizeof(buf), "%02d", hsGetGrade(g_exIrTotal[p]) + 1);
+    snprintf(buf, sizeof(buf), "%02d", Rank_Find(g_exIrTotal[p]) + 1);   /* era: hsGetGrade */
     ifontPrint(80.0f, 40.0f, 50.0f, 50.0f, 28.0f, buf);
     snprintf(buf, sizeof(buf), "%c%c%c%c", g_name[p][0], g_name[p][1], g_name[p][2], g_name[p][3]);
     ifontPrint(165.0f, 40.0f, 50.0f, 50.0f, 38.0f, buf);

@@ -13,9 +13,9 @@
 #endif
 #endif
 
-#define MAX_SONGS 160          /* Exceed2: 138 músicas (era 128) */
+#define MAX_SONGS 256          /* NX: 193 músicas + missões do WORLD TOUR (era 160; truncava a lista da NX) */
 #define MAX_MODES 16
-#define MAX_SONGS_PER_MODE 160 /* era 128 */
+#define MAX_SONGS_PER_MODE 256 /* era 160 */
 
 typedef struct {
     int id;
