@@ -13,6 +13,9 @@ void Menu_ResetState(void) {
     g_game.stageCount = 3;
     g_game.bonusStage = true;
     g_game.isBonusSong = false;
+    g_game.nxGameMode = 0;     /* 0x8062930: +0x98 = 0 */
+    g_game.nxHearts = 7;       /* +0x114 = 7 */
+    g_game.nxExtra = false;    /* +0x118 = 0 */
 }
 
 #if 0  /* DESATIVADO (27/09/2026): código só do Prex3, fora do fluxo do Exceed

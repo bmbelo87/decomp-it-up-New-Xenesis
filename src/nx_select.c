@@ -13,11 +13,16 @@
  *   BGA/TEST.DAT                     discos "%03X.TGA" (0x8062210)
  *   /SCRIPT/UI/SFX_SELECT.LUA        EFF_* (ver k_sfx)
  *
+ * SPECIAL ZONE ([0x81f8998] == 1, g_game.nxGameMode): mesma classe, com
+ *   lista só dos canais FULL SONG/REMIX/ANOTHER que cabem nos corações (0x8062566),
+ *   fundo BGA/SP.MOV, corações (0x807e980), texto do tipo (0x807d6e5) e "bonus".
+ *
  * Diferenças conhecidas do original:
- *   - só o modo arcade ([0x81f8998] == 0): sem corações/bonus do modo especial;
+ *   - o desbloqueio das músicas no Begin do modo especial (0x807aa60: tabela
+ *     0x8110340 por [0x9e3dc27] e 0x81db164) não foi feito;
  *   - ícones dos códigos: um por posição (o original guarda subícones);
- *   - o texto "artista- título- BPM" (0x807c760, FreeType NXTW.TTF em 0x8090fa0)
- *     sai com a fonte do projeto, posição aproximada;
+ *   - o texto "título- artista- BPM" (0x807c760, objeto 0xa880e60 com MICROGBE.TTF)
+ *     é rasterizado com stb_truetype em vez de FreeType (nx_text.c);
  *   - prévia carregada no mesmo quadro (o original usa uma thread).
  */
 #include "pumpy.h"
@@ -29,6 +34,10 @@ enum { NB_COMMON = 0, NB_LEVEL = 1, NB_ARCADE = 2, NB_COMMAND = 3 };
 
 int  Texture_Wrap(int slot, unsigned glId, int w, int h);
 void Texture_Unwrap(int slot);
+void NxText_Set(const char* str);
+void NxText_StartScroll(void);
+void NxText_Draw(void);
+void NxText_Update(float dt);
 
 /* ---------------------------------------------------------------------------
  * Sons (SFX_SELECT.LUA da NX + SFX_GLOBAL.LUA)
@@ -79,7 +88,27 @@ static BGALayerSrc s_movieSpr;       /* +0x1a8: ARCADE 99 (movie.spr) */
 static BGALayerSrc s_lvSrc[7];       /* +0x2cc..+0x2e4: LEVEL 8,9,10,1,2,3,56 */
 static BGALayerSrc s_diffText[5];    /* +0x2e8: COMMON 61,67,69,68,56 */
 static BGALayerSrc s_digit[10];      /* +0x2fc: COMMON 82, 89..97 */
+static BGALayerSrc s_heartSrc[3];    /* ARCADE 2 (cheio), 0x62 (a gastar), 0x41 (vazio) — 0x807e980 */
+static BGALayerSrc s_typeText[3];    /* +0x27c..+0x284: ARCADE 0x5a/0x5b/0x5c (canais 4/5/6) */
+static BGALayerSrc s_typeTextEx[3];  /* +0x2ac..+0x2b4: ARCADE 0x5e/0x5f/0x60 (com o extra) */
+static bool s_spOk;
 static bool s_srcOk;
+
+static bool special(void) { return g_game.nxGameMode == 1; }
+
+/* 0x8061ed0(id, 1): liga as travas por dificuldade (+0x3c..+0x40) e o avail (+0x36).
+ * g_exSongs é constante: o estado liberado fica aqui. */
+static uint8_t s_unl[EX_SONG_COUNT];
+bool NxSong_Unlocked(int i) { return i >= 0 && i < EX_SONG_COUNT && s_unl[i]; }
+void NxSong_Unlock(uint32_t id) {
+    for (int i = 0; i < EX_SONG_COUNT; i++) if (g_exSongs[i].id == id) { s_unl[i] = 1; return; }
+}
+static bool songAvail(const ExceedSong* e) { return e->avail || s_unl[e - g_exSongs]; }
+
+/* 0x8062572 / 0x807e9a9 / 0x807b4e4: custo em corações pelo canal */
+static int heartCost(const ExceedSong* e) {
+    return e->channel == EX_CH_FULLSONG ? 4 : e->channel == EX_CH_REMIX ? 3 : 2;
+}
 
 /* cópias do tile de position.spr: um objeto por slot (o original troca obj+0x10) */
 #define NPOS 20
@@ -99,7 +128,7 @@ static int wrap(int i) { if (s_count <= 0) return 0; i %= s_count; return i < 0 
  * ------------------------------------------------------------------------- */
 enum { NC_DL = 7, NC_UL = 8, NC_C = 9, NC_UR = 10, NC_DR = 11 };
 typedef struct { int n; uint8_t b[11]; } NxCode;
-static const NxCode k_nxCodes[19] = {
+static const NxCode k_nxCodes[23] = {
     { 9, { 11,11,11,7,11,8,10,7,9 } },    /*  0 skin 2 (OR)   */
     { 9, { 8,10,7,9,7,11,11,10,10 } },    /*  1 skin 6 (CANO) */
     { 9, { 11,11,11,7,11,8,10,7,8 } },    /*  2 skin 7 (CARD) */
@@ -119,13 +148,21 @@ static const NxCode k_nxCodes[19] = {
     { 5, { 8,10,8,10,9 } },               /* 16 UL UR UL UR C: x2 x3 x4 x8 */
     { 5, { 8,10,7,11,9 } },               /* 17 UL UR DL DR C: V -> NS -> desliga */
     { 6, { 7,11,7,11,7,11 } },            /* 18 DL DR DL DR DL DR: limpa */
+    /* Extra do port (não existe no piu): 777111371 = SKIN00 (REbirth), pedido do
+     * usuário; sequência tirada do código "NX cel" da NX2 (Pawprint, ALL_SKINS). */
+    { 9, { 8,8,8,7,7,7,11,8,7 } },        /* 19 skin 0 (REbirth) */
+    /* Extras do port: códigos da NX2 (select.cpp, ALL_SKINS do Pawprint),
+     * mesmos números de skin dela (CMODE_SKIN_EZ 3, _SLIME 4, _MUSIC 5). */
+    { 9, { 8,10,7,9,7,11,11,10,7 } },     /* 20 791513391 skin 3 (EZ) */
+    { 9, { 8,10,7,9,7,11,11,10,11 } },    /* 21 791513393 skin 5 (MELODY) */
+    { 9, { 8,10,7,9,7,11,11,10,8 } },     /* 22 791513397 skin 4 (SLIME) */
 };
 #define NX_HIST 25
 static uint8_t  s_hist[2][NX_HIST];
 static int      s_histLen[2];
 static unsigned s_nxFlags[2] = { 0, 0 };   /* +0x494 */
 static unsigned s_nxSpeed[2] = { 4, 4 };   /* +0x498: 4 x1, 8 x2, 0xc x3, 0x10 x4, 0x20 x8, 0x100 RV, 0x200 EW */
-static int      s_nxSkinIcon = -1;         /* posição 3 (skin, nos dois) */
+static int      s_nxSkinIcon[2] = { -1, -1 };   /* posição 3 (skin) por jogador; era um só para os dois */
 static int      s_posIcon[2][5];           /* ícone mostrado em cada posição (-1 nenhum) */
 static BGALayerSrc s_cmdIcon[37];          /* COMMAND slots 11..36 */
 static bool     s_cmdOk;
@@ -133,7 +170,7 @@ static bool     s_cmdOk;
 static int pushCode(int p, int button) {   /* 0x804d200 + 0x804d240 */
     if (s_histLen[p] == NX_HIST) { memmove(s_hist[p], s_hist[p] + 1, NX_HIST - 1); s_histLen[p]--; }
     s_hist[p][s_histLen[p]++] = (uint8_t)button;
-    for (int k = 0; k < 19; k++) {
+    for (int k = 0; k < 23; k++) {   /* era 19 (sem os extras 19..22) */
         int n = k_nxCodes[k].n;
         if (s_histLen[p] >= n && memcmp(s_hist[p] + s_histLen[p] - n, k_nxCodes[k].b, (size_t)n) == 0) {
             s_histLen[p] = 0;
@@ -163,7 +200,7 @@ static void cmdIcons(void) {
         else if (v == 0x20) ic[0] = 14; else if (v == 0x100) ic[0] = 32; else if (v == 0x200) ic[0] = 19;
         else if (f & 0x200) ic[0] = 18; else if (f & 0x400) ic[0] = 15;
         if (f & 1) ic[1] = 35; else if (f & 2) ic[1] = 28; else if (f & 4) ic[1] = 21; else if (f & 8) ic[1] = 20;
-        ic[2] = s_nxSkinIcon;
+        ic[2] = s_nxSkinIcon[p];
         if (f & 0x1000) ic[3] = 36; else if (f & 0x2000) ic[3] = 29; else if (f & 0x80) ic[3] = 34;
         if (f & 0x20) ic[4] = 31; else if (f & 0x10) ic[4] = 24; else if (f & 0x100) ic[4] = 22;
         for (int k = 0; k < 5; k++) {
@@ -189,8 +226,8 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
     static const int k_skin[4] = { 2, 6, 7, 1 }, k_skinIcon[4] = { 30, 16, 17, 23 };
     switch (code) {
     case 0: case 1: case 2: case 3:   /* NOTESKIN = n (0x8050200) */
-        Zero_SetSkinIndex(k_skin[code]);
-        s_nxSkinIcon = k_skinIcon[code];
+        Zero_SetSkinIndexP(p, k_skin[code]);   /* era: Zero_SetSkinIndex (os dois) */
+        s_nxSkinIcon[p] = k_skinIcon[code];
         break;
     case 4:  globalFlag(0x80); break;
     case 5:  globalFlag(0x2000); break;
@@ -221,9 +258,15 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
               * skin padrão do projeto (SKIN08, informado pelo usuário). */
         *f = 0; *v = 4;
         s_nxFlags[0] &= ~0x3080u; s_nxFlags[1] &= ~0x3080u;
-        Zero_SetSkinIndex(8);
-        s_nxSkinIcon = -1;
+        Zero_SetSkinIndexP(p, 8);   /* era: Zero_SetSkinIndex(8) — o código 18 zera só o jogador */
+        s_nxSkinIcon[p] = -1;
         break;
+    case 19: case 20: case 21: case 22: {   /* extras do port, sem ícone próprio */
+        static const int k_extraSkin[4] = { 0, 3, 5, 4 };   /* REbirth, EZ, MELODY, SLIME */
+        Zero_SetSkinIndexP(p, k_extraSkin[code - 19]);
+        s_nxSkinIcon[p] = -1;
+        break;
+    }
     default: return;
     }
     cmdIcons();
@@ -251,13 +294,64 @@ static void cmdToGame(void) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Códigos para o TRAINING (CSelectEz 0x8080198..0x8080213 e 0x8080a29..0x8080aad):
+ * mesmo verificador 0x804d240, mesmos efeitos 0x807c050 e o mesmo COMMAND.DAT
+ * (no índice 3 dos BGAs, como aqui).
+ * ------------------------------------------------------------------------- */
+void NxCmd_Begin(void) {
+    if (g_game.stageCount == 3) {
+        s_nxFlags[0] = s_nxFlags[1] = 0;
+        s_nxSpeed[0] = s_nxSpeed[1] = 4;
+    }
+    s_histLen[0] = s_histLen[1] = 0;
+    s_cmdOk = true;
+    for (int i = 11; i <= 36; i++) s_cmdOk &= BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);
+    if (!s_cmdOk) Log_Print("TRAINING: ícones do COMMAND.DAT faltando\n");
+    for (int p = 0; p < 2; p++) for (int k = 0; k < 5; k++) s_posIcon[p][k] = -1;
+    cmdIcons();
+}
+
+/* painel do jogador p (7 DL .. 11 DR) -> código aplicado ou -1 */
+int NxCmd_Push(int p, int button) {
+    int code = pushCode(p, button);
+    if (code >= 0) applyCode(p, code);
+    return code;
+}
+
+void NxCmd_Draw(unsigned joined) {   /* 0x807bf40 por jogador */
+    if (!s_cmdOk) return;
+    for (int p = 0; p < 2; p++) {
+        if (!(joined & (1u << p))) continue;
+        for (int k = 0; k < 5; k++) {
+            if (s_posIcon[p][k] < 0) continue;
+            char sc[24];
+            snprintf(sc, sizeof(sc), "%dp-%dcommand", p + 1, k + 1);
+            BGA_ScenePlay(NB_COMMAND, sc, true);
+        }
+    }
+}
+
+/* depois do ExSelect_StartMission: modificadores e velocidade dos códigos */
+void NxCmd_ToGame(void) {
+    cmdToGame();
+    for (int p = 0; p < 2; p++) {
+        unsigned v = s_nxSpeed[p];
+        g_game.cmdSpeedNx[p] = 0;
+        g_game.cmdSpeedMult[p] = v == 8 ? 2 : v == 0xc ? 3 : v == 0x10 ? 4 : v == 0x20 ? 8 : 1;
+        g_game.cmdRandomVelocity[p] = (v == 0x100);
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * Lista (0x8062400): canais 0..3 com algum nível (2P: só N/H/C contam)
  * ------------------------------------------------------------------------- */
 static void buildList(void) {
     s_count = 0;
     for (int i = 0; i < EX_SONG_COUNT; i++) {
         const ExceedSong* e = &g_exSongs[i];
-        if (e->channel & 4) continue;
+        if (special()) {   /* 0x8062566: só canais 4..6 e custo <= corações */
+            if (!(e->channel & 4) || heartCost(e) > g_game.nxHearts) continue;
+        } else if (e->channel & 4) continue;
         bool ok = e->level[0] >= 0 || e->level[1] >= 0 || e->level[2] >= 0;
         if (!ok && !twoPlayers()) ok = e->level[3] >= 0 || e->level[4] >= 0;
         if (ok) s_list[s_count++] = i;
@@ -298,7 +392,7 @@ static void fillCard(int pos, int listIdx) {
     int ch = e->channel;
     if (ch < 0 || ch > 6) ch = 0;
     BGA_SetLayerSrc(NB_ARCADE, pos - 1, &s_chFrame[ch]);
-    BGA_SetLayerSrc(NB_ARCADE, pos + 2, e->avail ? &s_lock : &s_lock2);
+    BGA_SetLayerSrc(NB_ARCADE, pos + 2, songAvail(e) ? &s_lock : &s_lock2);
 }
 
 /* 0x807d820(this, direção) */
@@ -330,6 +424,10 @@ static void channelUpdate(bool force) {
     BGA_SetLayerSrc(NB_COMMON, 0x63, &s_chBar[ch][1]);
     BGA_SetLayerSrc(NB_COMMON, 0x31, &s_chText[ch]);
     BGA_SceneReset(NB_COMMON, "channel text start");
+    if (special() && s_spOk && ch >= 4) {   /* 0x807d6e5: texto do tipo; com o extra, 0x52 também */
+        BGA_SetLayerSrc(NB_ARCADE, 0x4a, &s_typeText[ch - 4]);
+        if (g_game.nxExtra) BGA_SetLayerSrc(NB_ARCADE, 0x52, &s_typeTextEx[ch - 4]);
+    }
     if (changed) sfx(SFX_CHANNEL);
 }
 
@@ -397,7 +495,7 @@ static void diffText(int p, bool sceneReset) {
 }
 
 static bool diffOk(const ExceedSong* e, int d) {
-    if (d < 0 || d > 4 || e->level[d] < 0 || !e->lock[d]) return false;
+    if (d < 0 || d > 4 || e->level[d] < 0 || !(e->lock[d] || s_unl[e - g_exSongs])) return false;
     return !twoPlayers() || d <= 2;
 }
 
@@ -475,12 +573,30 @@ static void previewStart(void) {
     if (nxFind((int)e->id, "%s/AUDIO/INTRO/%03X.AUD", aud, sizeof(aud)) && BGM_LoadAUDDirect(aud))
         BGM_Play(false);
     s_previewOn = true;
+    NxText_StartScroll();   /* 0x807bb8c: prévia carregada -> texto começa a rolar */
+}
+
+/* 0x807c760: só música disponível (senão texto vazio). Idioma [0x9e3d8a9]
+ * (EEPROM +0xBA9 = svcLangOption): 0 (KOREAN) -> "%s- %s- BPM:%s" com título/artista
+ * KR (+0x10/+0x08); senão "%s- %s- BPM: %s" com título/artista EN (+0x14/+0x0C). */
+static void songText(void) {
+    const ExceedSong* e = cur();
+    char buf[512];
+    if (!e || !songAvail(e))
+        buf[0] = 0;
+    else if (g_game.svcLangOption == 0)
+        snprintf(buf, sizeof(buf), "%s- %s- BPM:%s", e->titleKr, e->artistKr, e->bpmText ? e->bpmText : "");
+    else
+        snprintf(buf, sizeof(buf), "%s- %s- BPM: %s", e->titleEn, e->artistEn, e->bpmText ? e->bpmText : "");
+    NxText_Set(buf);
 }
 
 /* ---------------------------------------------------------------------------
  * Begin (0x8079710)
  * ------------------------------------------------------------------------- */
 void NxSelect_Enter(void) {
+    if (g_game.nxGameMode == 2) { NxWorld_Enter(); return; }
+    if (g_game.nxGameMode == 3) { NxTraining_Enter(); return; }   /* TRAINING: CSelectEz (nx_training.c) */   /* WORLD TOUR: CSelectWorld (nx_world.c) */
     Title_StopMusic();
     Movie_Select(1); Movie_Close(); Movie_Select(0);
     Movie_Close();
@@ -519,6 +635,14 @@ void NxSelect_Enter(void) {
     s_cmdOk = true;
     for (int i = 11; i <= 36; i++) s_cmdOk &= BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);
     if (!s_cmdOk) Log_Print("NXSELECT: ícones do COMMAND.DAT faltando\n");
+    s_spOk = true;   /* 0x807a196..0x807a24b e fontes de 0x807e980 */
+    static const int k_heart[3] = { 2, 0x62, 0x41 };
+    for (int i = 0; i < 3; i++) {
+        s_spOk &= BGA_GetLayerSrc(NB_ARCADE, k_heart[i], &s_heartSrc[i]);
+        s_spOk &= BGA_GetLayerSrc(NB_ARCADE, 0x5a + i, &s_typeText[i]);
+        s_spOk &= BGA_GetLayerSrc(NB_ARCADE, 0x5e + i, &s_typeTextEx[i]);
+    }
+    if (!s_spOk) Log_Print("NXSELECT: camadas do modo especial faltando\n");
 
     /* um objeto position.spr por slot */
     s_posCount = 0;
@@ -532,7 +656,7 @@ void NxSelect_Enter(void) {
     snprintf(path, sizeof(path), "%s/BGA/TEST.DAT", g_game.currentDirectory);
     if (RES_Open(path)) {
         for (int i = 0; i < EX_SONG_COUNT; i++) {
-            if (g_exSongs[i].channel & 4) continue;
+            if (((g_exSongs[i].channel & 4) != 0) != special()) continue;   /* era: sempre pulava canais 4..6 */
             char name[16];
             for (int id = (int)g_exSongs[i].id, g = 0; id != -1 && g < 8 && s_discTex[i] < 0; g++, id = NX_ResId(id)) {
                 snprintf(name, sizeof(name), "%03X.TGA", (unsigned)id);
@@ -545,6 +669,13 @@ void NxSelect_Enter(void) {
     for (int k = 0; k < SFX_COUNT; k++)
         if (s_sfx[k] < 0) s_sfx[k] = Audio_LoadWaveFile(k_sfx[k]);
 
+    if (special()) {   /* 0x807aa60: músicas dos locais com recorde e as N do contador */
+        Rank_Load();
+        for (int i = 0; i <= 0x3f; i++)
+            if (Rank_LocScore(i + 1) != 0 && g_nxWorldUnlock[i]) NxSong_Unlock(g_nxWorldUnlock[i]);
+        int n = (int)(Eeprom_Get32(0xF27) / 10000) * 32;   /* [0x9e3dc27] / 10000 * 32 */
+        for (int i = 0; i < n && i != 0x40; i++) if (g_nxWorldUnlock[i]) NxSong_Unlock(g_nxWorldUnlock[i]);
+    }
     buildList();
     s_cursor = 0;
     bool newGame = (g_game.stageCount == 3 && !g_game.isBonusSong);
@@ -565,7 +696,8 @@ void NxSelect_Enter(void) {
     s_diffSaved[0] = s_diff[0];
     s_diffSaved[1] = s_diff[1];
 
-    snprintf(path, sizeof(path), "%s/BGA/BG.MOV", g_game.currentDirectory);
+    /* 0x8079801..0x8079846: "BG" no arcade, "SP" no modo especial */
+    snprintf(path, sizeof(path), "%s/BGA/%s.MOV", g_game.currentDirectory, special() ? "SP" : "BG");
     Movie_Open(path, true);
 
     static const char* const k_reset[][2] = {
@@ -576,6 +708,8 @@ void NxSelect_Enter(void) {
     for (size_t i = 0; i < sizeof(k_reset) / sizeof(k_reset[0]); i++) BGA_SceneReset(NB_COMMON, k_reset[i][1]);
     BGA_SceneReset(NB_ARCADE, "screen2 start");
     BGA_SceneReset(NB_ARCADE, "screen2 hold");
+    BGA_SceneReset(NB_ARCADE, "heart start");
+    BGA_SceneReset(NB_ARCADE, "bonus");
 
     s_dir = 0;
     s_ready = false;
@@ -594,6 +728,7 @@ void NxSelect_Enter(void) {
     carousel(0);
     channelUpdate(true);
     levelsAll();
+    songText();
     Log_Print("NXSELECT: %d músicas, cursor %d (%03X), P%s\n", s_count, s_cursor,
               cur() ? (unsigned)cur()->id : 0u, twoPlayers() ? "1+P2" : (s_joined & 2) ? "2" : "1");
 }
@@ -610,13 +745,21 @@ static void moveTo(int dir) {   /* 0x807cf80 (DR, dir 1) / 0x807d140 (DL, dir 2)
     s_cursor = wrap(s_cursor + (dir == 1 ? 1 : -1));
     s_lastId = cur() ? (int)cur()->id : -1;
     carousel(dir);
+    songText();   /* 0x807cfe5 */
     sfx(s_acc > 0x289 ? SFX_MOVE_ACC : SFX_MOVE);
+    /* 0x807d01a / 0x807d1da: canal novo != canal mostrado -> aceleração volta a 0x1f4 */
+    if (cur() && cur()->channel != s_prevCh) s_acc = 0x1f4;
 }
 
+static bool     s_wasRepeat;   /* último repeatHit veio da repetição (não do aperto) */
+static uint32_t s_repeatNow;
 static bool repeatHit(int p, int k, PadButton b) {
     uint32_t now = timeGetTime();
+    s_wasRepeat = false;
+    s_repeatNow = now;
     if (Input_IsPadHit(p, b)) { s_holdT[p][k] = now; return true; }
     if (!Input_IsPadDown(p, b) || now - s_holdT[p][k] <= 0x320) return false;
+    s_wasRepeat = true;
     /* segurando: próxima repetição em 800 - aceleração; acelera 0x1e por vez */
     if (s_acc <= 0x2cf) s_acc += 0x1e;
     s_holdT[p][k] = now - (uint32_t)s_acc;
@@ -627,7 +770,18 @@ static void startGame(void) {
     if (s_started) return;
     const ExceedSong* e = cur();
     if (!e) return;
+    if (special() && !songAvail(e)) {   /* 0x807b5cc -> 0x807bce0: sorteia uma disponível */
+        bool any = false;
+        for (int i = 0; i < s_count && !any; i++) any = songAvail(&g_exSongs[s_list[i]]);
+        if (any) {
+            do s_cursor = rand() % s_count; while (!songAvail(&g_exSongs[s_list[s_cursor]]));
+            fixDiff();
+            e = cur();
+        }
+    }
     s_started = true;
+    g_game.nxHearts -= heartCost(e);   /* 0x807b4fb (todos os modos) */
+    Log_Print("NXSELECT: corações -> %d\n", g_game.nxHearts);
     sfx(SFX_START);
     previewStop();
     Movie_Close();
@@ -642,8 +796,10 @@ static void startGame(void) {
         speed[p] = v == 8 ? 2 : v == 0xc ? 3 : v == 0x10 ? 4 : v == 0x20 ? 8 : 1;
         rv[p] = (v == 0x100);
     }
-    if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv))
+    if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv)) {
         s_started = false;
+        g_game.nxHearts += heartCost(e);   /* extra do port: não começou, devolve */
+    }
     else
         cmdToGame();
 }
@@ -665,7 +821,7 @@ static void playerInput(int p) {
         }
         const ExceedSong* e = cur();
         if (s_ready) { s_time = 0; sfx(SFX_SELECT); }
-        else if (e && e->avail) {
+        else if (e && songAvail(e)) {
             s_ready = true;
             if (s_dir != 0) { s_dir = 0; fixDiff(); carousel(0); channelUpdate(false); levelsAll(); }
             BGA_SceneReset(NB_COMMON, "center step");
@@ -678,8 +834,9 @@ static void playerInput(int p) {
         }
     }
     if (!joined) return;
-    if (repeatHit(p, 0, PAD_DR)) { s_arroDR = "arroUR click hold"; moveTo(1); }
-    if (repeatHit(p, 1, PAD_DL)) { s_arroDL = "arroUL click hold"; moveTo(2); }
+    /* 0x807d057: o próximo intervalo da repetição usa a aceleração já resetada */
+    if (repeatHit(p, 0, PAD_DR)) { s_arroDR = "arroUR click hold"; moveTo(1); if (s_wasRepeat) s_holdT[p][0] = s_repeatNow - (uint32_t)s_acc; }
+    if (repeatHit(p, 1, PAD_DL)) { s_arroDL = "arroUL click hold"; moveTo(2); if (s_wasRepeat) s_holdT[p][1] = s_repeatNow - (uint32_t)s_acc; }
     if (Input_IsPadHit(p, PAD_UR) || Input_IsPadHit(p, PAD_UL)) {
         bool up = Input_IsPadHit(p, PAD_UR);
         int q = twoPlayers() ? p : 0;
@@ -697,6 +854,8 @@ static void playerInput(int p) {
  * Quadro (0x807aee0)
  * ------------------------------------------------------------------------- */
 void NxSelect_Update(float dt) {
+    if (g_game.nxGameMode == 2) { NxWorld_Update(dt); return; }
+    if (g_game.nxGameMode == 3) { NxTraining_Update(dt); return; }
     if (s_started) return;
     int el = (int)((timeGetTime() - s_timeTick) / 1000);
     if (s_time > 0) s_time = 0x5a - el;
@@ -704,6 +863,7 @@ void NxSelect_Update(float dt) {
     if (s_time > 0 && s_time < 11 && s_time != s_prevTimeSnd) { s_prevTimeSnd = s_time; sfx(SFX_TIME_LIMIT); }
 
     Movie_Update(dt);
+    NxText_Update(dt);
     if (s_previewOn) {
         Movie_Select(1);
         Movie_Update(dt);
@@ -738,6 +898,11 @@ void NxSelect_Update(float dt) {
     playerInput(0);
     playerInput(1);
 
+    /* 0x807af7f..0x807bc33: com DL/DR segurado (0x807e830), todo quadro refaz o
+     * carrossel (0x807d820) e o canal (0x807d5a0) — o canal troca durante a rolagem.
+     * era: canal só atualizava quando o movimento parava. */
+    if (held) { carousel(s_dir); channelUpdate(false); }
+
     /* fim do movimento: volta ao carrossel parado (0x807bc38) */
     if (s_dir != 0 && BGA_SceneDone(NB_ARCADE, s_dir == 1 ? "screen2 L move" : "screen2 R move") && !held) {
         s_dir = 0;
@@ -747,13 +912,15 @@ void NxSelect_Update(float dt) {
         levelsAll();
     }
     /* parado e disponível: pede a prévia (0x807bbc1) */
-    if (s_dir == 0 && !held && !s_previewOn && cur() && cur()->avail && BGA_SceneDone(NB_ARCADE, "screen2 start"))
+    if (s_dir == 0 && !held && !s_previewOn && cur() && songAvail(cur()) && BGA_SceneDone(NB_ARCADE, "screen2 start"))
         previewStart();
 
     if (s_time <= 0) startGame();
 }
 
 void NxSelect_Render(void) {
+    if (g_game.nxGameMode == 2) { NxWorld_Render(); return; }
+    if (g_game.nxGameMode == 3) { NxTraining_Render(); return; }
     if (g_game.bgaPicCount < 4) return;
     Movie_Render();   /* BGA/BG.MOV */
     glEnable(GL_BLEND);
@@ -782,6 +949,21 @@ void NxSelect_Render(void) {
     else if (!BGA_SceneDone(NB_ARCADE, "screen2 start")) sc = "screen2 start";
     else sc = s_ready ? "screen2 click" : "screen2 hold";
     BGA_ScenePlay(NB_ARCADE, sc, true);
+    if (special() && s_spOk) {
+        /* 0x807adaf: "heart start" (o "bonus" de 0x807add9 sai só uma vez, abaixo) */
+        BGA_ScenePlay(NB_ARCADE, "heart start", true);
+        /* 0x807e980: slots 0x4b..0x51 — cheio até h-custo, "a gastar" até h
+         * (h-1 com o extra), vazio até 6; depois a cena heart6 e o "bonus" */
+        int h = g_game.nxHearts;
+        int keep = h - (cur() ? heartCost(cur()) : 0);
+        int top = g_game.nxExtra ? h - 1 : h;
+        int i = 0;
+        for (; i < keep && i <= 6; i++) BGA_SetLayerSrc(NB_ARCADE, 0x4b + i, &s_heartSrc[0]);
+        for (; i < top && i <= 6; i++)  BGA_SetLayerSrc(NB_ARCADE, 0x4b + i, &s_heartSrc[1]);
+        for (; i <= 6; i++)             BGA_SetLayerSrc(NB_ARCADE, 0x4b + i, &s_heartSrc[2]);
+        BGA_ScenePlay(NB_ARCADE, "heart6", true);
+        if (g_game.nxExtra) BGA_ScenePlay(NB_ARCADE, "bonus", true);
+    }
     /* só depois de um CENTER em música bloqueada (a cena nunca resetada começa em cur=0) */
     if (s_lockOn) {
         if (BGA_SceneDone(NB_ARCADE, "lock click")) s_lockOn = false;
@@ -821,14 +1003,16 @@ void NxSelect_Render(void) {
         } else {
             BGA_ScenePlay(NB_COMMON, "single mode text start", true);
         }
-        /* 0x807c760: "artista- título- BPM:bpm" */
+        /* era: "artista- título- BPM" com a fonte 8x8, centrado em (320,405), só parado.
         const ExceedSong* e = cur();
         if (e) {
             char buf[256];
             snprintf(buf, sizeof(buf), "%s- %s- BPM:%s", e->artistEn, e->titleEn, e->bpmText ? e->bpmText : "");
             Font_DrawStringCentered(320, 405, buf, 1, 1, 1, 1);
         }
+        */
     }
+    NxText_Draw();   /* 0x807b7b5: todo quadro (MICROGBE.TTF, nx_text.c) */
     if (s_ready) BGA_ScenePlay(NB_COMMON, "center step", true);
     glColor4f(1, 1, 1, 1);
 }

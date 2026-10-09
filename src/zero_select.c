@@ -241,9 +241,14 @@ static const ZeroCode k_codes[18] = {
 
 /* [obj 0x98c]+0x5C/+0x90: skin escolhida pelos códigos 0..4 (travados no INI);
  * sem desbloqueio fica a 0 (BGA/SKIN00.DAT, 0x8080a1f) */
-static int s_skin = 8;   /* NX: skin padrão = SKIN08 (informado pelo usuário); era 0 (Zero) */
-int Zero_SkinIndex(void) { return s_skin; }
-void Zero_SetSkinIndex(int n) { if (n >= 0 && n <= 8) s_skin = n; }
+/* era: static int s_skin = 8; (uma skin para os dois)
+ * NX2 CPlayer::m_CurrentSkin: skin por jogador. NX: padrão SKIN08 (informado
+ * pelo usuário); SKIN09..12 só existem na NX2, então o limite fica em 8. */
+static int s_skin[2] = { 8, 8 };
+int Zero_SkinIndex(void) { return s_skin[0]; }
+int Zero_SkinIndexP(int p) { return s_skin[(p == 1) ? 1 : 0]; }
+void Zero_SetSkinIndex(int n) { if (n >= 0 && n <= 8) s_skin[0] = s_skin[1] = n; }   /* console /skin */
+void Zero_SetSkinIndexP(int p, int n) { if (n >= 0 && n <= 8) s_skin[(p == 1) ? 1 : 0] = n; }
 
 static bool twoPlayers(void) { return (s_joined & 3) == 3; }
 

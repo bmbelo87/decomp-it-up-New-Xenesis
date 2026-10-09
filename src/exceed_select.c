@@ -109,7 +109,10 @@ int NX_ResId(int id) {
 int Song_BaseId(int id) {
     for (int i = 0; i < EX_SONG_COUNT; i++)
         if ((int)g_exSongs[i].id == id) return g_exSongs[i].baseId;
-    return -1;
+    /* NX: charts fora da tabela de músicas (missões AAnnk do WORLD TOUR) usam
+     * direto o par recurso/chart de 0x8061d10 (ex.: AA011 -> 103). Ids < 0x100 não são músicas. */
+    int r = NX_ResId(id);
+    return r >= 0x100 ? r : -1;
 }
 
 /* Zero: STX e TITLE são da própria música (C1112.STX, TC1112E.PNZ); AUD/MOV/DAT
@@ -819,10 +822,70 @@ bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], c
     g_game.activePlayerMask = (int)(joined & 3);
     g_game.isBattleMode = false;
     for (int p = 0; p < 2; p++) {
+        g_game.cmdSpeedNx[p] = 0;
         g_game.cmdSpeedMult[p] = speed[p] > 0 ? speed[p] : 1;
         g_game.cmdRandomVelocity[p] = rv[p];
     }
     g_exDemo = false;
+    Loading_Enter(id);
+    return true;
+}
+
+/* NX WORLD TOUR (0x8084b10 "RUN AA%02d%d" + 0x806bd94): a missão vira um RUN com o
+ * id do chart (0xAAnnk) e o modo da letra da condição. O chart não é música da
+ * tabela; entra no songDB na hora (música + entrada no modo). diff = 0..4 NORMAL..NIGHTMARE. */
+bool ExSelect_StartMission(int id, int diff, int level, unsigned joined)
+{
+    SongDB* db = &g_game.songDB;
+    if (diff < 0 || diff > 4) return false;
+    int si = Song_FindByID(db, id);
+    if (si < 0) {
+        if (db->songCount >= MAX_SONGS) return false;
+        si = db->songCount++;
+        memset(&db->songs[si], 0, sizeof(db->songs[si]));
+        db->songs[si].id = id;
+        db->songs[si].hasChart = true;
+        snprintf(db->songs[si].title, sizeof(db->songs[si].title), "%X", (unsigned)id);
+    }
+    int mi = Song_FindMode(db, k_dbModeName[diff]);
+    if (mi < 0) return false;
+    SongMode* md = &db->modes[mi];
+    int k;
+    for (k = 0; k < md->songCount; k++) if (md->songIds[k] == id) break;
+    if (k == md->songCount) {
+        if (md->songCount >= MAX_SONGS_PER_MODE) return false;
+        md->songIds[k] = id;
+        md->difficulties[k] = level;
+        md->songCount++;
+    }
+    g_game.selectedSongIndex = si;
+    g_game.selectedModeIndex = mi;
+    g_game.selectedDifficulty = level;
+    g_game.activePlayerMask = (int)(joined & 3);
+    g_game.isBattleMode = false;
+    /* 0x806b918: +0x494 |= flags, +0x498 = soma dos dígitos | 0x100 (s) / 0x200 (e) */
+    for (int p = 0; p < 2; p++) {
+        unsigned f = g_nxMods.flags;
+        g_game.cmdSpeedMult[p] = 1;
+        g_game.cmdSpeedNx[p] = g_nxMods.units;
+        g_game.cmdRandomVelocity[p] = (g_nxMods.flags & 0x10000) != 0;   /* s -> RV */
+        g_game.cmdEarthworm[p]  = (g_nxMods.flags & 0x20000) != 0;       /* e -> EW */
+        g_game.cmdVanish[p]     = (f & 1) != 0;
+        g_game.cmdNonStep[p]    = (f & 2) != 0;
+        g_game.cmdFlash[p]      = (f & 0x04) != 0;
+        g_game.cmdFreedom[p]    = (f & 0x08) != 0;
+        g_game.cmdMirror[p]     = (f & 0x10) != 0;
+        g_game.cmdRandomStep[p] = (f & 0x20) != 0;
+        g_game.cmdUnderAttack[p] = (f & 0x80) != 0;
+        g_game.cmdGradeRev[p]   = (f & 0x100) != 0;
+        g_game.cmdDecel[p]      = (f & 0x200) != 0;
+        g_game.cmdAccel[p]      = (f & 0x400) != 0;
+        g_game.cmdXMode[p]      = (f & 0x1000) != 0;
+        g_game.cmdNXMode[p]     = (f & 0x2000) != 0;
+        if (g_nxMods.skin >= 0) Zero_SetSkinIndexP(p, g_nxMods.skin);
+    }
+    g_exDemo = false;
+    Log_Print("WORLD: RUN %X %s (nível %d)\n", (unsigned)id, k_dbModeName[diff], level);
     Loading_Enter(id);
     return true;
 }
@@ -855,6 +918,7 @@ bool ExSelect_Run(int id, int m, int demo)
     g_game.isBattleMode = (m == EX_MODE_BATTLE);
     for (int p = 0; p < 2; p++) {
         g_game.cmdSpeedMult[p] = 1;
+        g_game.cmdSpeedNx[p] = 0;
         g_game.cmdRandomVelocity[p] = false;
     }
     g_exDemo = (demo != 0);
