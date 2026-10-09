@@ -12,8 +12,9 @@
  *   2 WORLD TOUR (text_wor) -> 2   3 SPECIAL ZONE (text_spe) -> 1
  * Com 2 jogadores TRAINING e WORLD dão EFF_WRONG e saem como ARCADE (0x808b6e0).
  *
- * Diferenças conhecidas: TRAINING (CSelectEz), WORLD TOUR (CSelectWorld) e o modo
- * especial ainda não existem no projeto -> todos vão para a CSelect do arcade.
+ * SPECIAL ZONE (modo 1) usa a mesma CSelect (nx_select.c) com g_game.nxGameMode = 1.
+ * Diferenças conhecidas: TRAINING (CSelectEz) e WORLD TOUR (CSelectWorld) ainda não
+ * existem no projeto -> vão para a CSelect do arcade (modo 0).
  */
 #include "pumpy.h"
 #include "bga.h"
@@ -124,7 +125,13 @@ void NxStation_Enter(void) {
 
     s_joined = Title_GetJoinedMask() & 3;
     if (s_joined == 0) s_joined = 1;
-    if (s_st < 0 || s_st > 3) s_st = 1;
+    /* era: if (s_st < 0 || s_st > 3) s_st = 1;  (lembrava a última escolha) */
+    /* 0x808ad7c: todo Begin parte do DEFAULT STATION do Service Menu ([0x9e3dbca],
+     * EEPROM +0xECA): 1, 2, 3 ou 0 para qualquer outro valor */
+    {
+        uint32_t def = Eeprom_Get32(0xECA);
+        s_st = (def >= 1 && def <= 3) ? (int)def : 0;
+    }
     s_anim = s_animPrev = 0;
     s_confirmed = false;
     s_phase = 0;
@@ -184,12 +191,14 @@ static void leave(void) {   /* 0x808b68e */
     int st0 = s_st;
     if ((s_joined & 3) == 3 && (st0 == 0 || st0 == 2)) st0 = 1;
     static const int k_mode[4] = { 3, 0, 2, 1 };   /* 0x8114978 */
-    if (k_mode[st0] != 0)
+    if (0)
         Log_Print("NXSTATION: modo %d (estação %d) ainda não existe, indo para o ARCADE\n", k_mode[st0], st0);
     Movie_Close();
     BGM_Stop();
     Title_SetJoinedMask(s_joined);
     Menu_ResetState();
+    /* 0x808b6b7: [0x81f8998] = tabela[estação]. TRAINING (3) ainda não existe aqui. */
+    g_game.nxGameMode = k_mode[st0];
     Game_ChangeState(STATE_EXSELECT);
 }
 

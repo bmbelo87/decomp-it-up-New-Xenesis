@@ -48,6 +48,7 @@
  */
 
 #include "pumpy.h"
+#include "movie.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -261,12 +262,20 @@ static void svcRenderFooter(void)
     char buf[64];
     svcColor(SVC_NORMAL);
 
-    sprintf(buf, "PUMP IT UP (PREX 3 / %d)", 3);
-    svcText(0.0f, 16.0f, buf);
-    svcText(0.0f,  0.0f, "1999-2003 ANDAMIRO CO., LTD.");
+    (void)buf;
+    /* era (Prex3): "PUMP IT UP (PREX 3 / 3)" em (0,16) e "1999-2003 ANDAMIRO CO., LTD." em (0,0) */
+    /* NX 0x80864e0: três linhas em x = 48 (Y para cima) */
+    svcText(48.0f, 64.0f, "PUMP IT UP: NX");
+    svcText(48.0f, 48.0f, "(C) 1999-2006 ANDAMIRO CO., LTD.");
+    svcText(48.0f, 32.0f, "(BUILD:1.08)");
 
+    /* NX 0x808656f (tabela 0x81144f0): topo, SOUND, BOOKKEEPING e confirmações =
+     * MOVE/SELECT; I/O e SCREEN = EXIT; STATISTICS = MOVE PAGE/EXIT; as páginas de
+     * lista do Lua (GAME/COIN SETTING) não desenham botões */
     switch (g_svcPage) {
-    case 0: case 4: case 5: case 6: case 7: case 10: case SVC_PAGE_GRAPHICS: case SVC_PAGE_BUTTON_CONFIG:
+    case 4: case 5:
+        break;
+    case 0: case 6: case 7: case 10: case 13: case SVC_PAGE_GRAPHICS: case SVC_PAGE_BUTTON_CONFIG:
         svcText(236.0f, 36.0f, "MOVE   - TEST    BUTTON");
         svcText(236.0f, 16.0f, "SELECT - SERVICE BUTTON");
         break;
@@ -294,47 +303,96 @@ static const char* SVC_MAIN_ITEMS[SVC_MAIN_COUNT] = {
     "SOUND TEST", "BOOKEEPING", "STATISTICS", "GRAPHICS SETTINGS", "BUTTON CONFIG", "EXIT"
 };
 
+/* NX: SETUP_MENU_TOP de /SCRIPT/SETUP_COMMON.LUA + nomes de SETUP_EN.LUA.
+ * EEPROM TEST não existe no NX; LANGUAGE troca o valor no próprio topo
+ * (KOREAN / ENGLISH / SPANISH / CHINESE(T), padrão ENGLISH, EEPROM +0xBA9).
+ * GRAPHICS SETTINGS e BUTTON CONFIG continuam como extras do port. */
+#define SVC_TOP_BLANK  (-1)
+#define SVC_TOP_LANG   (-2)
+static const struct { const char* name; int page; } SVC_TOP[] = {
+    { "I/O TEST",          1 },
+    { "SCREEN TEST",       3 },
+    { "GAME SETTING",      4 },
+    { "COIN SETTING",      5 },
+    { "SOUND TEST",        6 },
+    { "BOOKKEEPING",       7 },
+    { "STATISTICS",        8 },
+    /* { "RESTRICTION", ? },  comentado no SETUP_COMMON.LUA */
+    { "LANGUAGE",          SVC_TOP_LANG },
+    { "GRAPHICS SETTINGS", SVC_PAGE_GRAPHICS },       /* extra do port */
+    { "BUTTON CONFIG",     SVC_PAGE_BUTTON_CONFIG },  /* extra do port */
+    { "",                  SVC_TOP_BLANK },
+    { "EXIT",              9 },
+};
+#define SVC_TOP_COUNT ((int)(sizeof(SVC_TOP) / sizeof(SVC_TOP[0])))
+static const char* SVC_LANG_NX[4] = { "KOREAN", "ENGLISH", "SPANISH", "CHINESE(T)" };
+
 static void svcRenderMain(void)
 {
     int i;
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "SETUP MENU");
+    svcText(276.0f, 428.0f, "SETUP MENU");
 
     /* itens a partir de Y=352 descendo 20 */
-    for (i = 0; i < SVC_MAIN_COUNT; i++) {
+    for (i = 0; i < SVC_TOP_COUNT; i++) {
+        if (SVC_TOP[i].page == SVC_TOP_BLANK) continue;
         svcColorFor(i, g_svcOption);
-        svcText(276.0f, (float)(352 - i * 20), SVC_MAIN_ITEMS[i]);
+        svcText(276.0f, (float)(352 - i * 20), SVC_TOP[i].name);
+        if (SVC_TOP[i].page == SVC_TOP_LANG) {
+            if (g_game.svcLangOption == 1) svcColor(SVC_SUCCESS);
+            svcText(404.0f, (float)(352 - i * 20), SVC_LANG_NX[g_game.svcLangOption & 3]);
+        }
+    }
+
+    /* NX 0x8086290: teste da trava a cada 60 quadros -> OK/Err, em (276,132);
+     * sem dispensador de tickets ([0x9e40060] == 0), o aviso em (196,112) e
+     * "NOT CONNECTED" em vermelho em (356,112). No PC não há trava nem dispensador. */
+    {
+        static int lockFrame, lockOk;
+        char lb[48];
+        if (lockFrame++ % 60 == 0) lockOk++;
+        snprintf(lb, sizeof(lb), "Lock OK = %d Err = %d", lockOk, 0);
+        svcColor(SVC_NORMAL);
+        /* era: svcText(276.0f, 132.0f, lb); + aviso do dispensador em (196,112)/(356,112)
+         * Pedido do usuário: sem o aviso do Ticket Dispenser; o Lock OK vai para a posição dele */
+        svcText(196.0f, 112.0f, lb);
+        /* svcText(196.0f, 112.0f, "Ticket Dispenser is NOT CONNECTED.");
+        svcColor(SVC_HIGHLIGHT);
+        svcText(356.0f, 112.0f, "NOT CONNECTED"); */
     }
 
     if (hit & SVC_BIT_TEST) {
-        g_svcOption++;
-        if (g_svcOption > SVC_MAIN_COUNT - 1) g_svcOption = 0;
+        do {
+            g_svcOption++;
+            if (g_svcOption > SVC_TOP_COUNT - 1) g_svcOption = 0;
+        } while (SVC_TOP[g_svcOption].page == SVC_TOP_BLANK);
     }
     if (hit & SVC_BIT_SERVICE) {
-        /* 0..7 -> páginas 1..8 (original); 8 -> GRAPHICS (11); 9 -> BUTTON CONFIG (12); 10 -> EXIT (9) */
-        if (g_svcOption == 8)      g_svcPage = SVC_PAGE_GRAPHICS;
-        else if (g_svcOption == 9) g_svcPage = SVC_PAGE_BUTTON_CONFIG;
-        else if (g_svcOption == 10) g_svcPage = 9;
-        else                       g_svcPage = g_svcOption + 1;
-        g_svcCursor     = 0;
-        g_svcEepromDone = 0;
+        int pg = SVC_TOP[g_svcOption].page;
+        if (pg == SVC_TOP_LANG) {
+            g_game.svcLangOption = (g_game.svcLangOption + 1) & 3;
+            GameOption_Save();
+        } else if (pg != SVC_TOP_BLANK) {
+            g_svcPage       = pg;
+            g_svcCursor     = 0;
+            g_svcEepromDone = 0;
+        }
     }
-
-    svcColor(SVC_NORMAL);
-    svcText(276.0f, 125.0f, "Lock OK = 0 Err = 0");
 }
+/* era (Prex3): itens SVC_MAIN_ITEMS com EEPROM TEST e "Lock OK = 0 Err = 0" */
 
 /* -------------------------------------- ServiceMenu_RenderIOTest 0x004054c0 */
 static void svcRenderIOTest(void)
 {
     static const struct { uint32_t bit; float y; const char* label; } lines[5] = {
-        { SVC_BIT_TEST,    400.0f, "1. TEST BUTTON"    },
-        { SVC_BIT_SERVICE, 384.0f, "2. SERVICE BUTTON" },
-        { SVC_BIT_CLEAR,   368.0f, "3. CLEAR BUTTON"   },
-        { SVC_BIT_COIN1,   352.0f, "4. COIN1 "         },
-        { SVC_BIT_COIN2,   336.0f, "5. COIN2 "         },
+        /* NX 0x80870e0: rótulos com ":" no texto e o valor em " %s" */
+        { SVC_BIT_TEST,    400.0f, "1. TEST BUTTON    :" },
+        { SVC_BIT_SERVICE, 384.0f, "2. SERVICE BUTTON :" },
+        { SVC_BIT_CLEAR,   368.0f, "3. CLEAR BUTTON   :" },
+        { SVC_BIT_COIN1,   352.0f, "4. COIN 1         :" },
+        { SVC_BIT_COIN2,   336.0f, "5. COIN 2         :" },
     };
     char buf[64];
     int i;
@@ -342,12 +400,12 @@ static void svcRenderIOTest(void)
     uint32_t hit  = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "I/O TEST MENU");
+    svcText(276.0f, 428.0f, "I/O TEST");
 
     for (i = 0; i < 5; i++) {
         int on = ((held | hit) & lines[i].bit) != 0;
         svcColor(on ? SVC_HIGHLIGHT : SVC_NORMAL);
-        sprintf(buf, "%s : %s", lines[i].label, on ? "ON" : "OFF");
+        sprintf(buf, "%s %s", lines[i].label, on ? "ON" : "OFF");
         svcText(260.0f, lines[i].y, buf);
     }
 
@@ -363,7 +421,7 @@ static void svcRenderEEPROMTest(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "EEPROM TEST");
+    svcText(276.0f, 428.0f, "EEPROM TEST");
 
     if (!g_svcEepromDone) {
         FILE* f = fopen("eeprom.dat", "wb");
@@ -409,7 +467,7 @@ static void svcRenderScreenTest(void)
 
     svcDrawGrid();
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "SCREEN TEST");
+    svcText(276.0f, 428.0f, "SCREEN TEST");
     svcRenderGradientBar();
     svcRenderEEPROMOverlay();
 
@@ -417,6 +475,7 @@ static void svcRenderScreenTest(void)
 }
 
 /* ---------------------------------- ServiceMenu_RenderGameOption 0x00405910 */
+#if 0
 static const char* SVC_GAMEOPT_ITEMS[9] = {
     "GAME MODE", "LEVEL", "STAGE BREAK", "LANGUAGE", "DEMO SOUND",
     "SHOW HELP", "DEFAULT SETTING", "SAVE AND EXIT", "EXIT"
@@ -442,7 +501,7 @@ static void svcRenderGameOption(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "GAME OPTION");
+    svcText(276.0f, 428.0f, "GAME OPTION");
 
     for (i = 0; i < 9; i++) {
         float y = (float)(352 - i * 20);
@@ -536,6 +595,121 @@ static void svcRenderGameOption(void)
     if (g_game.svcLangOption == 0) g_game.svcLangOption = 1;
 }
 
+#endif /* era (Prex3): GAME OPTION com LANGUAGE, SAVE AND EXIT e STAGE BREAK "%d STAGE" */
+
+/* NX: SETUP_GAMESETTING de /SCRIPT/SETUP_COMMON.LUA (valores e padrões).
+ * EEPROM: GAME MODE +0xECE, LEVEL +0xECF, STAGE BREAK +0xED0, DEMO SOUND +0xED1,
+ * SHOW HELP +0xED2, DEFAULT STATION +0xECA (u32), MERCY TICKET +0xED3,
+ * SCORE PER TICKET +0xED4. "SAVE AND EXIT" está comentado no script: o EXIT grava.
+ * MERCY TICKET: a lista do script usa "SETUP_VALU_1" (erro de digitação, nil), e
+ * o GetMenuValuesNum para no nil -> só "OFF" existe no original. */
+static const char* SVC_GAMEOPT_ITEMS[11] = {
+    "GAME MODE", "LEVEL", "STAGE BREAK", "DEMO SOUND", "SHOW HELP",
+    "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "", "DEFAULT SETTING", "EXIT"
+};
+static const char* SVC_LEVEL_NAMES[3]  = { "1. EASY", "2. NORMAL", "3. HARD" };
+static const char* SVC_STAGEBRK_NX[5]  = { "OFF", "1ST STAGE", "2ND STAGE", "3RD STAGE", "4TH STAGE" };
+static const char* SVC_STATION_NX[4]   = { "TRAINING STATION", "ARCADE STATION", "WORLD TOUR", "SPECIAL ZONE" };
+static const char* SVC_SCORETKT_NX[7]  = { "OFF", "100000", "200000", "300000", "400000", "500000", "1000000" };
+#define SVC_MERCY_COUNT 1
+
+/* padrões do script (3º campo, base 1) */
+static void svcGameOptionReset(void)
+{
+    g_game.svcGameMode      = 0;    /* NORMAL     */
+    g_game.optionDifficulty = 1;    /* 2. NORMAL  */
+    g_game.optionToggle1    = 2;    /* 2ND STAGE  */
+    g_game.svcDemoSound     = 0;    /* ON (0 = ligado no projeto) */
+    g_game.optionToggle2    = 1;    /* SHOW HELP ON */
+    Eeprom_Set32(0xECA, 0);         /* TRAINING STATION */
+    Eeprom_Set8(0xED3, 0);          /* MERCY TICKET OFF */
+    Eeprom_Set8(0xED4, 0);          /* SCORE PER TICKET OFF */
+}
+
+static void svcRenderGameOption(void)
+{
+    int i;
+    uint32_t hit = svcBitsHit();
+    uint32_t st = Eeprom_Get32(0xECA);
+    int mercy = Eeprom_Get8(0xED3), stkt = Eeprom_Get8(0xED4);
+    if (st > 3) st = 0;
+    if (mercy >= SVC_MERCY_COUNT) mercy = 0;
+    if (stkt > 6) stkt = 0;
+
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "GAME OPTION");
+
+    for (i = 0; i < 11; i++) {
+        float y = (float)(352 - i * 20);
+        if (i == 8) continue;   /* MENU_BLANK */
+        svcColorFor(i, g_svcCursor);
+        svcText(196.0f, y, SVC_GAMEOPT_ITEMS[i]);
+
+        switch (i) {   /* verde = valor padrão, como no original */
+        case 0:
+            if (g_game.svcGameMode == 0) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.svcGameMode ? "EVENT" : "NORMAL");
+            break;
+        case 1:
+            if (g_game.optionDifficulty == 1) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, SVC_LEVEL_NAMES[g_game.optionDifficulty % 3]);
+            break;
+        case 2:
+            if (g_game.optionToggle1 == 2) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, SVC_STAGEBRK_NX[g_game.optionToggle1 % 5]);
+            break;
+        case 3:
+            if (g_game.svcDemoSound == 0) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.svcDemoSound == 0 ? "ON" : "OFF");
+            break;
+        case 4:
+            if (g_game.optionToggle2) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.optionToggle2 ? "ON" : "OFF");
+            break;
+        case 5:
+            if (st == 0) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, SVC_STATION_NX[st]);
+            break;
+        case 6:
+            if (mercy == 0) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, "OFF");
+            break;
+        case 7:
+            if (stkt == 0) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, SVC_SCORETKT_NX[stkt]);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (hit & SVC_BIT_TEST) {
+        do {
+            g_svcCursor++;
+            if (g_svcCursor > 10) g_svcCursor = 0;
+        } while (g_svcCursor == 8);
+    }
+    if (hit & SVC_BIT_SERVICE) {
+        switch (g_svcCursor) {
+        case 0: g_game.svcGameMode = !g_game.svcGameMode; break;
+        case 1: g_game.optionDifficulty = (g_game.optionDifficulty + 1) % 3; break;
+        case 2: g_game.optionToggle1 = (g_game.optionToggle1 + 1) % 5; break;
+        case 3: g_game.svcDemoSound = !g_game.svcDemoSound; break;
+        case 4: g_game.optionToggle2 = !g_game.optionToggle2; break;
+        case 5: Eeprom_Set32(0xECA, (st + 1) % 4); break;
+        case 6: Eeprom_Set8(0xED3, (uint8_t)((mercy + 1) % SVC_MERCY_COUNT)); break;
+        case 7: Eeprom_Set8(0xED4, (uint8_t)((stkt + 1) % 7)); break;
+        case 9: svcGameOptionReset(); break;
+        case 10:
+            GameOption_Save();
+            g_svcPage = 0;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 /* ------------------------------------------ GRAPHICS SETTINGS (extra do port)
  * Mesmo padrão da GAME OPTION: TEST move, SERVICE altera. As mudanças valem na
  * hora (Window_ApplyGraphics); SAVE AND EXIT grava no PUMPY.INI. */
@@ -558,7 +732,7 @@ static void svcRenderGraphics(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "GRAPHICS SETTINGS");
+    svcText(276.0f, 428.0f, "GRAPHICS SETTINGS");
 
     for (i = 0; i < 8; i++) {   /* era 9 com o UPSCALE */
         float y = (float)(352 - i * 20);
@@ -707,6 +881,7 @@ static void svcRenderButtonConfig(void)
 }
 
 /* ---------------------------------- ServiceMenu_RenderCoinOption 0x00405d80 */
+#if 0
 static const char* SVC_COINOPT_ITEMS[5] = {
     "COIN1 SETTING", "COIN2 SETTING", "DEFAULT SETTING", "SAVE AND EXIT", "EXIT"
 };
@@ -718,7 +893,7 @@ static void svcRenderCoinOption(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "COIN OPTION");
+    svcText(276.0f, 428.0f, "COIN OPTION");
 
     for (i = 0; i < 5; i++) {
         svcColorFor(i, g_svcCursor);
@@ -772,10 +947,82 @@ static void svcRenderCoinOption(void)
     }
 }
 
+#endif /* era (Prex3): COIN OPTION sem CREDIT LIMIT, DEFAULT zerava a GAME OPTION */
+
+/* NX: SETUP_COINSETTING de /SCRIPT/SETUP_COMMON.LUA. COIN1 +0xED6 (0 FREE PLAY,
+ * n = 1 CREDIT / n COINS), COIN2 +0xED7 (n = n CREDITS / 1 COIN), CREDIT LIMIT
+ * +0xED5 (0 OFF, 1..10). Padrões: COIN1 = 5, COIN2 = 1, CREDIT LIMIT = OFF.
+ * "SAVE AND EXIT" comentado no script: o EXIT grava. */
+static const char* SVC_COINOPT_ITEMS[6] = {
+    "COIN1 SETTING", "COIN2 SETTING", "CREDIT LIMIT", "", "DEFAULT SETTING", "EXIT"
+};
+
+static void svcRenderCoinOption(void)
+{
+    char buf[64];
+    int i;
+    uint32_t hit = svcBitsHit();
+    int lim = Eeprom_Get8(0xED5);
+    if (lim > 10) lim = 0;
+
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "COIN OPTION");
+
+    for (i = 0; i < 6; i++) {
+        if (i == 3) continue;   /* MENU_BLANK */
+        svcColorFor(i, g_svcCursor);
+        svcText(196.0f, (float)(352 - i * 20), SVC_COINOPT_ITEMS[i]);
+    }
+
+    svcColorFor(0, g_svcCursor);
+    if (g_game.svcCoin1 == 5) svcColor(SVC_SUCCESS);
+    if (g_game.svcCoin1 == 0) snprintf(buf, sizeof(buf), "FREE PLAY");
+    else snprintf(buf, sizeof(buf), "1 CREDIT / %d COIN%s", g_game.svcCoin1, g_game.svcCoin1 > 1 ? "S" : "");
+    svcText(404.0f, 352.0f, buf);
+
+    svcColorFor(1, g_svcCursor);
+    if (g_game.svcCoin2 == 1) svcColor(SVC_SUCCESS);
+    if (g_game.svcCoin2 == 0) snprintf(buf, sizeof(buf), "FREE PLAY");
+    else snprintf(buf, sizeof(buf), "%d CREDIT%s / 1 COIN", g_game.svcCoin2, g_game.svcCoin2 > 1 ? "S" : "");
+    svcText(404.0f, 332.0f, buf);
+
+    svcColorFor(2, g_svcCursor);
+    if (lim == 0) svcColor(SVC_SUCCESS);
+    if (lim == 0) snprintf(buf, sizeof(buf), "OFF");
+    else snprintf(buf, sizeof(buf), "%d", lim);
+    svcText(404.0f, 312.0f, buf);
+
+    if (hit & SVC_BIT_TEST) {
+        do {
+            g_svcCursor++;
+            if (g_svcCursor > 5) g_svcCursor = 0;
+        } while (g_svcCursor == 3);
+    }
+    if (hit & SVC_BIT_SERVICE) {
+        switch (g_svcCursor) {
+        case 0: g_game.svcCoin1 = (g_game.svcCoin1 + 1) % 11; break;
+        case 1: g_game.svcCoin2 = (g_game.svcCoin2 + 1) % 11; break;
+        case 2: Eeprom_Set8(0xED5, (uint8_t)((lim + 1) % 11)); break;
+        case 4:
+            g_game.svcCoin1 = 5;
+            g_game.svcCoin2 = 1;
+            Eeprom_Set8(0xED5, 0);
+            break;
+        case 5:
+            GameOption_Save();
+            g_svcPage = 0;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 /* ----------------------------------- ServiceMenu_RenderSoundTest 0x00406030
  * Item 0 toca AUDIO/%03d.AUD, item 1 percorre 35 efeitos (0..0x22), item 2 sai.
  * O original compara g_dwInputBits por igualdade exata, não por máscara.
  */
+#if 0
 static const char* SVC_SOUND_ITEMS[3] = { "AUDIO", "EFFECT SOUND", "EXIT" };
 
 static void svcRenderSoundTest(void)
@@ -785,7 +1032,7 @@ static void svcRenderSoundTest(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "SOUND TEST");
+    svcText(276.0f, 428.0f, "SOUND TEST");
 
     for (i = 0; i < 3; i++) {
         svcColorFor(i, g_svcCursor);
@@ -831,7 +1078,60 @@ static void svcRenderSoundTest(void)
     }
 }
 
+#endif /* era (Prex3): SOUND TEST com AUDIO/%03d.AUD e EFFECT SOUND */
+
+/* NX SOUND TEST (0x8087bc0): itens AUDIO / EXIT em x = 180 (tabela 0x8144e54),
+ * número "#%02d" (ou "#--") em x = 372; tocando: "Now Playing..." (180, 232),
+ * "Title : " (180, 212) e "Artist: " (180, 192). Arquivo AUDIO/%X.AUD pelo id. */
+static const char* SVC_SOUND_NX[2] = { "AUDIO", "EXIT" };
+
+static void svcRenderSoundTest(void)
+{
+    char buf[160];
+    int i;
+    uint32_t hit = svcBitsHit();
+
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "SOUND TEST");
+
+    for (i = 0; i < 2; i++) {
+        svcColorFor(i, g_svcCursor);
+        svcText(180.0f, (float)(352 - i * 20), SVC_SOUND_NX[i]);
+    }
+    svcColorFor(0, g_svcCursor);
+    if (g_svcAudioIdx < 0) svcText(372.0f, 352.0f, "#--");
+    else { snprintf(buf, sizeof(buf), "#%02d", g_svcAudioIdx); svcText(372.0f, 352.0f, buf); }
+
+    if (g_svcAudioIdx >= 0 && g_svcAudioIdx < EX_SONG_COUNT && BGM_IsPlaying()) {
+        const ExceedSong* e = &g_exSongs[g_svcAudioIdx];
+        svcColor(SVC_PALETTE[2]);
+        svcText(180.0f, 232.0f, "Now Playing...");
+        svcColor(SVC_PALETTE[3]);
+        snprintf(buf, sizeof(buf), "Title : %s", e->titleEn ? e->titleEn : "");
+        svcText(180.0f, 212.0f, buf);
+        snprintf(buf, sizeof(buf), "Artist: %s", e->artistEn ? e->artistEn : "");
+        svcText(180.0f, 192.0f, buf);
+    }
+
+    if (hit == SVC_BIT_TEST) {
+        g_svcCursor = !g_svcCursor;
+    } else if (hit == SVC_BIT_SERVICE) {
+        if (g_svcCursor == 0) {
+            g_svcAudioIdx++;
+            if (g_svcAudioIdx >= EX_SONG_COUNT) g_svcAudioIdx = 0;
+            BGM_Stop();
+            snprintf(buf, sizeof(buf), "%s/AUDIO/%X.AUD", g_game.currentDirectory, (unsigned)g_exSongs[g_svcAudioIdx].id);
+            if (BGM_LoadAUDDirect(buf)) BGM_Play(false);
+        } else {
+            BGM_Stop();
+            g_svcPage = 0;
+        }
+    }
+}
+
+
 /* --------------------------------- ServiceMenu_RenderBookkeeping 0x00406360 */
+#if 0
 static const char* SVC_BOOK_ITEMS[2] = { "RESET", "EXIT" };
 
 static void svcRenderBookkeeping(void)
@@ -841,7 +1141,7 @@ static void svcRenderBookkeeping(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "BOOKKEEPING MENU");
+    svcText(276.0f, 428.0f, "BOOKKEEPING MENU");
 
     sprintf(buf, "SERVICE : %d", g_game.svcServiceTotal);
     svcText(180.0f, 352.0f, buf);
@@ -878,7 +1178,7 @@ static void svcRenderClearBookkeeping(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "BOOKKEEPING MENU");
+    svcText(276.0f, 428.0f, "BOOKKEEPING MENU");
     svcText(196.0f, 352.0f, "CLEAR BOOKKEEPING DATA ?");
 
     /* YES/NO na horizontal: x = 228 e 324, ambos em Y=312 */
@@ -913,7 +1213,7 @@ static void svcRenderStatistics(void)
     uint32_t hit = svcBitsHit();
 
     svcColor(SVC_NORMAL);
-    svcText(276.0f, 432.0f, "STATISTICS MENU");
+    svcText(276.0f, 428.0f, "STATISTICS MENU");
 
     total = g_game.songDB.songCount;
 
@@ -948,12 +1248,152 @@ static void svcRenderStatistics(void)
     }
 }
 
+#endif /* era (Prex3): BOOKKEEPING com RESET/EXIT, YES/NO na horizontal, STATISTICS "%02d. %-24s" */
+
+/* NX BOOKKEEPING (0x8088500): SERVICE/COIN 1/COIN 2 em x = 180, y = 352/332/312;
+ * TICKET 1/2 em y = 272/252; opções RESET BOOKKEEPING / RESET RANKING / EXIT em
+ * x = 180, y = 224, 204, 184 (tabela 0x8144e84, KR/EN). Contadores da EEPROM:
+ * +0xF23 SERVICE, +0xF1B COIN 1, +0xF1F COIN 2, +0xF2F TICKET 1, +0xF33 TICKET 2. */
+static const char* SVC_BOOK_ITEMS[3] = { "RESET BOOKKEEPING", "RESET RANKING", "EXIT" };
+
+static void svcRenderBookkeeping(void)
+{
+    char buf[64];
+    int i;
+    uint32_t hit = svcBitsHit();
+
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "BOOKKEEPING MENU");
+
+    sprintf(buf, "SERVICE : %d", g_game.svcServiceTotal);
+    svcText(180.0f, 352.0f, buf);
+    sprintf(buf, "COIN 1  : %d", g_game.svcCoin1Total);
+    svcText(180.0f, 332.0f, buf);
+    sprintf(buf, "COIN 2  : %d", g_game.svcCoin2Total);
+    svcText(180.0f, 312.0f, buf);
+    sprintf(buf, "TICKET 1 : %u", (unsigned)Eeprom_Get32(0xF2F));
+    svcText(180.0f, 272.0f, buf);
+    sprintf(buf, "TICKET 2 : %u", (unsigned)Eeprom_Get32(0xF33));
+    svcText(180.0f, 252.0f, buf);
+
+    for (i = 0; i < 3; i++) {
+        svcColorFor(i, g_svcCursor);
+        svcText(180.0f, (float)(224 - i * 20), SVC_BOOK_ITEMS[i]);
+    }
+
+    if (hit == SVC_BIT_TEST) {
+        g_svcCursor++;
+        if (g_svcCursor > 2) g_svcCursor = 0;
+    } else if (hit == SVC_BIT_SERVICE) {
+        if (g_svcCursor == 0)      { g_svcPage = 10; g_svcSubCursor = 1; }   /* começa em NO */
+        else if (g_svcCursor == 1) { g_svcPage = 13; g_svcSubCursor = 1; }
+        else g_svcPage = 0;
+    }
+}
+
+/* NX 0x8088370 / 0x8088200: pergunta em (196, 352), YES/NO em x = 312 (tabelas
+ * 0x8144e74 / 0x8144e64). O y do YES/NO não foi lido: HIPÓTESE 312 e 292. */
+static const char* SVC_YESNO[2] = { "YES", "NO" };
+
+static int svcYesNo(const char* question)
+{
+    int i;
+    uint32_t hit = svcBitsHit();
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "BOOKKEEPING MENU");
+    svcText(196.0f, 352.0f, question);
+    for (i = 0; i < 2; i++) {
+        svcColorFor(i, g_svcSubCursor);
+        svcText(312.0f, (float)(312 - i * 20), SVC_YESNO[i]);
+    }
+    if (hit == SVC_BIT_TEST) {
+        g_svcSubCursor++;
+        if (g_svcSubCursor > 1) g_svcSubCursor = 0;
+        return -1;
+    }
+    if (hit == SVC_BIT_SERVICE) return g_svcSubCursor == 0 ? 1 : 0;
+    return -1;
+}
+
+static void svcRenderClearBookkeeping(void)
+{
+    int r = svcYesNo("CLEAR BOOKKEEPING DATA ?");
+    if (r < 0) return;
+    if (r == 1) {
+        g_game.svcServiceTotal = 0;
+        g_game.svcCoin1Total   = 0;
+        g_game.svcCoin2Total   = 0;
+        Eeprom_Set32(0xF2F, 0);
+        Eeprom_Set32(0xF33, 0);
+        GameOption_Save();
+        Log_Print("ServiceMenu: bookkeeping zerado\n");
+    }
+    g_svcPage = 7;
+}
+
+static void svcRenderClearRanking(void)
+{
+    int r = svcYesNo("CLEAR HIGHSCORE RANKING DATA ?");
+    if (r < 0) return;
+    if (r == 1) {
+        Rank_Reset();
+        Log_Print("ServiceMenu: ranking zerado\n");
+    }
+    g_svcPage = 7;
+}
+
+/* NX STATISTICS (0x8088810): duas colunas de 15, "%03d. %s" e a contagem
+ * "[%04d]" em x = 264 (esquerda) e 584 (direita); contagem por música em
+ * EEPROM +0xBAA (200 u32). Mesmo degradê do original nas 10 primeiras. */
+static void svcRenderStatistics(void)
+{
+    char buf[96];
+    int i, y, total;
+    uint32_t hit = svcBitsHit();
+
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "STATISTICS");
+
+    total = g_game.songDB.songCount;
+    if (total > 200) total = 200;
+
+    for (int col = 0; col < 2; col++) {
+        y = 352;
+        for (i = g_svcCursor * 30 + col * 15; i < g_svcCursor * 30 + col * 15 + 15; i++) {
+            if (i >= total) break;
+            float f = (col == 0 && i <= 9) ? (float)i * 0.1f : 1.0f;
+            glColor3f(1.0f, f, f);
+            snprintf(buf, sizeof(buf), "%03d. %.22s", i, g_game.songDB.songs[i].title);
+            svcText(col ? 336.0f : 16.0f, (float)y, buf);
+            snprintf(buf, sizeof(buf), "[%04u]", (unsigned)Eeprom_Get32(0xBAA + 4 * i));
+            svcText(col ? 584.0f : 264.0f, (float)y, buf);
+            y -= 20;
+        }
+    }
+
+    if (hit == SVC_BIT_TEST) {
+        int pages = total / 30;
+        if (total % 30 != 0) pages++;
+        if (pages < 1) pages = 1;
+        g_svcCursor++;
+        if (g_svcCursor >= pages) g_svcCursor = 0;
+    } else if (hit == SVC_BIT_SERVICE) {
+        g_svcPage = 0;
+    }
+}
+
 /* ============================================================== interface ==*/
 
 /* ------------------------------------------ ServiceMenu_Enter 0x00404ee0 */
 void ServiceMenu_Enter(void)
 {
     BGM_Stop();
+    /* o setup entra em silêncio: música da Title (EFF_TITLE), efeitos e os
+     * vídeos com áudio (prévia da Select na 2ª instância) */
+    Title_StopMusic();
+    Audio_StopAll();
+    Movie_Select(1); Movie_Close(); Movie_Select(0);
+    Movie_Close();
 
     g_svcPage       = 0;
     g_svcOption     = 0;
@@ -970,6 +1410,7 @@ void ServiceMenu_Enter(void)
     Game_ChangeState(STATE_SERVICE_MENU);
 
     /* Só agora recarrega a fonte que o clear acabou de derrubar. */
+    g_svcFontTex = -2;   /* o SCOREFONT.TGA também caiu no clear: recarrega no 1º svcText */
     Font_Init();   /* display lists GDI (Font_DrawString / overlay de debug) */
     {
         int fid = Font_LoadTexture();   /* textura usada por Font_DrawText */
@@ -1046,6 +1487,7 @@ void ServiceMenu_UpdateRender(void)
     case 8:  svcRenderStatistics();       svcRenderFooter(); break;
     case 9:  ServiceMenu_Exit();          svcRenderFooter(); break;
     case 10: svcRenderClearBookkeeping(); svcRenderFooter(); break;
+    case 13: svcRenderClearRanking();     svcRenderFooter(); break;   /* NX: CLEAR HIGHSCORE RANKING */
     case SVC_PAGE_GRAPHICS:      svcRenderGraphics();      svcRenderFooter(); break;
     case SVC_PAGE_BUTTON_CONFIG: svcRenderButtonConfig();  svcRenderFooter(); break;
     default: svcRenderFooter(); break;

@@ -92,12 +92,23 @@ static uint32_t eepGet32(int off) {
            ((uint32_t)g_eep[off + 2] << 16) | ((uint32_t)g_eep[off + 3] << 24);
 }
 
+uint32_t Eeprom_Get32(int off) {
+    if (off < 0 || off + 4 > EEP_SIZE) return 0;
+    return eepGet32(off);
+}
+
+/* campos do SETUP sem espelho em g_game (DEFAULT STATION, tickets, CREDIT LIMIT) */
+uint8_t Eeprom_Get8(int off) { return (off >= 0 && off < EEP_SIZE) ? g_eep[off] : 0; }
+void Eeprom_Set8(int off, uint8_t v) { if (off >= 0 && off < EEP_SIZE) g_eep[off] = v; }
+
 static void eepPut32(int off, uint32_t v) {
     g_eep[off]     = (uint8_t)(v);
     g_eep[off + 1] = (uint8_t)(v >> 8);
     g_eep[off + 2] = (uint8_t)(v >> 16);
     g_eep[off + 3] = (uint8_t)(v >> 24);
 }
+
+void Eeprom_Set32(int off, uint32_t v) { if (off >= 0 && off + 4 <= EEP_SIZE) eepPut32(off, v); }
 
 /* Adler-32 com valor inicial 1 (piu 0x805e760: módulo 0xFFF1). */
 static uint32_t eepAdler32(const uint8_t* d, int n) {
@@ -208,6 +219,7 @@ void Eeprom_Save(void) {
     fclose(f);
 }
 
+#if 0   /* DESATIVADO (08/10/2026): migração do pumpprex3.ini; só PIUNX.INI é usado. */
 /* Migração (extra deste projeto): importa as opções do pumpprex3.ini antigo
  * (imagem do PUMPY.EXE: "X3.1" em +0x68C, opções em +0x7E8, mesma convenção de g_game). */
 static bool eepImportPrex3(void) {
@@ -237,10 +249,11 @@ static bool eepImportPrex3(void) {
     Log_Print("EEPROM: opções importadas de %s\n", path);
     return true;
 }
+#endif
 
 /* Lê e valida a imagem (piu 0x8061950) e aplica em g_game.
  * Retorno: 1 = arquivo válido; 0 = inválido (resetado e regravado, como o original);
- *          -1 = ausente (padrão, ou importado do pumpprex3.ini; já gravado). */
+ *          -1 = ausente (padrão; já gravado). */
 int Eeprom_Load(void) {
     char path[MAX_PATH];
     eepPath(path, sizeof(path));
@@ -251,7 +264,7 @@ int Eeprom_Load(void) {
     if (!f) {                       /* 0x8061aa5: padrão e grava */
         eepDefaults();
         eepToGame();
-        eepImportPrex3();
+        /* eepImportPrex3(); */
         Eeprom_Save();
         return -1;
     }
