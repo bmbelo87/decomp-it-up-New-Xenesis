@@ -175,6 +175,14 @@ add_executable(Pumpy
     src/audio.c
     src/input.c
     src/font.c
+    src/nx_text.c
+    src/nx_world.c
+    src/nx_world_data.c
+    src/nx_mission.c
+    src/nx_rank.c
+    src/nx_training.c
+    src/nx_sports.c
+    src/nx_training_data.c
     src/bga.c
     src/vsl.c
     src/df_resource.c

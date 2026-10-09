@@ -117,6 +117,9 @@ typedef enum {
     STATE_IR              = 0x94, /* Exceed: CInternetRanking — BGA\IR.DAT + AUDIO\IR.AUD (src/ir.c) */
     STATE_NAMEINPUT       = 0x95, /* Exceed: CNameInput — BGA\085.DAT (src/nameinput.c) */
     STATE_STATION         = 0x96, /* Exceed2: CStation — BGA\STATION.DAT (src/station.c) */
+    STATE_NX_CLEAR        = 0x98, /* NX WORLD TOUR: MISSIONCLEAR (CMissionClear) — BGA/CONQUEST.MOV (src/nx_mission.c) */
+    STATE_NX_SPORTS       = 0x99, /* NX: kcal do fim do crédito (CSports) — BGA/SPORTS.DAT (src/nx_sports.c) */
+    STATE_NX_MISSION      = 0x97, /* NX WORLD TOUR: objetivo da missão — BGA\MICF.DAT (src/nx_mission.c) */
     STATE_EXIT            = 0xFF,
 } GameState;
 
@@ -175,6 +178,66 @@ typedef struct {
     uint32_t    length;     /* NX +0x44: hipótese — duração em segundos */
 } ExceedSong;
 extern const uint32_t g_nxResMap[NX_RESMAP_COUNT][2];
+
+/* NX WORLD TOUR (CSelectWorld): tabelas do piu, geradas por tools/gen_nx_world.py */
+#define NX_WORLD_STAGES   64
+#define NX_WORLD_MISSIONS 190
+typedef struct { const char* name; int region; int number; } NxWorldStage;   /* 0x8144260: região 8 A, 9 N, 10 S, 11 E */
+typedef struct { const char* cond; uint32_t id; int level; } NxWorldMission; /* 0x8144560: "-<modo> <mods> <condição>", 0xAAnnk */
+extern const uint8_t        g_nxWorldOpen[NX_WORLD_STAGES];
+extern const NxWorldStage   g_nxWorldStages[NX_WORLD_STAGES];
+extern const NxWorldMission g_nxWorldMissions[NX_WORLD_MISSIONS];
+extern const char* const   g_nxWorldDesc[4][NX_WORLD_STAGES * 3];
+extern const uint32_t      g_nxWorldUnlock[NX_WORLD_STAGES];   /* 0x8110340 */
+bool NxSong_Unlocked(int songIdx);                             /* 0x8061ed0(id, 1) aplicado */
+void NxSong_Unlock(uint32_t id);
+int  NxClear_UnlockSong(void);                                 /* índice em g_exSongs ou -1 */
+void NxMission_Enter(int id);
+void NxMission_Update(float dt);
+void NxMission_Render(void);
+void NxContinue_Enter(void);
+/* Contadores da missão por jogador (CPlayer 0x9e3dd20 + p*0x504), lidos pela condição (0x8055d40) */
+typedef struct {
+    int hidden, allHidden;       /* +0x5c / +0x7c */
+    int item, allItem;           /* +0x58 / +0x78 */
+    int heart, allHeart;         /* +0x48 / +0x68 */
+    int mine, allMine;           /* +0x4c / +0x6c */
+    int potion, allPotion;       /* +0x50 / +0x70 */
+    int velocity, allVelocity;   /* +0x54 / +0x74 */
+} NxMisStats;
+extern NxMisStats g_nxMis[2];
+const char* NxWorld_Cond(void);
+int  NxWorld_Loc(void);                          /* local escolhido (0..63) */
+void Rank_Load(void);                            /* nx_rank.c: /SETTINGS/RANK.DAT (CRankManager) */
+void Rank_Save(void);
+void Rank_Reset(void);                           /* nx_rank.c: SETUP > RESET RANKING */
+int  Rank_Find(uint32_t score);
+void Rank_Insert(uint32_t score, const char* name);
+uint32_t Rank_LocScore(int number);
+void Rank_SetLoc(int number, uint32_t score, const char* name);
+const char* Rank_LocName(int number);                 /* condição da missão atual (sem modo e mods) */
+bool NxCond_Eval(const char* cond, int p, int rank);   /* 0x8055a80 */
+void NxClear_Enter(void);
+void NxClear_Update(float dt);
+void NxClear_Render(void);
+void NxContinue_Update(float dt);
+void NxContinue_Render(void);
+void NxTraining_Enter(void);   /* nx_training.c */
+void NxSports_Store(int st);   /* nx_sports.c */
+bool Gameplay_IsFrozen(void);  /* gameplay.c: stage break, tela parada */
+GameState NxSports_Route(GameState ns, bool fromStageBreak, int stage);
+void NxSports_Update(float dt);
+void NxSports_Render(void);
+extern int g_nxTrainN;          /* lição * 10 + parte (1..20, 1..3) do RUN T%02d%d ([+0xd2cc]) */
+void NxTraining_Update(float dt);
+void NxTraining_Render(void);
+void NxWorld_Enter(void);
+void NxWorld_Update(float dt);
+void NxWorld_Render(void);
+/* Modificadores da missão (2º campo da condição, parser 0x806b6ea) */
+typedef struct { unsigned flags; int units; int skin; int icons[4]; int nIcons; } NxMods;
+extern NxMods g_nxMods;
+bool ExSelect_StartMission(int id, int diff, int level, unsigned joined);
 extern const ExceedSong g_exSongs[EX_SONG_COUNT];
 extern const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX];
 
@@ -469,6 +532,7 @@ typedef struct {
      *   Freedom  – receptor invisível
      *   Earthworm– velocidade salta entre x2/x3 (ou x1/x2 acima de 180 BPM) a cada compasso
      */
+    int  cmdSpeedNx[2];          /* NX missão: velocidade em quartos (4 = x1, 2 = 0.5x); 0 = usa cmdSpeedMult */
     int  cmdSpeedMult[2];        /* multiplicador de velocidade por jogador: 1..4. Default=1 */
     bool cmdMirror[2];           /* Mirror ativo por jogador */
     bool cmdRandomStep[2];       /* Random Step ativo por jogador */
@@ -494,6 +558,9 @@ typedef struct {
     int stageCount;      // 3 = Stage 1, 2 = Stage 2, 1 = Stage 3, 0 = bonus/gameover
     bool bonusStage;     // true se S/A em todos os stages anteriores
     bool isBonusSong;    // true quando estiver jogando o bonus stage
+    int  nxGameMode;     /* NX [0x81f8998] (= +0x98 do objeto 0x81f8900): 0 ARCADE, 1 SPECIAL ZONE, 2 WORLD, 3 TRAINING */
+    int  nxHearts;       /* NX [0x81f8a14] (+0x114): corações do crédito, 7 no reset (0x8062930) */
+    bool nxExtra;        /* NX [0x81f8a18] (+0x118): coração extra ganho (0x8073b2e) */
     uint32_t timerId;
     uint32_t lastTime;
     float deltaTime;
@@ -565,6 +632,7 @@ void Window_SwapBuffers(void);
 bool Window_ProcessMessages(void);
 void Window_ToggleFullscreen(void);
 void Window_ApplyGraphics(void);
+int  Window_GetRefreshRate(void);   /* window.c: Hz do monitor (limite sem vsync) */
 void Window_GetResolution(int idx, int* w, int* h);
 void Window_RequestQuit(void);   /* SDL port: asks the message pump to exit   */
 
@@ -754,7 +822,9 @@ const char* Song_IdStr(int id);
 int Song_DataId(int id);            /* Zero: a própria (STX/TITLE); ver Song_FindFile para AUD/MOV/DAT */
 bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2]);
 int  Zero_SkinIndex(void);
-void Zero_SetSkinIndex(int n);       /* console /skin */           /* zero_select.c: skin de notas (SKIN00..07) */
+void Zero_SetSkinIndex(int n);
+int  Zero_SkinIndexP(int p);           /* skin do jogador p (NX2 m_CurrentSkin) */
+void Zero_SetSkinIndexP(int p, int n);       /* console /skin */           /* zero_select.c: skin de notas (SKIN00..07) */
 void ZeroSelect_Enter(void);          /* zero_select.c — CSelect do Zero */
 void ZeroSelect_Update(float dt);
 void ZeroSelect_Render(void);
@@ -828,6 +898,10 @@ void GameOption_Load(void);
 /* eeprom.c — imagem de 4096 bytes no formato da NX (SETTINGS/PIUNX.INI) */
 int  Eeprom_Load(void);   /* 1=ok, 0=inválido (resetado), -1=ausente */
 void Eeprom_Save(void);   /* lê PUMPY.INI; chama-se na inicialização do jogo */
+uint32_t Eeprom_Get32(int off);   /* u32 da imagem (offset no arquivo) */
+uint8_t  Eeprom_Get8(int off);
+void     Eeprom_Set8(int off, uint8_t v);
+void     Eeprom_Set32(int off, uint32_t v);
 void GameOption_Save(void);   /* escreve PUMPY.INI; chama-se em cada alteração */
 
 void Render_Clear(uint8_t r, uint8_t g, uint8_t b);

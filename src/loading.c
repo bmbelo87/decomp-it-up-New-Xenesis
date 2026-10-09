@@ -47,13 +47,108 @@ void Loading_Enter(int songId) {
     /* era (Exceed2): "%s/TITLE/T%s.pnz" com Song_DataIdStr(songId) */
     Log_Print("Loading: loading PNZ '%s'\n", path);
 
-    g_pnzTexId = Resource_LoadPNZ(path);
+    /* Demo Play nunca carrega PNZ (Exceed2 PIU32.EXE 0x40419b: [0x484F7C] & 0x100000
+     * pula a carga; regra das versões).
+     * era: g_pnzTexId = Resource_LoadPNZ(path); */
+    g_pnzTexId = g_exDemo ? -1 : Resource_LoadPNZ(path);
     if (g_pnzTexId < 0) {
         Log_Print("Loading: PNZ not found for song %d\n", songId);
     }
 
     g_game.state = STATE_SONG_TITLE;
     g_game.stateFrame = 0;
+    Render_SetGlobalColor(0, 0, 0, 0);
+}
+
+/* Fim do título: carrega BGA/MOV/AUD e começa o gameplay (era o corpo do
+ * if no fim de STATE_SONG_TITLE_OUT; separado para a missão do WORLD TOUR). */
+void Loading_BeginGameplay(void) {
+    /* Resource_ClearBGA chama Texture_Shutdown, que destrói TODAS as texturas
+       incluindo o pnz. Resetar g_pnzTexId antes para evitar Texture_Unload
+       posterior no slot que já foi reutilizado pelo BGA (bug: destruía HALL.PNG). */
+    g_pnzTexId = -1;
+
+    Resource_ClearBGA();
+
+    /* exceed.exe 0x402243: testa BGA\%s.MOV (0x4254E4 = fopen "rb");
+     * se existe, 0x4229C8(path, 0) sem loop e [+0x17C2C] = 2 (0x402688);
+     * senão BGA\%s.DAT. O vídeo é aberto junto com a música, abaixo. */
+    /* Zero, CPlayEngine::Run: BGA/%X.DAT (id, depois base: 0x80809a6..0x8080a2a)
+     * tem prioridade; sem ele, BGA/%X.MOV (id, depois base: 0x8081c63..)
+     * e, por fim, BGA/000.MOV em loop (0x8081d11). */
+    char movPath[MAX_PATH];
+    char bgaPath[MAX_PATH];
+    Movie_Close();
+    /* era (Zero): DAT antes do MOV, fallback BGA/000.MOV
+    bool useDat = Song_FindFile(g_loadingSongId, "%s/BGA/%s.DAT", false, bgaPath, sizeof(bgaPath));
+    bool useMov = false, movLoop = false;
+    if (useDat) {
+        Log_Print("Loading: loading BGA '%s'\n", bgaPath);
+        Resource_LoadBGADirect(bgaPath);
+    } else {
+        useMov = Song_FindFile(g_loadingSongId, "%s/BGA/%s.MOV", false, movPath, sizeof(movPath));
+        if (!useMov) {
+            snprintf(movPath, sizeof(movPath), "%s/BGA/000.MOV", g_game.currentDirectory);
+            FILE* mf = fopen(movPath, "rb");
+            useMov = movLoop = (mf != NULL);
+            if (mf) fclose(mf);
+        }
+    }
+    */
+    /* NX CPlayEngine (0x806a56e..0x806a777): BGA/%03X.MOV pelo id e pela cadeia
+     * 0x8061d10 (0x813f860) tem prioridade — os charts do TRAINING (DDD312A...)
+     * têm vídeo próprio com o dançarino na plataforma. Só sem vídeo cai no
+     * BGA/%s.DAT (0x806a65d..0x806a6e4). Sem nenhum, BGA/001.MOV (0x806b2ca). */
+    bool useDat = false, movLoop = false;
+    bool useMov = Song_FindFile(g_loadingSongId, "%s/BGA/%s.MOV", false, movPath, sizeof(movPath));
+    if (!useMov) {
+        useDat = Song_FindFile(g_loadingSongId, "%s/BGA/%s.DAT", false, bgaPath, sizeof(bgaPath));
+        if (useDat) {
+            Log_Print("Loading: loading BGA '%s'\n", bgaPath);
+            Resource_LoadBGADirect(bgaPath);
+        } else {
+            snprintf(movPath, sizeof(movPath), "%s/BGA/001.MOV", g_game.currentDirectory);
+            FILE* mf = fopen(movPath, "rb");
+            useMov = movLoop = (mf != NULL);
+            if (mf) fclose(mf);
+        }
+    }
+    g_game.bgaLoop = false;
+    BGA_Reset();
+
+    char audioPath[MAX_PATH];
+    /* Zero 0x8081d74: AUDIO/%03X.AUD, id e depois base (Another usa a da base) */
+    Song_FindFile(g_loadingSongId, "%s/AUDIO/%s.AUD", true, audioPath, sizeof(audioPath));
+    Log_Print("Loading: loading AUD '%s'\n", audioPath);
+    bool audOk = BGM_LoadAUDDirect(audioPath);
+
+    g_game.songSelectHighlighted = g_game.selectedSongIndex;
+
+    /* Steps carregados antes da espera, como na init do original
+     * (0x410cf0 carrega o step antes do loop de 0x4116b5). */
+    g_game.state = STATE_GAMEPLAY;
+    Gameplay_Start(g_loadingSongId);
+
+    /* Extra do port: o vídeo é aberto, lido inteiro para a memória e tem o
+     * 1º quadro decodificado AQUI, com o PNZ na tela e antes da espera
+     * (que absorve o tempo). Sem isso a leitura de disco (blocos de 4 KB
+     * durante a música) caía dentro do gameplay.
+     * era: Movie_Open depois da espera. */
+    if (useMov) {
+        Log_Print("Loading: loading MOV '%s'\n", movPath);
+        if (Movie_Open(movPath, movLoop)) {
+            Movie_Preload();
+            Movie_Prime();
+        }
+    }
+
+    /* Espera ativa como no original (0x4116b5): nada é desenhado. */
+    while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
+        Sleep(1);
+    if (audOk && !(g_exDemo && !Demo_SoundOn()))   /* 0x40236A */
+        BGM_Play(false);
+    g_game.stateFrame = 0;
+    g_game.bgaFrame = 0;
     Render_SetGlobalColor(0, 0, 0, 0);
 }
 
@@ -77,73 +172,9 @@ void Loading_Update(float dt) {
         g_loadingTimer -= ms;
 
         if (g_loadingTimer <= 0) {
-            /* Resource_ClearBGA chama Texture_Shutdown, que destrói TODAS as texturas
-               incluindo o pnz. Resetar g_pnzTexId antes para evitar Texture_Unload
-               posterior no slot que já foi reutilizado pelo BGA (bug: destruía HALL.PNG). */
-            g_pnzTexId = -1;
-
-            Resource_ClearBGA();
-
-            /* exceed.exe 0x402243: testa BGA\%s.MOV (0x4254E4 = fopen "rb");
-             * se existe, 0x4229C8(path, 0) sem loop e [+0x17C2C] = 2 (0x402688);
-             * senão BGA\%s.DAT. O vídeo é aberto junto com a música, abaixo. */
-            /* Zero, CPlayEngine::Run: BGA/%X.DAT (id, depois base: 0x80809a6..0x8080a2a)
-             * tem prioridade; sem ele, BGA/%X.MOV (id, depois base: 0x8081c63..)
-             * e, por fim, BGA/000.MOV em loop (0x8081d11). */
-            char movPath[MAX_PATH];
-            char bgaPath[MAX_PATH];
-            Movie_Close();
-            bool useDat = Song_FindFile(g_loadingSongId, "%s/BGA/%s.DAT", false, bgaPath, sizeof(bgaPath));
-            bool useMov = false, movLoop = false;
-            if (useDat) {
-                Log_Print("Loading: loading BGA '%s'\n", bgaPath);
-                Resource_LoadBGADirect(bgaPath);
-            } else {
-                useMov = Song_FindFile(g_loadingSongId, "%s/BGA/%s.MOV", false, movPath, sizeof(movPath));
-                if (!useMov) {
-                    snprintf(movPath, sizeof(movPath), "%s/BGA/000.MOV", g_game.currentDirectory);
-                    FILE* mf = fopen(movPath, "rb");
-                    useMov = movLoop = (mf != NULL);
-                    if (mf) fclose(mf);
-                }
-            }
-            g_game.bgaLoop = false;
-            BGA_Reset();
-
-            char audioPath[MAX_PATH];
-            /* Zero 0x8081d74: AUDIO/%03X.AUD, id e depois base (Another usa a da base) */
-            Song_FindFile(g_loadingSongId, "%s/AUDIO/%s.AUD", true, audioPath, sizeof(audioPath));
-            Log_Print("Loading: loading AUD '%s'\n", audioPath);
-            bool audOk = BGM_LoadAUDDirect(audioPath);
-
-            g_game.songSelectHighlighted = g_game.selectedSongIndex;
-
-            /* Steps carregados antes da espera, como na init do original
-             * (0x410cf0 carrega o step antes do loop de 0x4116b5). */
-            g_game.state = STATE_GAMEPLAY;
-            Gameplay_Start(g_loadingSongId);
-
-            /* Extra do port: o vídeo é aberto, lido inteiro para a memória e tem o
-             * 1º quadro decodificado AQUI, com o PNZ na tela e antes da espera
-             * (que absorve o tempo). Sem isso a leitura de disco (blocos de 4 KB
-             * durante a música) caía dentro do gameplay.
-             * era: Movie_Open depois da espera. */
-            if (useMov) {
-                Log_Print("Loading: loading MOV '%s'\n", movPath);
-                if (Movie_Open(movPath, movLoop)) {
-                    Movie_Preload();
-                    Movie_Prime();
-                }
-            }
-
-            /* Espera ativa como no original (0x4116b5): nada é desenhado. */
-            while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
-                Sleep(1);
-            if (audOk && !(g_exDemo && !Demo_SoundOn()))   /* 0x40236A */
-                BGM_Play(false);
-            g_game.stateFrame = 0;
-            g_game.bgaFrame = 0;
-            Render_SetGlobalColor(0, 0, 0, 0);
+            /* NX WORLD TOUR (0x806bee0): objetivo da missão antes da música */
+            if (g_exceedSongIds && (g_game.nxGameMode == 2 || g_game.nxGameMode == 3)) { g_pnzTexId = -1; NxMission_Enter(g_loadingSongId); return; }
+            Loading_BeginGameplay();
         }
         return;
     }

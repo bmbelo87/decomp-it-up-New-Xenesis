@@ -149,6 +149,7 @@ StepChart* g_chart;
 static bool g_songLoaded;
 
 static double g_songTime;
+double Gameplay_SongTimeSec(void) { return g_songTime; }   /* NX kcal: [play+0xd2c8] em ms */
 static unsigned s_exPrev[2][3];   /* contadores GOOD/BAD/MISS já pontuados (Gameplay_ExScoreSync) */
 static double g_secondsPerRow;
 static double g_totalSongSeconds;
@@ -169,6 +170,7 @@ static float g_scrollSpeedTarget[2]; // target por player
 static int   g_rvLastMeasure[2];     // última medida onde RV disparou, por player
 static int   g_ewLastRow[2];         // última row vista pelo Earthworm (DAT_00da24bc)
 static float g_stageBreakFreezeTimer = -1.0f; // >0: travado antes de ir p/ STATE_STAGE_BREAK
+bool Gameplay_IsFrozen(void) { return g_stageBreakFreezeTimer >= 0.0f; }   /* tela parada (vídeo, BGA, setas) */
 
 /* Aplica variação de vida para o julgamento dado (fórmulas exatas do Ghidra). */
 /* Curva de lifeSpeed por nível de dificuldade — GameInit 0x00411381.
@@ -339,6 +341,140 @@ static int g_divW[2], g_divG[2];   /* contadores: G = tipo 2 ([jog+0x2C]), W = t
  * e p2.3 pede W 2-2; 736 p3.4 tem 4 W e p4.5 pede W 4-4). Acumulando, esses ramos
  * seriam inalcançáveis. O ponto do original que zera não foi localizado. */
 static int g_divLastPage[2];
+
+/* ---------------------------------------------------------------------------
+ * NX WORLD TOUR: notas especiais da missão (tabela de atributos 0x8142fa0, por nota & 0x7f):
+ *   0x0d  0x08 desenhada, não julgada (seta falsa)
+ *   0x0e  0x21 julgada, invisível (hidden)
+ *   0x0f  0x48 desenhada, não julgada (falsa)
+ *   0x10  0x69 julgada e desenhada (hidden)
+ *   0x14..0x28  0x0a itens: sprite item_<nome>.spr do BGA/MICON.DAT (0x8142f40,
+ *               [+0xd300 + (nota-0x14)*4]); coletado ao pisar na janela (0x8070569 ->
+ *               0x8071050: item++, score += (5 - julgamento) * 100 e a categoria de
+ *               0x810f880: 0x1d heart, 0x19 mine, 0x24 potion, 0x1e/0x20..0x23 velocity)
+ * As falsas e os itens saem da grade (o julgamento nunca as vê); as hidden ficam
+ * como nota comum (1) e só deixam de ser desenhadas. Tabela [linha*10 + coluna]
+ * (colunas 5..9 = metade 2). Efeitos dos itens (velocidade, dreno etc., 0x8071190)
+ * ainda não feitos.
+ * ------------------------------------------------------------------------- */
+NxMisStats g_nxMis[2];
+static uint8_t* g_misSpec;
+static int g_misTrack;          /* [0xa7f4a60]: 0x11 ud (normal), 0x12 rd, 0x13 dd, 0x14 ld */
+static int g_misFlash[2];       /* +0x4f0 do item Flash (wea) */
+static int g_misWhite[2];       /* +0x4ec: tela branca da mina e das setas de pista, 50 quadros */
+static int g_misSndMine = -1;   /* EFF_ITEM_MINE = WAVE/B09.WAV (SFX_GLOBAL.LUA) */
+static int g_misItemSpr[21];   /* índice do 1º tile de item_<nome>.spr, -1 sem */
+static bool g_misHiddenRow(int ri) {
+    if (!g_misSpec) return false;
+    for (int i = 0; i < 10; i++) { uint8_t s = g_misSpec[ri * 10 + i]; if (s == 0x0e || s == 0x10) return true; }
+    return false;
+}
+
+static void misExtract(void)
+{
+    free(g_misSpec); g_misSpec = NULL;
+    memset(g_nxMis, 0, sizeof(g_nxMis));
+    /* era: g_misTrack = 0;
+     * piu 0x806ad97 + 0x806ae14..0x806ae40: começa normal; quem tem UA (0x80) põe 0x13,
+     * o mesmo valor do item dd (o item ud volta para 0x11 e desfaz o UA) */
+    g_misTrack = (g_game.cmdUnderAttack[0] || g_game.cmdUnderAttack[1]) ? 0x13 : 0x11;
+    g_misFlash[0] = g_misFlash[1] = 0;
+    g_misWhite[0] = g_misWhite[1] = 0;
+    if (g_misSndMine < 0) g_misSndMine = Audio_LoadWaveFile("B09.WAV");
+    if (!g_chart || g_game.nxGameMode != 2) return;
+    g_misSpec = (uint8_t*)calloc((size_t)g_chart->rowCount * 10, 1);
+    if (!g_misSpec) return;
+    int hiddenRows = 0, n[0x30] = { 0 };
+    for (uint32_t r = 0; r < g_chart->rowCount; r++) {
+        uint8_t* h[2] = { (uint8_t*)&g_chart->rows[r].half1, (uint8_t*)&g_chart->rows[r].half2 };
+        bool hid = false;
+        for (int k = 0; k < 2; k++)
+            for (int i = 0; i < 5; i++) {
+                uint8_t v = (uint8_t)(h[k][i] & 0x7f);
+                if (v < 0x0d || v > 0x28 || (v > 0x10 && v < 0x14)) continue;
+                if (v == 0x1f) {   /* ran: item aleatório na carga (0x807273a, rand() % 10, tabela 0x810fa80) */
+                    static const uint8_t k_ran[10] = { 0x18, 0x19, 0x24, 0x23, 0x1e, 0x20, 0x21, 0x22, 0x25, 0x27 };
+                    v = k_ran[rand() % 10];   /* wea min pot 1x vel 3x 4x 8x ud dd */
+                }
+                g_misSpec[r * 10 + k * 5 + i] = v;
+                n[v]++;
+                if (v == 0x0e || v == 0x10) { h[k][i] = 1; hid = true; }
+                else h[k][i] = 0;
+            }
+        if (hid) hiddenRows++;
+    }
+    /* totais (all*): o original soma ao coletar; aqui é o total do chart */
+    for (int p = 0; p < 2; p++) {
+        g_nxMis[p].allHidden = hiddenRows;
+        for (int v = 0x14; v <= 0x28; v++) g_nxMis[p].allItem += n[v];
+        g_nxMis[p].allHeart = n[0x1d];
+        g_nxMis[p].allMine = n[0x19];
+        g_nxMis[p].allPotion = n[0x24];
+        g_nxMis[p].allVelocity = n[0x1e] + n[0x20] + n[0x21] + n[0x22] + n[0x23];
+    }
+    /* sprites dos itens (0x806a536) */
+    static const char* const k_item[21] = { "act", "shi", "cha", "acc", "wea", "min", "min", "sma", "dra", "bon",
+                                            "vel", "ran", "3x", "4x", "8x", "1x", "pot", "ud", "rd", "dd", "ld" };
+    char path[MAX_PATH];
+    for (int i = 0; i < 21; i++) g_misItemSpr[i] = -1;
+    snprintf(path, sizeof(path), "%s/BGA/MICON.DAT", g_game.currentDirectory);
+    if (RES_Open(path)) {
+        for (int i = 0; i < 21; i++) {
+            char nm[32];
+            snprintf(nm, sizeof(nm), "item_%s.spr", k_item[i]);
+            int start = g_game.sprTileCount;
+            SPR_LoadSPR(nm, NULL, NULL, NULL);
+            if (g_game.sprTileCount > start) g_misItemSpr[i] = start;
+        }
+        RES_Close();
+    }
+    Log_Print("MISSION: hidden %d linhas, itens %d (heart %d mine %d potion %d vel %d)\n", hiddenRows,
+              g_nxMis[0].allItem, n[0x1d], n[0x19], n[0x24], g_nxMis[0].allVelocity);
+}
+
+/* 0x8071050: item pisado */
+static void misCollect(int p, uint8_t v, JudgeType jt)
+{
+    NxMisStats* m = &g_nxMis[p];
+    m->item++;
+    int j = (jt == JT_PERFECT) ? 1 : (jt == JT_GREAT) ? 2 : (jt == JT_GOOD) ? 3 : 4;
+    g_game.stats.score[p] += (5 - j) * 100;
+    if (v == 0x1d) m->heart++;
+    else if (v == 0x19) m->mine++;
+    else if (v == 0x24) m->potion++;
+    else if (v == 0x1e || (v >= 0x20 && v <= 0x23)) m->velocity++;
+
+    /* 0x8071190: efeito pelo item, k = julgamento - 1 (PERFECT 0 .. BAD 3) */
+    static const int k_mine[4] = { 490, 450, 400, 340 };   /* 0x810f908 */
+    static const int k_pot[4]  = { 260, 240, 210, 170 };   /* 0x810f918 */
+    int k = j - 1;
+    int* life = &g_game.stats.life[p];
+    switch (v) {
+    case 0x18:   /* wea: Flash, +0x4f0 = (4 - k) * 120 (0x80711b3) */
+        g_misFlash[p] = (4 - k) * 120;
+        break;
+    case 0x19:   /* min: bomba, vida -= tabela (0x80711ec) */
+        *life -= k_mine[k];
+        if (*life < 0) *life = 0;
+        if (g_misSndMine >= 0) Audio_Play(g_misSndMine, false);
+        g_misWhite[p] = 50;   /* 0x807121f: +0x4ec = 0x32 */
+        break;
+    case 0x1e: g_scrollSpeedTarget[p] = 2.0f; break;   /* vel: 2000 (0x807122c) */
+    case 0x20: g_scrollSpeedTarget[p] = 3.0f; break;   /* 3x: 3000 */
+    case 0x21: g_scrollSpeedTarget[p] = 4.0f; break;   /* 4x: 4000 */
+    case 0x22: g_scrollSpeedTarget[p] = 8.0f; break;   /* 8x: 8000 */
+    case 0x23: g_scrollSpeedTarget[p] = 1.0f; break;   /* 1x: 1000 */
+    case 0x24:   /* pot: vida += tabela, até o máximo (0x80712d5) */
+        *life += k_pot[k];
+        if (*life > 1000) *life = 1000;
+        break;
+    case 0x25: case 0x26: case 0x27: case 0x28:   /* setas: direção da pista (0x8071303) */
+        g_misTrack = v - 0x14;
+        g_misWhite[p] = 50;   /* 0x8071308 -> 0x807121f: mesma tela branca, sem som */
+        break;
+    default: break;   /* heart e os outros: só contam */
+    }
+}
 
 /* Tira W/G/A das linhas [r0, r1) do chart e guarda em g_divSpec. */
 static void divExtractSpecials(uint32_t r0, uint32_t r1)
@@ -539,6 +675,19 @@ static float nxAccelDist(int p, float d)
     if (g_game.cmdAccel[p] && d >= -83.0f) return 120000.0f * (0.005f - 1.0f / (d * 2.4f + 200.0f));
     return d;
 }
+/* Inversa de nxAccelDist: distância crua a partir da já curvada. O X-MODE do piu
+ * desloca pela distância ANTES da curva (0x806e9d0: play+0x103cc, gravado em
+ * 0x806f071; a curvada vai para +0x103c8 em 0x806f0ae) — igual ao NX2 (x = y,
+ * scr_y = CalcScreenY(y)). */
+static float nxAccelInv(int p, float s)
+{
+    if (g_game.cmdDecel[p]) return cbrtf(s * 1600.0f);
+    if (g_game.cmdAccel[p]) {
+        float lim = 120000.0f * (0.005f - 1.0f / (-83.0f * 2.4f + 200.0f));
+        if (s >= lim) return (1.0f / (0.005f - s / 120000.0f) - 200.0f) / 2.4f;
+    }
+    return s;
+}
 
 /* FL (0x806cf97 + 0x806f4d5): contador +0x4f0 cai 1 por quadro;
  * alpha das setas = 0.5 + 0.5*sin(c*0.25) */
@@ -553,9 +702,13 @@ static int g_nxField;   /* 0 nada, 1 só modelview, 2 projeção + modelview */
 static void nxFieldBegin(void)
 {
     bool nx = g_game.cmdNXMode[0] || g_game.cmdNXMode[1];
-    bool ua = g_game.cmdUnderAttack[0] || g_game.cmdUnderAttack[1];
+    /* era: bool ua = cmdUnderAttack[0] || [1]; if (g_misTrack == 0x13) ua = !ua; */
+    /* [0xa7f4a60]: 0x13 = 180 graus (UA ou item dd), rd = Translate(160,560) +
+     * Rotate(-90), ld = Translate(480,-80) + Rotate(90) */
+    bool ua = (g_misTrack == 0x13);
+    bool side = (g_misTrack == 0x12 || g_misTrack == 0x14);
     g_nxField = 0;
-    if (!nx && !ua) return;
+    if (!nx && !ua && !side) return;
     if (nx) {
         const double fov = 75.0, n = 0.1, f = 5000.0;
         double t = n * tan(fov * 0.5 * 3.14159265358979 / 180.0);
@@ -583,6 +736,8 @@ static void nxFieldBegin(void)
         glTranslatef(640.0f, 480.0f, 0.0f);
         glRotatef(180.0f, 0.0f, 0.0f, 1.0f);
     }
+    if (g_misTrack == 0x12) { glTranslatef(160.0f, 560.0f, 0.0f); glRotatef(-90.0f, 0.0f, 0.0f, 1.0f); }   /* 0x806d50a */
+    if (g_misTrack == 0x14) { glTranslatef(480.0f, -80.0f, 0.0f); glRotatef(90.0f, 0.0f, 0.0f, 1.0f); }    /* 0x806d566 */
 }
 static void nxFieldEnd(void)
 {
@@ -631,7 +786,7 @@ static int   g_skinArrowP = -1;   /* Zero [+0xb904]: arrowp.spr da skin */
 static int   g_skinSpark[5] = { -1, -1, -1, -1, -1 };   /* Zero [+0xf44..]: spark1..5.spr */          /* Zero [0x0862825c] (Y para cima) */
 static float g_skinFieldX[2];     /* Zero [0x08628260] campo P1/single, [0x08628264] campo P2 */
 
-static void exLoadSkin(void)
+static void exLoadSkin(int sk)   /* era: (void), sk = Zero_SkinIndex() */
 {
     static const float k_off[3][5] = {
         /* Zero 0x8080a40..: [0x08628248..58] = 2, 0, -2, -1, -3 (SKIN00);
@@ -652,10 +807,27 @@ static void exLoadSkin(void)
         { { -2, -4, -5, -5, -6 }, -4, 0, 9    },   /* SKIN06 */
         { {  2,  1,  0,  0,  0 },  0, -1, 0   },   /* SKIN07 */
     };
+    /* NX (piu 0xc7140, {char nome[16]; float x[5], y, campoP1, campoP2}); SKIN09..12
+     * da tabela não existem na NX (só na NX2) e ficaram de fora.
+     * SKIN01..07 = os mesmos valores do Zero; SKIN00 e SKIN08 diferem.
+     * Os campos P1/P2 batem com o x_start_interpolate da NX2 (SKIN00 = {0, 1}).
+     * Antes: k_zero[sk & 7] — o SKIN08 (skin padrão da NX) usava o SKIN00 do Zero. */
+    static const struct { float x[5], y, f1, f2; } k_nx[9] = {
+        { {  2,  0, -1,  1, -1 }, -1,  0, 1 },   /* SKIN00 */
+        { {  1,  0,  0,  2,  0 },  0,  0, 0 },   /* SKIN01 */
+        { {  3,  2,  0, -2, -3 },  0,  0, 0 },   /* SKIN02 */
+        { {  1, -1, -2, -4, -6 }, -3,  3, 8 },   /* SKIN03 */
+        { {  6,  2,  1,  0, -2 },  0,  0, 4 },   /* SKIN04 */
+        { {  2,  1,  0,  0,  0 }, -1,  0, 4 },   /* SKIN05 */
+        { { -2, -4, -5, -5, -6 }, -4,  0, 9 },   /* SKIN06 */
+        { {  2,  1,  0,  0,  0 },  0, -1, 0 },   /* SKIN07 */
+        { {  2,  0, -1,  1, -1 }, -1,  0, 1 },   /* SKIN08 (NX) */
+    };
+    (void)k_zero;   /* tabela do Zero mantida como referência */
     for (int k = 0; k < 5; k++) g_skinTap[k] = g_skinL1[k] = g_skinL2[k] = g_skinL3[k] = -1;
     g_skinArrowP = -1;
     /* Exceed2: unsigned fl = ExSelect_GetFlags(); sk = 0x10000 ? 2 : 0x20000 ? 1 : 0 */
-    int sk = Zero_SkinIndex();
+    /* int sk = Zero_SkinIndex();  (agora vem do jogador: NX2 m_CurrentSkin) */
     char path[MAX_PATH];
     snprintf(path, sizeof(path), "%s/BGA/SKIN%02d.DAT", g_game.currentDirectory, sk);
     if (!RES_Open(path)) { Log_Print("GP: skin '%s' não abriu\n", path); return; }
@@ -670,7 +842,7 @@ static void exLoadSkin(void)
             *dst[j] = (g_game.sprTileCount > start) ? start : -1;
         }
         /* Exceed2: g_skinOffX[k] = k_off[sk][k]; */
-        g_skinOffX[k] = k_zero[sk & 7].x[k];
+        g_skinOffX[k] = k_nx[(sk >= 0 && sk < 9) ? sk : 8].x[k];
     }
     /* 0x80806f0: arrowp.spr (efeito de pisar, 5 tiles: DL UL C UR DR) */
     {
@@ -686,16 +858,17 @@ static void exLoadSkin(void)
         SPR_LoadSPR(nm, NULL, NULL, NULL);
         g_skinSpark[k] = (g_game.sprTileCount > start) ? start : -1;
     }
-    g_skinOffY = k_zero[sk & 7].y;
-    g_skinFieldX[0] = k_zero[sk & 7].f1;
-    g_skinFieldX[1] = k_zero[sk & 7].f2;
+    g_skinOffY = k_nx[(sk >= 0 && sk < 9) ? sk : 8].y;
+    g_skinFieldX[0] = k_nx[(sk >= 0 && sk < 9) ? sk : 8].f1;
+    g_skinFieldX[1] = k_nx[(sk >= 0 && sk < 9) ? sk : 8].f2;
     RES_Close();
     Log_Print("GP: skin SKIN%02d carregada (nota DL=%d)\n", sk, g_skinTap[0]);
 }
+/* DESATIVADO: versão anterior (Zero 0x8087520), trocada pelo DrawLongNote da NX2.
 /* Zero 0x8087520: corpo skinN_l2 esticado (UV inteiro) da base da cabeça ao topo
  * da ponta; ponta skinN_l3 inteira; distância < 64 -> só a parte de baixo da
- * ponta (0x809e0d0). yh/yt = centros das setas (Y para baixo). */
-static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, bool held)
+ * ponta (0x809e0d0). yh/yt = centros das setas (Y para baixo). * /
+static void zeroHoldDrawOld(int panel, int col, float left, float yh, float yt, bool held)
 {
     (void)panel;
     if (g_skinL2[col] < 0 || g_skinL3[col] < 0) return;
@@ -706,15 +879,15 @@ static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, boo
     int tw = Texture_GetWidth(tt->texId); if (tw <= 0) tw = 256;
     int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
     /* segurado (cabeça já passou, 0xC sozinho em 0x8087520): o corpo sai do MEIO
-     * da step zone (y = 32 da seta do receptor), não da base da cabeça */
+     * da step zone (y = 32 da seta do receptor), não da base da cabeça * /
     /* era: headBase = held ? yh : yh + 32. A cabeça (skinN_l1) tem 62-63 px a
      * partir de y = 1 na célula de 64, então o corpo começando na base exata
      * deixava 1 px de fresta (a "linha preta" sob a cabeça). Começa 2 px antes,
-     * por baixo da cabeça, que é desenhada depois. */
+     * por baixo da cabeça, que é desenhada depois. * /
     float headBase = held ? yh : yh + 30.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
     /* Deslocamento X do próprio tile no .spr ("T tex x y w h ..."): skin4_l2/skin5_l2
      * têm x = 1 e a ponta x = 0; sem ele corpo e ponta ficavam 1 px desalinhados.
-     * era: corpo e ponta em 'left' sem o deslocamento. */
+     * era: corpo e ponta em 'left' sem o deslocamento. * /
     float bodyL = left + (float)bt->srcX, tailL = left + (float)tt->srcX;
     if (tailTop > headBase) {
         Texture_DrawUV(bt->texId, bodyL, headBase, (float)bt->srcW, tailTop - headBase,
@@ -728,6 +901,71 @@ static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, boo
                        tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
     }
 }
+*/
+/* NX2 DrawLongNote (playengine.cpp:2603), linha por linha. O original desenha em
+ * Y para cima com a origem na LINHA da ponta (base da célula de 64 da seta):
+ *   Translate(x + 65*seta, ScrY); height = y(cabeça) - ScrY;
+ *   height > 62:
+ *     LongMiddle.DrawPicYY(estado, 63 + vtxY(l2), height + 1 + vtxY(l2))
+ *       -> corpo com o UV inteiro do tile, do topo da ponta até 1 px dentro
+ *          da cabeça; v1 do tile no lado da cabeça (DrawPicYY: texY1 em y2);
+ *     LongEnd.DrawPic(estado)                      -> ponta no próprio retângulo;
+ *   senão:
+ *     LongEnd.DrawPicYY_UV(estado, 0 + vtxY(l3), height + 1 + vtxY(l3),
+ *                          (height + 1) / 63, 0)
+ *       -> só a parte de baixo da ponta: v de v2 - len*(height+1)/63 até v2;
+ *   Translate(0, height); LongStart.DrawPic(estado) -> cabeça por cima.
+ * Segurado (bPress e a linha já passou): y = STEP_Y (cabeça no receptor).
+ * Aqui (Y para baixo): yh/yt = centros das células da cabeça e da ponta; a
+ * linha (origem) de cada uma fica em centro + 32. Y para cima local v vira
+ * tela = linha - v. X: 'left' = coluna + ajuste da skin; cada tile soma o
+ * próprio x do .spr (rcVtx[X1]). */
+static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, bool held)
+{
+    (void)panel; (void)held;   /* segurado: o chamador já passa yh = receptor */
+    if (g_skinL1[col] < 0 || g_skinL2[col] < 0 || g_skinL3[col] < 0) return;
+    int st = arrowAnimFrame();   /* m_ArrowState: o mesmo quadro nas três peças */
+    int iL1 = g_skinL1[col] + st, iL2 = g_skinL2[col] + st, iL3 = g_skinL3[col] + st;
+    if (iL1 >= g_game.sprTileCount) iL1 = g_skinL1[col];
+    if (iL2 >= g_game.sprTileCount) iL2 = g_skinL2[col];
+    if (iL3 >= g_game.sprTileCount) iL3 = g_skinL3[col];
+    SPRTileDef* hs = &g_game.sprTiles[iL1];   /* LongStart  (skinN_l1) */
+    SPRTileDef* bt = &g_game.sprTiles[iL2];   /* LongMiddle (skinN_l2) */
+    SPRTileDef* tt = &g_game.sprTiles[iL3];   /* LongEnd    (skinN_l3) */
+    int hw = Texture_GetWidth(hs->texId); if (hw <= 0) hw = 256;
+    int hh = Texture_GetHeight(hs->texId); if (hh <= 0) hh = 256;
+    int bw = Texture_GetWidth(bt->texId); if (bw <= 0) bw = 256;
+    int bh = Texture_GetHeight(bt->texId); if (bh <= 0) bh = 256;
+    int tw = Texture_GetWidth(tt->texId); if (tw <= 0) tw = 256;
+    int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
+
+    float lineT = yt + 32.0f;            /* ScrY: linha da ponta */
+    float height = (yt - yh);            /* y - ScrY (linha da cabeça - linha da ponta) */
+    if (height < 0.0f) height = 0.0f;
+
+    if (height > 62.0f) {
+        /* LongMiddle.DrawPicYY(st, 63 + vtxY, height + 1 + vtxY) */
+        float yLo = 63.0f + (float)bt->srcY, yHi = height + 1.0f + (float)bt->srcY;
+        Texture_DrawUV(bt->texId, left + (float)bt->srcX, lineT - yHi, (float)bt->srcW, yHi - yLo,
+                       bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
+        /* LongEnd.DrawPic(st) */
+        Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - (float)(tt->srcY + tt->srcH),
+                       (float)tt->srcW, (float)tt->srcH,
+                       tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+    } else {
+        /* LongEnd.DrawPicYY_UV(st, 0 + vtxY, height + 1 + vtxY, (height + 1) / 63, 0) */
+        float yLo = (float)tt->srcY, yHi = height + 1.0f + (float)tt->srcY;
+        float len = tt->v2 - tt->v1;
+        float vTop = tt->v2 - len * ((height + 1.0f) / 63.0f);
+        Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - yHi, (float)tt->srcW, yHi - yLo,
+                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+    }
+    /* Translate(0, height); LongStart.DrawPic(st) */
+    float lineH = lineT - height;
+    Texture_DrawUV(hs->texId, left + (float)hs->srcX, lineH - (float)(hs->srcY + hs->srcH),
+                   (float)hs->srcW, (float)hs->srcH,
+                   hs->u1 * hw, hs->v1 * hh, hs->u2 * hw, hs->v2 * hh, 1, 1, 1, 1);
+}
 
 static int g_hitTimer[2][MAX_PANELS]; // hit flash animation timer (p1)
 static int g_glowTimer[2][MAX_PANELS];    // glow aditivo: apenas PERFECT/GREAT
@@ -739,6 +977,7 @@ static int g_noteExplodeRow[2][MAX_PANELS]; // row index for clearing when dead
 static int g_noteExplodeFrame[2][MAX_PANELS]; // explosion frame counter 0..15
 static void holdHitFx(int player, int pan, int row);
 static bool rowOnlyLong(int player, int row);
+static void nxLoadSkins(void);
 static int g_blindTimer[2];
 static int g_prevBlindRow;
 static int g_lastPerfectRow[2][MAX_PANELS];
@@ -865,6 +1104,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     /* Aplica multiplicador de velocidade do Command — por player. */
     for (int _ip = 0; _ip < 2; _ip++) {
         float spd = (g_game.cmdSpeedMult[_ip] >= 1) ? (float)g_game.cmdSpeedMult[_ip] : 1.0f;
+        if (g_game.cmdSpeedNx[_ip] > 0) spd = (float)g_game.cmdSpeedNx[_ip] / 4.0f;   /* NX missão (+0x498, 4 = x1) */
         g_scrollSpeedX[_ip]      = spd;
         g_scrollSpeedTarget[_ip] = spd;
         g_rvLastMeasure[_ip]     = 0; /* igual ao DAT_00da24bc original: inicia em 0 → pula row 0 */
@@ -911,6 +1151,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         divExtractSpecials(0, g_chart->rowCount);
         Log_Print("DIV: %d paginas\n", g_chart->divPageCount);
     }
+    misExtract();   /* NX WORLD TOUR */
 
     g_chart->totalNotes = 0;
     for (uint32_t r = 0; r < g_chart->rowCount; r++)
@@ -1467,6 +1708,7 @@ static void zeroJudge(int p)
                         }
                 }
                 applyRowJudgment(p, jt);
+                if (g_misHiddenRow(ri) && jt != JT_MISS) g_nxMis[p].hidden++;   /* 0x806fb8e */
             }
             g_zDone[p][ri] = 1;                                  /* também linha vazia */
         }
@@ -1492,8 +1734,29 @@ static void zeroJudge(int p)
             if (ZJ_ISHOLD(v)) g_holdRows[p][pan] = -1;
         }
         if (missed) applyRowJudgment(p, JT_MISS);
-        else if (g_zRowJ[p][ri]) applyRowJudgment(p, (JudgeType)g_zRowJ[p][ri]);
+        else if (g_zRowJ[p][ri]) {
+            applyRowJudgment(p, (JudgeType)g_zRowJ[p][ri]);
+            if (g_misHiddenRow(ri)) g_nxMis[p].hidden++;
+        }
         g_zDone[p][ri] = 1;
+    }
+    /* NX WORLD TOUR: itens pisados dentro da janela (0x8070569) */
+    if (g_misSpec) {
+        for (int ri = g_zFirst[p] > 8 ? g_zFirst[p] - 8 : 0; ri < g_zRows; ri++) {
+            double diff = g_songTime - getRowTime(ri);
+            if (diff < -badE) break;
+            if (diff > badL) continue;
+            for (int pan = 0; pan < panCount; pan++) {
+                int col = dn ? pan : pan + (p ? 5 : 0);
+                uint8_t s = g_misSpec[ri * 10 + col];
+                if (s < 0x14 || s > 0x28 || !hitB[pan]) continue;
+                JudgeType jt = evaluateTiming(diff);
+                if (jt == JT_MISS || jt == JT_NONE) jt = JT_BAD;
+                misCollect(p, s, jt);
+                g_misSpec[ri * 10 + col] = 0;
+                zeroExplode(p, pan, ri);   /* spark no painel, como numa seta (observado no original pelo usuário) */
+            }
+        }
     }
     #undef ZJ_V
     #undef ZJ_CLR
@@ -2213,7 +2476,7 @@ void Gameplay_Start(int songId)
      * jogador; o 00.DAT do Zero só tem m01..m05. */
     {
         char datPath[MAX_PATH];
-        snprintf(datPath, sizeof(datPath), "%s/BGA/SKIN%02d.DAT", g_game.currentDirectory, Zero_SkinIndex());
+        snprintf(datPath, sizeof(datPath), "%s/BGA/SKIN%02d.DAT", g_game.currentDirectory, Zero_SkinIndexP(0));   /* era: Zero_SkinIndex() */
         Resource_LoadFontAndArrows(datPath);
         /* era (Prex3/Exceed): "%s/BGA/00.DAT" */
         /* 0x80860d1: m01..m04 (indicador de estágio) do BGA/00.DAT */
@@ -2247,18 +2510,9 @@ void Gameplay_Start(int songId)
     /* Sem isto o tipo do último julgamento da música anterior ficava, e com o
      * contador em 0 o PERFECT/MISS dele tocava no início da música seguinte. */
     g_judgeDisplayType[0] = g_judgeDisplayType[1] = JT_NONE;
-    if (g_exceedSongIds) exLoadSkin();   /* Exceed2 0x404350: SKIN0X.DAT */
-    /* Zero: a nota é o próprio skinN.spr do SKINxx.DAT (não há ARROW54x);
-     * grupo 0..4 = 542, 541, 545, 543, 544 no código herdado. */
-    g_zeroSkinArrows = false;
-    if (g_skinTap[0] >= 0) {
-        g_fontArrow542 = g_skinTap[0];
-        g_fontArrow541 = g_skinTap[1];
-        g_fontArrow545 = g_skinTap[2];
-        g_fontArrow543 = g_skinTap[3];
-        g_fontArrow544 = g_skinTap[4];
-        g_zeroSkinArrows = true;
-    }
+    /* era: if (g_exceedSongIds) exLoadSkin(); + mapeamento das setas (uma skin só).
+     * Zero: a nota é o próprio skinN.spr do SKINxx.DAT (não há ARROW54x). */
+    if (g_exceedSongIds) nxLoadSkins();   /* NX2 CPlayer::LoadSkin por jogador */
     /* Zero 0x8080953: julgamento/combo em BGA/COMBO.DAT (mesmas cenas e slots
      * do 00.BGA do Exceed2: PERFECT.., PER-2P.., PER-D.., dígitos 10..13 <- 14..23) */
     if (g_exceedSongIds && Resource_LoadBGAByName("COMBO")) {
@@ -2592,9 +2846,21 @@ void Gameplay_Update(float dt)
          * (o 1º estágio nunca falha por life). Com 2 jogadores só termina quando AMBOS estão com life < 1.
          * Já o missCombo > 50 (0x32) vale SEMPRE, com ou sem stage break. */
         int opt = g_game.optionToggle1;
+        /* era (Prex3): stageIdx = 3 - stageCount (no NX a Loading já decrementou: a 1ª
+         * música dava 1) e lifeFailActive = opt && (opt-1) <= stageIdx && stageIdx != 0
         int stageIdx = 3 - g_game.stageCount;
         if (stageIdx < 0) stageIdx = 0;
         bool lifeFailActive = (opt != 0) && ((opt - 1) <= stageIdx) && (stageIdx != 0);
+        */
+        /* NX 0x806d243..0x806d2df: estágio = [0x81f8910] (0-based); vida só derruba com
+         * opção != 0 e estágio + 1 >= opção (WORLD: sempre); miss > 50 fora do WORLD;
+         * TRAINING e EVENT ([0x9e3dbce] == 1) nunca caem */
+        int stageIdx = g_game.isBonusSong ? 3 : 2 - g_game.stageCount;
+        if (stageIdx < 0) stageIdx = 0;
+        bool nxWorld = g_game.nxGameMode == 2;
+        bool lifeFailActive = nxWorld || ((opt != 0) && (stageIdx + 1 >= opt));
+        bool missFailActive = !nxWorld;
+        if (g_game.nxGameMode == 3 || g_game.svcGameMode == 1) lifeFailActive = missFailActive = false;
 
         if (lifeFailActive) {
             if (twoP) {
@@ -2613,7 +2879,7 @@ void Gameplay_Update(float dt)
             }
         }
 
-        if (!sbTrigger) {
+        if (!sbTrigger && missFailActive) {
             if (twoP) {
                 if (g_game.stats.missCombo[0] > STAGE_BREAK_MISSES && g_game.stats.missCombo[1] > STAGE_BREAK_MISSES) {
                     Log_Print("GP: stage break 2P missCombo>50 em ambos\n");
@@ -2644,7 +2910,8 @@ void Gameplay_Update(float dt)
         if (g_judgeFrame[p] > 0)
             g_judgeFrame[p]--;
         if (g_exJudgeCnt[p] < 1000) g_exJudgeCnt[p]++;   /* 0x407439 */
-        if (g_game.cmdFlash[p]) g_flashCnt[p]--; else g_flashCnt[p] = 0;   /* 0x806cf97 */
+        if (g_game.cmdFlash[p] || g_misFlash[p] > 0) g_flashCnt[p]--; else g_flashCnt[p] = 0;   /* 0x806cf97 */
+        if (g_misFlash[p] > 0) g_misFlash[p]--;   /* item Flash: +0x4f0 cai 1 por quadro */
         for (int pan = 0; pan < MAX_PANELS; pan++) {
             if (g_hitTimer[p][pan] > 0)
                 g_hitTimer[p][pan]--;
@@ -3005,6 +3272,110 @@ static void nxLifebarDraw(int p, float t, bool otherActive)
     s_nxGaugeBlink[p] = 1 - s_nxGaugeBlink[p];
 }
 
+/* ------------------------------------------------------------------------
+ * Skin por jogador (NX2 CPlayer::m_CurrentSkin / m_Skin, player.cpp:537).
+ * Cada jogador guarda o conjunto de sprites do próprio BGA/SKINxx.DAT; o
+ * desenho troca para o conjunto do jogador (nxSkinUse) antes de desenhar o
+ * lado dele. Receptores (01/02, w, hd), arrowf, spark e as setas/long vêm da
+ * skin; o resto (fonte, m0x, lifebar) é comum e não troca.
+ * ---------------------------------------------------------------------- */
+typedef struct {
+    int   idx;                         /* SKINxx carregado (-1 = vazio) */
+    bool  zeroArrows;
+    int   tap[5], l1[5], l2[5], l3[5], spark[5], arrowP;
+    float offX[5], offY, fieldX[2];
+    int   a541, a542, a543, a544, a545, arrowF, sparkF;
+    int   s01, s02, w01, w02, hd01, hd02;
+} NxSkinSet;
+static NxSkinSet s_skinSet[2] = { { -1 }, { -1 } };
+
+static void nxSkinSave(NxSkinSet* k, int idx)
+{
+    k->idx = idx; k->zeroArrows = g_zeroSkinArrows;
+    for (int i = 0; i < 5; i++) {
+        k->tap[i] = g_skinTap[i]; k->l1[i] = g_skinL1[i]; k->l2[i] = g_skinL2[i];
+        k->l3[i] = g_skinL3[i]; k->spark[i] = g_skinSpark[i]; k->offX[i] = g_skinOffX[i];
+    }
+    k->arrowP = g_skinArrowP; k->offY = g_skinOffY;
+    k->fieldX[0] = g_skinFieldX[0]; k->fieldX[1] = g_skinFieldX[1];
+    k->a541 = g_fontArrow541; k->a542 = g_fontArrow542; k->a543 = g_fontArrow543;
+    k->a544 = g_fontArrow544; k->a545 = g_fontArrow545;
+    k->arrowF = g_fontArrowF; k->sparkF = g_fontSpark;
+    k->s01 = g_fontSpr01; k->s02 = g_fontSpr02; k->w01 = g_fontSprW01; k->w02 = g_fontSprW02;
+    k->hd01 = g_fontSprHD01; k->hd02 = g_fontSprHD02;
+}
+
+static void nxSkinUse(int p)
+{
+    /* Double/HalfDouble: um campo só, com a skin do jogador que está jogando */
+    if (isDNMode() || isHDMode()) p = (g_game.activePlayerMask == 0x2) ? 1 : 0;
+    const NxSkinSet* k = &s_skinSet[(p == 1) ? 1 : 0];
+    if (k->idx < 0) k = &s_skinSet[0];
+    if (k->idx < 0) return;
+    g_zeroSkinArrows = k->zeroArrows;
+    for (int i = 0; i < 5; i++) {
+        g_skinTap[i] = k->tap[i]; g_skinL1[i] = k->l1[i]; g_skinL2[i] = k->l2[i];
+        g_skinL3[i] = k->l3[i]; g_skinSpark[i] = k->spark[i]; g_skinOffX[i] = k->offX[i];
+    }
+    g_skinArrowP = k->arrowP; g_skinOffY = k->offY;
+    g_skinFieldX[0] = k->fieldX[0]; g_skinFieldX[1] = k->fieldX[1];
+    g_fontArrow541 = k->a541; g_fontArrow542 = k->a542; g_fontArrow543 = k->a543;
+    g_fontArrow544 = k->a544; g_fontArrow545 = k->a545;
+    g_fontArrowF = k->arrowF; g_fontSpark = k->sparkF;
+    g_fontSpr01 = k->s01; g_fontSpr02 = k->s02; g_fontSprW01 = k->w01; g_fontSprW02 = k->w02;
+    g_fontSprHD01 = k->hd01; g_fontSprHD02 = k->hd02;
+}
+
+/* Setas da skin no lugar dos ARROW54x (grupo 0..4 = 542, 541, 545, 543, 544) */
+static void nxSkinMapArrows(void)
+{
+    g_zeroSkinArrows = false;
+    if (g_skinTap[0] >= 0) {
+        g_fontArrow542 = g_skinTap[0];
+        g_fontArrow541 = g_skinTap[1];
+        g_fontArrow545 = g_skinTap[2];
+        g_fontArrow543 = g_skinTap[3];
+        g_fontArrow544 = g_skinTap[4];
+        g_zeroSkinArrows = true;
+    }
+}
+
+/* Carrega a skin dos dois jogadores. A do P1 já entrou por
+ * Resource_LoadFontAndArrows(SKIN do P1) na inicialização; se o P2 escolheu
+ * outra, o SKINxx.DAT dele é carregado também, preservando o que é comum. */
+static void nxLoadSkins(void)
+{
+    int sk0 = Zero_SkinIndexP(0), sk1 = Zero_SkinIndexP(1);
+    exLoadSkin(sk0);
+    nxSkinMapArrows();
+    nxSkinSave(&s_skinSet[0], sk0);
+    if (sk1 == sk0) {
+        s_skinSet[1] = s_skinSet[0];
+    } else {
+        /* comuns que Resource_LoadFontAndArrows também escreve */
+        int tex = g_fontTexId, dec = g_fontDec00Id, etc = g_fontArrowETC;
+        int m1 = g_fontSprM01, m2 = g_fontSprM02, m3 = g_fontSprM03, m4 = g_fontSprM04, m5 = g_fontSprM05;
+        int s3 = g_fontSpr03, s4 = g_fontSpr04, s5 = g_fontSpr05;
+        int w3 = g_fontSprW03, w4 = g_fontSprW04, w5 = g_fontSprW05;
+        int h3 = g_fontSprHD03, h5 = g_fontSprHD05, b1 = g_fontSprBT01, b2 = g_fontSprBT02;
+        int gs = g_fontSprGGS, gd = g_fontSprGGD;
+        char datPath[MAX_PATH];
+        snprintf(datPath, sizeof(datPath), "%s/BGA/SKIN%02d.DAT", g_game.currentDirectory, sk1);
+        Resource_LoadFontAndArrows(datPath);
+        exLoadSkin(sk1);
+        nxSkinMapArrows();
+        nxSkinSave(&s_skinSet[1], sk1);
+        g_fontTexId = tex; g_fontDec00Id = dec; g_fontArrowETC = etc;
+        g_fontSprM01 = m1; g_fontSprM02 = m2; g_fontSprM03 = m3; g_fontSprM04 = m4; g_fontSprM05 = m5;
+        g_fontSpr03 = s3; g_fontSpr04 = s4; g_fontSpr05 = s5;
+        g_fontSprW03 = w3; g_fontSprW04 = w4; g_fontSprW05 = w5;
+        g_fontSprHD03 = h3; g_fontSprHD05 = h5; g_fontSprBT01 = b1; g_fontSprBT02 = b2;
+        g_fontSprGGS = gs; g_fontSprGGD = gd;
+    }
+    nxSkinUse(0);
+    Log_Print("GP: skins P1=SKIN%02d P2=SKIN%02d\n", sk0, sk1);
+}
+
 /* Zero 0x807ff20 (arrowp.spr ao pisar). Separado do bloco do receptor para ser
  * desenhado depois das notas (NX2: DrawStep -> DrawPushArrow -> DrawFadeArrow). */
 static void nxPushArrowDraw(int p, int panelCount, bool isDoubleOrNightmare)
@@ -3141,6 +3512,7 @@ void Gameplay_Render(void)
 
     for (int p = pRend0; p < pRend1; p++)
     {
+        nxSkinUse(p);   /* NX2: m_Skin do jogador */
         /* Velocidade de scroll deste player (para posição Y das notas) */
         float pPixelsPerRow = g_baseRowSpacing * g_scrollSpeedX[p];
 
@@ -3251,6 +3623,13 @@ void Gameplay_Render(void)
         }
         */
 
+        /* 0x806cf89..0x806d228: +0x4ec > 0 -> quadro branco 640x480 com alfa n/50,
+         * antes do campo do jogador; cai 1 por quadro */
+        if (g_misWhite[p] > 0) {
+            Render_Rect(0.0f, 0.0f, 640.0f, 480.0f, 255, 255, 255, (uint8_t)(g_misWhite[p] * 255 / 50));
+            g_misWhite[p]--;
+            glColor4f(1, 1, 1, 1);
+        }
         nxFieldBegin();   /* NX/UA: só receptores e setas (0x806a150 / 0x8069d20) */
         // 01.SPR receptor (g_fontSpr01) — renderiza ANTES das notas (abaixo delas)
         // Freedom: oculta o receptor completamente (sprites não são desenhados)
@@ -3364,11 +3743,13 @@ void Gameplay_Render(void)
         if (g_exceedSongIds && ExSelect_IsXMode()) xmS = (p == 0) ? 1.0f : -1.0f;
         if (g_game.cmdXMode[p]) xmS = (p == 0) ? 1.0f : -1.0f;   /* NX: 0x1000 */
         /* FL: alpha das setas (0x806f4d5) */
-        g_drawAlphaMul = g_game.cmdFlash[p] ? 0.5f + 0.5f * sinf((float)g_flashCnt[p] * 0.25f) : 1.0f;
+        g_drawAlphaMul = (g_game.cmdFlash[p] || g_misFlash[p] > 0) ? 0.5f + 0.5f * sinf((float)g_flashCnt[p] * 0.25f) : 1.0f;
         float xmY0 = (float)(receptorY + rh2 / 2);
         #define XM_S(pn) ((isDoubleOrNightmare && (pn) >= 5) ? -xmS : xmS)
-        #define XM_DX(yy) (xmS * ((yy) - xmY0))
-        #define XM_DXP(pn, yy) (XM_S(pn) * ((yy) - xmY0))
+        /* era: #define XM_DX(yy) (xmS * ((yy) - xmY0))
+         *      #define XM_DXP(pn, yy) (XM_S(pn) * ((yy) - xmY0))  (distância já curvada pelo AC/DC) */
+        #define XM_DX(yy) (xmS * nxAccelInv(p, (yy) - xmY0))
+        #define XM_DXP(pn, yy) (XM_S(pn) * nxAccelInv(p, (yy) - xmY0))
 
         /* Zero (piu 0x8087520): long note pela skin em uso.
          *   linha da nota = base da seta (a seta ocupa 64 px acima dela);
@@ -3713,6 +4094,27 @@ void Gameplay_Render(void)
                     uint8_t sv = g_divSpec[p][ri * 5 + panel];
                     if (sv == NT_DIV_W || sv == NT_DIV_G) val = sv;   /* A (4) nao desenha */
                 }
+                if (g_misSpec && !isHalfDouble) {   /* NX WORLD TOUR (0x806ea70) */
+                    int col = isDoubleOrNightmare ? panel : panel + (p ? 5 : 0);
+                    uint8_t ms = g_misSpec[ri * 10 + col];
+                    if (ms == 0x0e) continue;                         /* hidden: julgada, não desenhada */
+                    if (!val && (ms == 0x0d || ms == 0x0f)) val = 1;  /* falsa: desenhada */
+                    if (!val && ms >= 0x14 && ms <= 0x28) {           /* item */
+                        int it = g_misItemSpr[ms - 0x14];
+                        if (it >= 0) {
+                            /* 0x806ec9e: tile = [play+0x103f0], o mesmo quadro (0..5) das setas */
+                            int icnt = sprTileCount(it);
+                            if (icnt > 1) it += arrowAnimFrame() % icnt;
+                            float isw = (float)g_game.sprTiles[it].srcW, ish = (float)g_game.sprTiles[it].srcH;
+                            int ab = (arrowIdx >= 0 && arrowIdx < 5) ? arrowIdx : 0;
+                            int as = (ab == 0) ? g_fontArrow542 : (ab == 1) ? g_fontArrow541 : (ab == 2) ? g_fontArrow545 :
+                                     (ab == 3) ? g_fontArrow543 : g_fontArrow544;
+                            float aw = as >= 0 ? (float)g_game.sprTiles[as].srcW : (float)PANEL_SIZE;
+                            Sprite_DrawTileUV(it, posX[panel] + aw / 2.0f + XM_DXP(panel, y), y, isw, ish, 1.0f);
+                        }
+                        continue;
+                    }
+                }
                 if (!val || val == NT_HOLD_B || val == NT_HOLD_T) continue;
 
                 // HD: pos 0=CN(545), 1=UR(543), 2=DR(544), 3=DL(542), 4=UL(541), 5=CN(545)
@@ -3750,6 +4152,9 @@ void Gameplay_Render(void)
                     int skinBase = -1;
                     if (nv != 2 && nv != 3 && arrowGroup >= 0 && arrowGroup < 5)
                         skinBase = (val == NT_HOLD_H) ? g_skinL1[arrowGroup] : g_skinTap[arrowGroup];
+                    /* NX2: a cabeça do long (LongStart) só sai no DrawLongNote (zeroHoldDraw) */
+                    if (val == NT_HOLD_H && g_zeroSkinArrows && !isHalfDouble && g_skinL2[arrowGroup] >= 0
+                        && g_skinL3[arrowGroup] >= 0) continue;
                     if (skinBase >= 0) {
                         int sIdx = skinBase + af;
                         if (sIdx >= g_game.sprTileCount) sIdx = skinBase;
@@ -3768,6 +4173,8 @@ void Gameplay_Render(void)
          * receptor, por cima do corpo (a linha da cabeça já foi apagada). */
         for (int panel = 0; panel < panelCount; panel++) {
             if (!exHeldHead[panel]) continue;
+            /* NX2: segurado, a cabeça (LongStart em STEP_Y) sai no zeroHoldDraw */
+            if (g_zeroSkinArrows && !isHalfDouble && g_skinL2[panel % 5] >= 0 && g_skinL3[panel % 5] >= 0) continue;
             int arrowIdx = isDoubleOrNightmare ? (panel % 5) : panel;
             int arrowGroup = isHalfDouble
                 ? ((panel == 0 || panel == 5) ? 2 : (panel == 1) ? 3 : (panel == 2) ? 4 : (panel == 3) ? 0 : 1)
@@ -3909,6 +4316,11 @@ void Gameplay_Render(void)
             int cnt = g_exJudgeCnt[p];
             JudgeType jt = g_judgeDisplayType[p];
             if (cnt < 50 && jt > JT_NONE && jt <= JT_MISS) {
+                /* NX MODE ([0xa7f4a6d], 0x806f800..0x806f840 / 0x806fad0): judge e combo
+                 * em y = 20 + 110 (Y para cima); com a pista em 0x13 (UA/dd), 20 - 110 */
+                bool jNx = g_game.cmdNXMode[0] || g_game.cmdNXMode[1];
+                glPushMatrix();
+                if (jNx) glTranslatef(0.0f, 20.0f + (g_misTrack == 0x13 ? -110.0f : 110.0f), 0.0f);
                 bool rg = g_game.cmdGradeRev[p];   /* 0x806f856: sprite 5 - t (só visual) */
                 if (rg) jt = (JudgeType)(JT_MISS + JT_PERFECT - jt);
                 const char* jn = isDoubleOrNightmare ? k_jD[jt] : (p == 0 ? k_j1P[jt] : k_j2P[jt]);
@@ -3936,6 +4348,7 @@ void Gameplay_Render(void)
                     BGA_ScenePlayAt(g_exJudgeBga, dn, cnt);
                     BGA_SetColor4(g_exJudgeBga, 1.0f, 1.0f, 1.0f, 1.0f);       /* 0x407724 */
                 }
+                glPopMatrix();
             }
         } else
         if (g_judgeDisplayTimer[p] > 0)
@@ -4448,6 +4861,10 @@ void Gameplay_Render(void)
 
     // Explosao: seta congelada + ARROWF (depois de tudo, sobrepoe tudo)
     for (int pe = pRend0; pe < pRend1; pe++) {
+        nxSkinUse(pe);   /* NX2: m_Skin do jogador */
+        /* NX/UA: explosão e spark saem da mesma função dos receptores (piu 0x8069d20,
+         * spark em play+0x1134, 0x806a0cc), dentro da câmera da pista */
+        nxFieldBegin();
         float expPosX[10];
         int expPanels;
         if (isHalfDouble) {
@@ -4614,6 +5031,7 @@ void Gameplay_Render(void)
                 }
             }
         }
+        nxFieldEnd();
     }
 
     /* Timer regressivo - desativado

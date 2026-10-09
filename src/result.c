@@ -157,6 +157,27 @@ static GameState exNextState(void) {
     int st = exStageIdx();
     Log_Print("RESULT(EX): estágio %d razão P1 %.3f P2 %.3f\n", st, r1, r2);
     if (r1 < 0.75f && r2 < 0.75f) return STATE_GAMEOVER_ENTER;   /* 0x40D0F3 */
+    if (g_game.nxGameMode >= 1 && g_game.nxGameMode <= 3) {   /* SPECIAL ZONE / WORLD TOUR / TRAINING */
+        /* NX SPECIAL ZONE (0x8073a88..0x8073b54): segue enquanto houver mais de 1
+         * coração. Sem corações e sem extra: algum jogador com todas as razões dos
+         * estágios jogados >= 0.95 ganha +1 coração e a marca do extra. */
+        if (g_game.nxHearts > 1) return STATE_STAGE_TRANSITION;
+        if (!g_game.nxExtra) {
+            bool ok = false;
+            for (int p = 0; p < 2 && !ok; p++) {
+                if (!(g_game.activePlayerMask & (1 << p))) continue;
+                ok = true;
+                for (int k = 0; k <= st && k < 4; k++) if (g_exStageRatio[p][k] < 0.95f) ok = false;
+            }
+            if (ok) {
+                g_game.nxExtra = true;
+                g_game.nxHearts++;
+                Log_Print("RESULT(NX SP): extra, corações %d\n", g_game.nxHearts);
+                if (g_game.nxHearts > 1) return STATE_STAGE_TRANSITION;
+            }
+        }
+        return STATE_NAMEINPUT;
+    }
     if (st == 0 || st == 1) {                                    /* NEXTSTAGE 1 / 2 */
         g_game.bonusStage = true;
         return STATE_STAGE_TRANSITION;
@@ -180,7 +201,8 @@ static GameState exNextState(void) {
 
 // Decide proximo estado baseado nas grades e contagem de stages
 GameState Result_GetNextState(void) {
-    if (g_exceedSongIds) return exNextState();
+    /* era: if (g_exceedSongIds) return exNextState(); */
+    if (g_exceedSongIds) return NxSports_Route(exNextState(), false, exStageIdx());   /* NX: passo 12 -> SPORTS */
     int g1 = calcGrade(g_game.stats.perfectCount[0], g_game.stats.greatCount[0],
                        g_game.stats.goodCount[0], g_game.stats.badCount[0],
                        g_game.stats.missCount[0], (int)g_game.stats.maxCombo[0]);
@@ -542,6 +564,174 @@ static void zDanceGradeRender(int t)
     }
 }
 
+/* ── NX: CWorldGrade (vtable 0x8114ac8, Begin 0x808e620, quadro 0x808ea30) ──────
+ * BGA/WORLDGRADE.DAT, /SCRIPT/UI/WORLDGRADE.LUA (BG.MOV, SCORE_Y_1..7 = 358 302 246
+ * 190 134 78 22, SCORE_DRAW_START_TIME 90, INTERVAL 4, GRADE_DRAW_START_TIME 210,
+ * GRADE_SOUND_EFFECT_TIME 215, FADEOUT_START_TIME 550), fonte SCOREFONT.TGA pequena
+ * (0x8061390 com 1: célula 24x25 desenhada 36x33, passo 22, um dígito a cada 10 quadros).
+ * Linhas (0x808eab0..0x808f4b2), a i-ésima em 90 + 4 * i:
+ *   esquerda x = 250 - (7 - nd) * 11: PERFECT GREAT GOOD BAD MISS (Y1..Y5), MAXCOMBO (Y6)
+ *   direita  x = 490 - (7 - nd) * 11: MINE HEART ITEM VELOCITY POTION MISSCOMBO (Y1..Y6)
+ *   SCORE x = 363 - (7 - nd) * 11 (Y7)
+ * 210: slots 6/7 recebem a letra (fontes 0x16 6 0x17 0x18 0x19 0x1b = S..F), cena "rank";
+ * 320 (210 + 0x6e): "misson S" (sucesso, 0x8055a80) ou "misson F";
+ * 215 EFF_ANNOUNCE, 220 EFF_RANK_x_B + EFF_RANK_x; EFF_TICK a cada 5 quadros enquanto conta;
+ * fade 550..580; CENTER depois de 30 pula para o fade. Fracasso zera o score (0x808ed4d). */
+static bool g_wgActive, g_wgSuccess, g_wgLetterOk;
+static int  g_wgRank, g_wgNd[13];
+static BGALayerSrc g_wgLetter[6];
+static const int k_wgY[7] = { 358, 302, 246, 190, 134, 78, 22 };
+
+static void wgDigit(int x, int y, int d)
+{
+    if (g_zScoreFont < 0 || !g_game.textures[g_zScoreFont].inUse) return;
+    float u0 = (float)(d % 8) * 0.125f, u1 = u0 + 0.125f;
+    float v0 = (float)(d / 8) * 0.12109375f + 0.28515625f, v1 = v0 + 0.12109375f;
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, g_game.textures[g_zScoreFont].id);
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    /* 0x8060dc0 com a flag: quad x..x+24+12, y..y+25+8 (36x33); era 24x25 */
+    glTexCoord2f(u0, v0); glVertex2i(x, y + 33);
+    glTexCoord2f(u0, v1); glVertex2i(x, y);
+    glTexCoord2f(u1, v1); glVertex2i(x + 36, y);
+    glTexCoord2f(u1, v0); glVertex2i(x + 36, y + 33);
+    glEnd();
+}
+
+static void wgNum(int x, int y, int v, int nd, int elap)
+{
+    x = x - nd * 22 + 22;   /* 0x8061419: x é o último dígito */
+    for (int k = nd - 1, i = 0; k >= 0; k--, i++, x += 22) {
+        int p10 = 1;
+        for (int j = 0; j < k; j++) p10 *= 10;
+        if (elap >= 10 * (i + 1)) wgDigit(x, y, (v / p10) % 10);
+        else { wgDigit(x, y, (elap - 10 * i) % 10); break; }
+    }
+}
+
+static int wgValue(int p, int i)
+{
+    const NxMisStats* m = &g_nxMis[p];
+    switch (i) {
+    case 0: return g_game.stats.perfectCount[p];
+    case 1: return g_game.stats.greatCount[p];
+    case 2: return g_game.stats.goodCount[p];
+    case 3: return g_game.stats.badCount[p];
+    case 4: return g_game.stats.missCount[p];
+    case 5: return (int)g_game.stats.maxCombo[p];
+    case 6: return m->mine;
+    case 7: return m->heart;
+    case 8: return m->item;        /* o original mostra [+0x78] */
+    case 9: return m->velocity;
+    case 10: return m->potion;
+    case 11: return (int)g_game.stats.missCombo[p];
+    default: return (int)g_game.stats.score[p];
+    }
+}
+
+static int wgPlayer(void) { return (g_game.activePlayerMask & 1) ? 0 : 1; }   /* [+0xfc] */
+
+static void wgEnter(void)
+{
+    int p = wgPlayer();
+    int grade = p ? g_gradeP2 : g_gradeP1;
+    if (grade < 0 || grade > 5) grade = 5;
+    g_wgRank = 5 - grade;
+    g_wgSuccess = NxCond_Eval(NxWorld_Cond(), p, g_wgRank);
+    Log_Print("WGRADE: condição \"%s\" -> %s (rank %d)\n", NxWorld_Cond(), g_wgSuccess ? "SUCCESS" : "FAILED", g_wgRank);
+    for (int i = 0; i < 13; i++) g_wgNd[i] = zDigitCount(wgValue(p, i));
+    g_wgLetterOk = false;
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s/BGA/SCOREFONT.DAT", g_game.currentDirectory);
+    g_zScoreFont = -1;
+    if (RES_Open(path)) { g_zScoreFont = loadTextureFromRES("SCOREFONT.TGA"); RES_Close(); }
+    Movie_Close();
+    snprintf(path, sizeof(path), "%s/BGA/BG.MOV", g_game.currentDirectory);
+    Movie_Open(path, true);
+    g_zLastTick = -100;
+    if (!g_zSndInit) {
+        static const char* const k_wav[14] = {
+            "8-1.WAV", "9-5.WAV",
+            "RANK_S.WAV", "RANK_A.WAV", "RANK_B.WAV", "RANK_C.WAV", "RANK_D.WAV", "RANK_F.WAV",
+            "9-S.WAV", "9-A.WAV", "9-B.WAV", "9-C.WAV", "9-D.WAV", "9-F.WAV",
+        };
+        for (int k = 0; k < 14; k++) g_zSnd[k] = Audio_LoadWaveFile(k_wav[k]);
+        g_zSndInit = true;
+    }
+}
+
+static int g_wgFadeEnd = 580;
+
+static bool wgUpdate(int* t, float dt)
+{
+    if (Movie_IsOpen()) Movie_Update(dt);
+    int p = wgPlayer();
+    if (*t > 30 && *t < 550 && Input_IsPadHit(p, PAD_C)) { *t = 549; g_wgFadeEnd = 549 + 30; }   /* 0x808ee3e */
+    if (*t >= 90 && *t - g_zLastTick > 4 && *t <= 90 + 13 * 4 + g_wgNd[12] * 10) { g_zLastTick = *t; zPlay(0); }
+    if (*t == 215) zPlay(1);                                  /* EFF_ANNOUNCE */
+    if (*t == 220) { zPlay(8 + (5 - g_wgRank)); zPlay(2 + (5 - g_wgRank)); }
+    return *t >= g_wgFadeEnd;
+}
+
+static void wgRender(int t)
+{
+    if (Movie_IsOpen()) Movie_Render();
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    int p = wgPlayer();
+    if (g_game.bgaPicCount > 0) {
+        if (!g_wgLetterOk) {
+            static const int k_src[6] = { 0x16, 6, 0x17, 0x18, 0x19, 0x1b };   /* S A B C D F */
+            g_wgLetterOk = true;
+            for (int i = 0; i < 6; i++) g_wgLetterOk &= BGA_GetLayerSrc(0, k_src[i], &g_wgLetter[i]);
+            BGA_SceneReset(0, "grade2 start");
+            BGA_SceneReset(0, "rank");
+            BGA_SceneReset(0, "misson S");
+            BGA_SceneReset(0, "misson F");
+        }
+        BGA_ScenePlay(0, "grade2 start", true);
+    }
+    for (int i = 0; i < 13; i++) {
+        int t0 = 90 + 4 * i;
+        if (t < t0) break;
+        int nd = g_wgNd[i], x, y;
+        if (i < 6)       { x = 250 - (7 - nd) * 11; y = k_wgY[i]; }
+        else if (i < 12) { x = 490 - (7 - nd) * 11; y = k_wgY[i - 6]; }
+        else             { x = 363 - (7 - nd) * 11; y = k_wgY[6]; }
+        wgNum(x, y, wgValue(p, i), nd, t - t0);
+    }
+    if (t >= 210 && g_game.bgaPicCount > 0) {
+        if (g_wgLetterOk) {
+            BGA_SetLayerSrc(0, 6, &g_wgLetter[5 - g_wgRank]);
+            BGA_SetLayerSrc(0, 7, &g_wgLetter[5 - g_wgRank]);
+        }
+        BGA_ScenePlay(0, "rank", true);
+        if (t >= 210 + 0x6e) BGA_ScenePlay(0, g_wgSuccess ? "misson S" : "misson F", true);
+    }
+    if (t >= 550) {
+        float a = (float)(t - 550) / (float)(g_wgFadeEnd - 550);
+        if (a > 1.0f) a = 1.0f;
+        glDisable(GL_TEXTURE_2D);
+        glColor4f(0, 0, 0, a);
+        glBegin(GL_QUADS);
+        glVertex2f(0, 0); glVertex2f(640, 0); glVertex2f(640, 480); glVertex2f(0, 480);
+        glEnd();
+        glColor4f(1, 1, 1, 1);
+    }
+}
+
+/* 0x808ed41 + 0x805ff6c: sucesso -> próxima missão; fracasso -> CONTINUE;
+ * última missão (corações <= 1): sucesso -> MISSIONCLEAR, fracasso -> CONTINUE */
+static GameState wgNext(void)
+{
+    int p = wgPlayer();
+    if (!g_wgSuccess) g_game.stats.score[p] = 0;   /* 0x808ed4d */
+    if (!g_wgSuccess) return STATE_STAGE_BREAK;    /* CONTINUE (nx_mission.c) */
+    if (g_game.nxHearts <= 1) return STATE_NX_CLEAR;
+    return STATE_STAGE_TRANSITION;
+}
+
 void Result_Enter(void) {
     g_resultFrame = 0;
     g_exT = 0;
@@ -573,6 +763,7 @@ void Result_Enter(void) {
         if (st == 0) memset(g_exStageRatio, 0, sizeof(g_exStageRatio));
         /* IR: TOTAL_SCORE e m_PlayOrder[estágio] = índice em g_exSongs (src/ir.c) */
         IR_RecordStage(st, g_game.selectedSongIndex, g_game.stats.score);
+        NxSports_Store(st);   /* NX CDanceGrade 0x80735c9: kcal e VO2 do estágio */
         for (int p = 0; p < 2; p++) {
             float r = exRatio(p);
             g_exStageRatio[p][st] = r;
@@ -581,7 +772,10 @@ void Result_Enter(void) {
         }
     }
     Log_Print("Result: grades P1=%d P2=%d\n", g_gradeP1, g_gradeP2);
-    if (g_exceedSongIds) zDanceGradeEnter();
+    g_wgActive = g_exceedSongIds && g_game.nxGameMode == 2;
+    g_wgFadeEnd = 580;
+    if (g_wgActive) wgEnter();                    /* NX WORLD TOUR: CWorldGrade */
+    else if (g_exceedSongIds) zDanceGradeEnter();
 }
 
 void Result_Update(float dt) {
@@ -595,9 +789,9 @@ void Result_Update(float dt) {
         }
         if (g_game.state != STATE_DANCE_GRADE_DISPLAY) return;
         /* exGradeSounds(g_exT);  Exceed */
-        if (zDanceGradeUpdate(g_exT, dt)) {      /* Zero 0x806f770; Exceed: g_exT > 0x168 */
+        if (g_wgActive ? wgUpdate(&g_exT, dt) : zDanceGradeUpdate(g_exT, dt)) {      /* Zero 0x806f770; Exceed: g_exT > 0x168 */
             Movie_Close();
-            GameState ns = Result_GetNextState();
+            GameState ns = g_wgActive ? wgNext() : Result_GetNextState();
             BGM_Stop();
             Resource_ClearBGA();
             Game_ChangeState(ns);
@@ -659,7 +853,8 @@ void Result_Render(void) {
             return;
         }
         if (g_game.state != STATE_DANCE_GRADE_DISPLAY) return;
-        zDanceGradeRender(g_exT);               /* Zero */
+        if (g_wgActive) wgRender(g_exT);        /* NX WORLD TOUR */
+        else zDanceGradeRender(g_exT);          /* Zero */
         /* Exceed:
         BGA_SetEventFrame(0, g_exT % 360 + 60);
         if (g_game.activePlayerMask & 1) exPlayer(0, g_exT);

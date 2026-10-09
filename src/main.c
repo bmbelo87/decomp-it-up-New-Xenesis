@@ -87,7 +87,7 @@ static void LoadBGAForState(GameState state) {
     case STATE_STAGE_BREAK:           /* Prex3: 083.DAT + 7-1.WAV; Exceed: BGA\SB.MOV (sem .DAT) */
         bgaName = g_exceedSongIds ? "" : "083"; break;
     case STATE_DANCE_GRADE_ENTER:
-    case STATE_DANCE_GRADE_DISPLAY: bgaName = g_exceedSongIds ? "GRADE" : "83"; break; /* Exceed 0x40CD2A: BGA\GRADE.DAT */
+    case STATE_DANCE_GRADE_DISPLAY: bgaName = g_exceedSongIds ? (g_game.nxGameMode == 2 ? "WORLDGRADE" : "GRADE") : "83"; break; /* Exceed 0x40CD2A: BGA\GRADE.DAT; NX WORLD TOUR 0x808e6c6: BGA/WORLDGRADE.DAT */
     case STATE_HOWTOPLAY: bgaName = ""; break; /* limpa BGA do menu imediatamente; 03.DAT carrega no stateFrame==1 */
     case STATE_SERVICE_MENU: bgaName = ""; break; /* SETUP MENU desenha sobre fundo preto */
     default: break;
@@ -466,8 +466,19 @@ void Game_Update(float dt) {
     case STATE_SONG_TITLE_OUT:
         Loading_Update(dt);
         break;
+    case STATE_NX_MISSION:
+        NxMission_Update(dt);
+        break;
+    case STATE_NX_SPORTS:
+        NxSports_Update(dt);
+        break;
+    case STATE_NX_CLEAR:
+        if (g_game.stateFrame == 1) NxClear_Enter();
+        NxClear_Update(dt);
+        break;
     case STATE_GAMEPLAY:
-        if (Movie_IsOpen()) Movie_Update(dt);   /* BGA\%s.MOV da música */
+        /* era: if (Movie_IsOpen()) Movie_Update(dt); */
+        if (Movie_IsOpen() && !Gameplay_IsFrozen()) Movie_Update(dt);   /* BGA\%s.MOV da música; parado no stage break */
         Gameplay_Update(dt);
         break;
     case STATE_DANCE_GRADE_ENTER:
@@ -513,11 +524,16 @@ void Game_Update(float dt) {
                     else Log_Print("NST: '%s' não abriu\n", path);
                 }
                 Movie_Update(dt);
-                exDone = !Movie_IsOpen() || Movie_GetDecoded() >= 57;
+                /* NX PLAYMOVIE (0x80784d0): sai quando o vídeo E o áudio terminam
+                 * ([+0xa] / [+9]). Era (Exceed): decoded >= 57. */
+                exDone = (!Movie_IsOpen() || Movie_HasEnded()) && !BGM_IsPlaying();
                 if (exDone) Movie_Close();
             }
         if (g_exceedSongIds ? exDone : (g_game.stateFrame >= 60)) {
-            if (g_game.bonusStage && g_game.stageCount == 0 && !g_game.isBonusSong) {
+            if (g_exceedSongIds && g_game.nxGameMode >= 1 && g_game.nxGameMode <= 3) {
+                /* NX SPECIAL ZONE: os corações já decidiram em Result_GetNextState */
+                Game_ChangeState(STATE_EXSELECT);
+            } else if (g_game.bonusStage && g_game.stageCount == 0 && !g_game.isBonusSong) {
                 // Vai pro bonus stage
                 /* Exceed: volta para a CSelect */
                 Game_ChangeState(g_exceedSongIds ? STATE_EXSELECT : STATE_SONG_SELECT);
@@ -536,6 +552,11 @@ void Game_Update(float dt) {
         break;
     case STATE_STAGE_BREAK:
         if (g_exDemo) { Demo_End(); break; }
+        if (g_exceedSongIds && g_game.nxGameMode == 2) {   /* NX WORLD TOUR: CContinue (nx_mission.c) */
+            if (g_game.stateFrame == 1) NxContinue_Enter();
+            NxContinue_Update(dt);
+            break;
+        }
         if (g_exceedSongIds) {
             /* exceed.exe 0x4152B0 (Begin): 0x4229C8("BGA\SB.MOV", 0) sem loop;
              * se falhar vai para IDLE (aqui: GameOver). Toca GAMESTOP.WAV
@@ -556,19 +577,35 @@ void Game_Update(float dt) {
                     Attract_Idle();     /* 0x4152E0: "IDLE" */
                     break;
                 }
-                /* Zero 0x80776b0: WAVE/STAGEBREAK.WAV (o GAMESTOP.WAV do Exceed não existe) */
+                /* NX "PLAYMOVIE STAGEBREAK" (0x80fceea): o PLAYMOVIE toca AUDIO/%s.AUD
+                 * (0x811017a) — o WAVE/STAGEBREAK.WAV do Zero não existe no NX */
+                {
+                    char ap[MAX_PATH];
+                    snprintf(ap, sizeof(ap), "%s/AUDIO/STAGEBREAK.AUD", g_game.currentDirectory);
+                    BGM_Stop();
+                    if (BGM_LoadAUDDirect(ap)) BGM_Play(false);
+                    else Log_Print("SB: '%s' não abriu\n", ap);
+                }
+                /* era (Zero 0x80776b0): WAVE/STAGEBREAK.WAV (o GAMESTOP.WAV do Exceed não existe)
                 {
                     static int s_sndSB = -1;
                     if (s_sndSB < 0) s_sndSB = Audio_LoadWaveFile("STAGEBREAK.WAV");
                     if (s_sndSB >= 0) { Audio_Stop(s_sndSB); Audio_Play(s_sndSB, false); }
                 }
+                */
                 /* era (Exceed): g_waveSoundIds[SND_GAMESTOP] */
                 sbStart = timeGetTime();
             }
             Movie_Update(dt);
-            if (timeGetTime() - sbStart >= 4500) {
+            /* era: if (timeGetTime() - sbStart >= 4500) {
+             * NX PLAYMOVIE (0x80784d0): sai com o vídeo E o áudio no fim */
+            if ((!Movie_IsOpen() || Movie_HasEnded()) && !BGM_IsPlaying()) {
+                (void)sbStart;
                 Movie_Close();
-                Game_ChangeState(STATE_GAMEOVER_ENTER);
+                /* era: Game_ChangeState(STATE_GAMEOVER_ENTER); */
+                /* NX passo 19 (0x806005a): SPORTS se [0x81f8910] > 0 */
+                int sbStage = g_game.isBonusSong ? 3 : 2 - g_game.stageCount;
+                Game_ChangeState(NxSports_Route(STATE_GAMEOVER_ENTER, true, sbStage));
             }
             break;
         }
@@ -595,11 +632,17 @@ void Game_Update(float dt) {
                 Movie_Close();
                 if (!Movie_Open(path, false))
                     Log_Print("GAMEOVER: '%s' não abriu\n", path);  /* 0x41525D: -> IDLE (abaixo) */
+                /* NX "PLAYMOVIE GAMEOVER 4000" (0x80fceff): o PLAYMOVIE também toca
+                 * AUDIO/%s.AUD (0x811017a). Era: sem som (Exceed). */
+                snprintf(path, sizeof(path), "%s/AUDIO/GAMEOVER.AUD", g_game.currentDirectory);
+                if (BGM_LoadAUDDirect(path)) BGM_Play(false);
+                else Log_Print("GAMEOVER: '%s' não abriu\n", path);
                 goStart = timeGetTime();
             }
             Movie_Update(dt);
             if (!Movie_IsOpen() || timeGetTime() - goStart >= 4000) {
                 Movie_Close();
+                BGM_Stop();
                 Resource_ClearBGA();
                 Menu_ResetState();
                 /* Game_ChangeState(STATE_MENU_ENTER); */
@@ -822,6 +865,9 @@ void Game_Render(void) {
         g_game.state != STATE_CREDIT &&         /* CREDIT desenha por slot (intro.c) */
         g_game.state != STATE_EXSELECT &&
         g_game.state != STATE_STATION &&        /* STATION desenha por cena (station.c) */
+        g_game.state != STATE_NX_MISSION &&     /* objetivo da missão desenha por cena (nx_mission.c) */
+        g_game.state != STATE_NX_CLEAR &&
+        g_game.state != STATE_NX_SPORTS &&       /* SPORTS desenha por cena (nx_sports.c) */
         g_game.state != STATE_HIGHSCORE &&
         g_game.state != STATE_IR &&
         g_game.state != STATE_NAMEINPUT) {      /* NAMEINPUT desenha por slot (nameinput.c) */             /* IR desenha o próprio BGA (ir.c) */      /* HIGHSCORE desenha por slot (highscore.c) */       /* EXSELECT desenha por slot (exceed_select.c) */
@@ -863,12 +909,22 @@ void Game_Render(void) {
     case STATE_SONG_TITLE_OUT:
         Loading_Render();
         break;
+    case STATE_NX_MISSION:
+        NxMission_Render();
+        break;
+    case STATE_NX_CLEAR:
+        NxClear_Render();
+        break;
+    case STATE_NX_SPORTS:
+        NxSports_Render();
+        break;
     case STATE_GAMEPLAY:
         if (Movie_IsOpen() && !g_game.cmdTestBGA[0] && !g_game.cmdTestBGA[1])
             Movie_Render();     /* fundo no lugar do .DAT; TestBGA (extra do port) substitui */
         Gameplay_Render();
         break;
     case STATE_STAGE_BREAK:
+        if (g_exceedSongIds && g_game.nxGameMode == 2) { NxContinue_Render(); break; }
         if (g_exceedSongIds && Movie_IsOpen()) Movie_Render();   /* SB.MOV */
         break;
     case STATE_DANCE_GRADE_DISPLAY:
@@ -951,7 +1007,11 @@ void Game_MainLoop(void) {
     const int    MAX_CATCHUP = 5;   /* teto de passos por iteração */
 
     double accumulator = 0.0;
-    uint32_t prevTime = timeGetTime();
+    /* era: uint32_t prevTime = timeGetTime();  (1 ms de resolução: o número de
+     * passos por refresh oscilava 0/1/2 e as setas tremiam, com ou sem vsync) */
+    double qpcHz = (double)SDL_GetPerformanceFrequency();
+    uint64_t prevQpc = SDL_GetPerformanceCounter();
+    uint64_t lastRenderQpc = prevQpc;
 
     while (running) {
         if (!Window_ProcessMessages()) {
@@ -959,9 +1019,10 @@ void Game_MainLoop(void) {
             break;
         }
 
-        uint32_t now = timeGetTime();
-        double elapsed = (double)(uint32_t)(now - prevTime);
-        prevTime = now;
+        /* era: uint32_t now = timeGetTime(); double elapsed = (double)(now - prevTime); */
+        uint64_t nowQpc = SDL_GetPerformanceCounter();
+        double elapsed = (double)(nowQpc - prevQpc) * 1000.0 / qpcHz;
+        prevQpc = nowQpc;
 
         /* Uma pausa longa (janela minimizada, breakpoint, troca de faixa que
          * travou) não pode virar uma avalanche de catch-up. */
@@ -994,8 +1055,21 @@ void Game_MainLoop(void) {
          * setas; nesses desenhos g_renderTick = false e as cenas do BGA não
          * avançam, então animações, judge e spark ficam em 60 Hz. Fora do
          * gameplay volta ao ritmo de 60 Hz (várias telas avançam no desenho). */
-        bool extra = g_game.vsync && g_game.state == STATE_GAMEPLAY;
+        /* era: bool extra = g_game.vsync && g_game.state == STATE_GAMEPLAY;
+         * Sem vsync o gameplay só desenhava a 60 Hz fora de fase com o monitor
+         * (tremor em 75/120/144 Hz). Agora desenha também sem vsync, limitado à
+         * taxa do monitor; com vsync o próprio swap limita. */
+        bool extra = false;
+        if (g_game.state == STATE_GAMEPLAY) {
+            if (g_game.vsync) extra = true;
+            else {
+                double hz = (double)Window_GetRefreshRate();
+                double minMs = 1000.0 / (hz > 0.0 ? hz : 60.0);
+                extra = (double)(nowQpc - lastRenderQpc) * 1000.0 / qpcHz >= minMs;
+            }
+        }
         if (steps > 0 || extra) {
+            lastRenderQpc = nowQpc;
             g_renderTick = (steps > 0);
             uint64_t hz1 = SDL_GetPerformanceCounter();
             double movUpd = g_movieMs, logUpd = g_logMs;
