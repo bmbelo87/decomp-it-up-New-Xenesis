@@ -49,7 +49,10 @@ typedef struct {
 #define NT_DIV_A   4  // A: marcador antes do bloco de decisão (não desenha)
 /* CStep (step.hpp do fonte): STXDATA m_STXData[NUM_BLOCK_Y = 50][10] —
  * até 50 páginas/segmentos, 10 ramos cada. */
-#define STEP_MAX_BLOCK_Y   50
+/* era: #define STEP_MAX_BLOCK_Y   50 (STX) — o .SEE do NX tem 200 contagens (piu [0xa880dc4] = 0xC8) */
+#define STEP_MAX_BLOCK_Y   200
+#define STX_BLOCK_COUNTS   50    /* .STX (Exceed/Prex3): 50 contagens no header da seção */
+#define SEE_BLOCK_COUNTS   200   /* .SEE (NX, 0x80717f3 / 0x80719d0): 200 contagens, header 4 + 200*4 = 0x324 */
 #define STEP_MAX_BLOCK_X   10
 #define STEP_DIV_MAX_PAGES STEP_MAX_BLOCK_Y
 /* #define STEP_DIV_MAX_PAGES 8 */

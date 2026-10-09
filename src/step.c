@@ -218,10 +218,14 @@ bool Step_LoadSong(const char* path, StepSong* song)
          * O original soma essas contagens e lê exatamente esse número de blocos
          * em sequência; o primeiro é o que já lemos acima (o tamanho dele é o
          * último int do header). */
-        uint32_t blockCounts[50];
-        memcpy(blockCounts, secHeader + 4, sizeof(blockCounts));
+        /* era: uint32_t blockCounts[50]; (só o layout do .STX)
+         * NX .SEE: 200 contagens (piu 0x80719ce..0x8071a08, laço até [0xa880dc4] = 0xC8);
+         * com 50, a AA132 (Hong Kong 2) perdia os blocos 51..55 e acabava em 58 s. */
+        int nCounts = s_see ? SEE_BLOCK_COUNTS : STX_BLOCK_COUNTS;
+        uint32_t blockCounts[SEE_BLOCK_COUNTS] = { 0 };
+        memcpy(blockCounts, secHeader + 4, (size_t)nCounts * 4);
         int totalBlocks = 0;
-        for (int bi = 0; bi < 50; bi++) {
+        for (int bi = 0; bi < nCounts; bi++) {
             if (blockCounts[bi] > STEP_MAX_BLOCK_X) { totalBlocks = 0; break; }  /* header suspeito */
             totalBlocks += (int)blockCounts[bi];
         }
@@ -234,7 +238,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
         bool isDiv = false;
         {
             int bi = 0;
-            for (int g = 0; g < 50 && bi < STEP_MAX_BLOCK_Y * STEP_MAX_BLOCK_X; g++) {
+            for (int g = 0; g < nCounts && bi < STEP_MAX_BLOCK_Y * STEP_MAX_BLOCK_X; g++) {
                 if (!blockCounts[g]) continue;
                 if (blockCounts[g] > 1) isDiv = true;
                 for (uint32_t k = 0; k < blockCounts[g] && bi < STEP_MAX_BLOCK_Y * STEP_MAX_BLOCK_X; k++) {
