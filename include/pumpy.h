@@ -458,6 +458,7 @@ typedef struct {
     int  gfxResIdx;      /* 0..4 = 640x480, 800x600, 1024x768, 1280x960, 1600x1200 */
     int  gfxTexFilter;   /* 0 = SMOOTH (GL_LINEAR), 1 = SHARP (GL_NEAREST) */
     bool gfxShowFps;
+    bool nxUnlockSpecial;   /* extra do port: SPECIAL ZONE com tudo liberado (PUMPY.INI UnlockSpecial) */
     int  gfxAspect;      /* 0 = 4:3 com bordas, 1 = esticar */
     int  gfxUpscale;     /* 0 = OFF, 2/3/4 = xBRZ ao carregar texturas (xbrz.c) */
     

@@ -603,9 +603,10 @@ static void svcRenderGameOption(void)
  * SCORE PER TICKET +0xED4. "SAVE AND EXIT" está comentado no script: o EXIT grava.
  * MERCY TICKET: a lista do script usa "SETUP_VALU_1" (erro de digitação, nil), e
  * o GetMenuValuesNum para no nil -> só "OFF" existe no original. */
-static const char* SVC_GAMEOPT_ITEMS[11] = {
+/* era: 11 itens; "UNLOCK SPECIAL ZONE" (índice 8) é extra do port, não existe no NX */
+static const char* SVC_GAMEOPT_ITEMS[12] = {
     "GAME MODE", "LEVEL", "STAGE BREAK", "DEMO SOUND", "SHOW HELP",
-    "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "", "DEFAULT SETTING", "EXIT"
+    "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "UNLOCK SPECIAL ZONE", "", "DEFAULT SETTING", "EXIT"
 };
 static const char* SVC_LEVEL_NAMES[3]  = { "1. EASY", "2. NORMAL", "3. HARD" };
 static const char* SVC_STAGEBRK_NX[5]  = { "OFF", "1ST STAGE", "2ND STAGE", "3RD STAGE", "4TH STAGE" };
@@ -624,6 +625,7 @@ static void svcGameOptionReset(void)
     Eeprom_Set32(0xECA, 0);         /* TRAINING STATION */
     Eeprom_Set8(0xED3, 0);          /* MERCY TICKET OFF */
     Eeprom_Set8(0xED4, 0);          /* SCORE PER TICKET OFF */
+    g_game.nxUnlockSpecial  = false;  /* extra do port */
 }
 
 static void svcRenderGameOption(void)
@@ -639,9 +641,9 @@ static void svcRenderGameOption(void)
     svcColor(SVC_NORMAL);
     svcText(276.0f, 428.0f, "GAME OPTION");
 
-    for (i = 0; i < 11; i++) {
+    for (i = 0; i < 12; i++) {
         float y = (float)(352 - i * 20);
-        if (i == 8) continue;   /* MENU_BLANK */
+        if (i == 9) continue;   /* MENU_BLANK */
         svcColorFor(i, g_svcCursor);
         svcText(196.0f, y, SVC_GAMEOPT_ITEMS[i]);
 
@@ -678,6 +680,10 @@ static void svcRenderGameOption(void)
             if (stkt == 0) svcColor(SVC_SUCCESS);
             svcText(404.0f, y, SVC_SCORETKT_NX[stkt]);
             break;
+        case 8:   /* extra do port */
+            if (!g_game.nxUnlockSpecial) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.nxUnlockSpecial ? "ON" : "OFF");
+            break;
         default:
             break;
         }
@@ -686,8 +692,8 @@ static void svcRenderGameOption(void)
     if (hit & SVC_BIT_TEST) {
         do {
             g_svcCursor++;
-            if (g_svcCursor > 10) g_svcCursor = 0;
-        } while (g_svcCursor == 8);
+            if (g_svcCursor > 11) g_svcCursor = 0;
+        } while (g_svcCursor == 9);
     }
     if (hit & SVC_BIT_SERVICE) {
         switch (g_svcCursor) {
@@ -699,8 +705,9 @@ static void svcRenderGameOption(void)
         case 5: Eeprom_Set32(0xECA, (st + 1) % 4); break;
         case 6: Eeprom_Set8(0xED3, (uint8_t)((mercy + 1) % SVC_MERCY_COUNT)); break;
         case 7: Eeprom_Set8(0xED4, (uint8_t)((stkt + 1) % 7)); break;
-        case 9: svcGameOptionReset(); break;
-        case 10:
+        case 8: g_game.nxUnlockSpecial = !g_game.nxUnlockSpecial; break;
+        case 10: svcGameOptionReset(); break;
+        case 11:
             GameOption_Save();
             g_svcPage = 0;
             break;
