@@ -4,7 +4,7 @@
  *   g_nxResMap    <- 0x0813f860 (328 pares recurso/chart, 0x8061d10) */
 #include "pumpy.h"
 
-#if EX_SONG_COUNT != 193 || EX_CHANNEL_COUNT != 7 || EX_CHANNEL_MAX != 46
+#if EX_SONG_COUNT != 196 || NX_SONG_BASE != 193 || EX_CHANNEL_COUNT != 7 || EX_CHANNEL_MAX != 46
 #error "pumpy.h: EX_SONG_COUNT/EX_CHANNEL_COUNT/EX_CHANNEL_MAX fora da NX (rode tools/gen_nx_songs.py)"
 #endif
 
@@ -207,6 +207,18 @@ const ExceedSong g_exSongs[EX_SONG_COUNT] = {
     { 0xDA18, "ROD ", "ROD ", "Shake it up ", "Shake it up ", 120.0000, { -1, -1, 16, -1, 19 }, 1, 1, { 1, 1, 1, 1, 1 }, 0xA18, 6, 191, 0, 0, "120", 108 }, /* 189 */
     { 0xDB06, "\354\206\234\354\235\264 ", "SOM2 ", "\354\230\210\354\247\200\353\252\275(NM) ", "Deja Vu ", 115.0000, { -1, -1, -1, -1, 17 }, 1, 1, { 1, 1, 1, 1, 1 }, 0xB06, 6, 192, 0, 0, "115", 102 }, /* 190 */
     { 0xDD16, "\353\260\230\354\225\274\355\224\204\353\241\234\353\215\225\354\205\230 ", "Banya Production ", "Gun Rock(C/NM) ", "Gun Rock ", 104.0000, { -1, -1, 17, -1, 18 }, 1, 1, { 1, 1, 1, 1, 1 }, 0xD16, 6, 193, 0, 0, "104", 98 }, /* 191 */
+    /* Extras do port (índices >= NX_SONG_BASE): músicas com todos os arquivos no disco
+     * (AUDIO, INTRO, BGA, PREVIEW, STEP, TITLE, disco no TEST.DAT) mas fora da tabela
+     * 0x0813c200 do piu. Só aparecem com GAME STYLE = MODDED (nx_select.c buildList).
+     * Ficam no FIM da tabela para não deslocar índices (restrict.dat é por índice); a
+     * lista as encaixa depois da última música do mesmo canal.
+     * Nomes e níveis: tabelas do Exceed/Exceed2/Zero pelo mesmo id. BPM: Exceed.
+     * Dificuldades conferidas no .SEE (tools/see_notes.py): 208 = seções 1 e 5;
+     * A10 = seções 1..5; D208 = seções 1, 3, 4 e 5 (aqui só CRAZY/NIGHTMARE, nível
+     * desconhecido = 99). Duração: estimativa pelo tamanho do .AUD (~24200 bytes/s). */
+    { 0x208, "H.O.T ", "H.O.T ", "\355\210\254\354\247\200 ", "Fighting Spirit ", 98.0000, { 2, -1, -1, 5, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 195, 0, 1, "98", 92 }, /* 193 */
+    { 0xA10, "\353\263\264\354\225\204 ", "BoA ", "\353\260\234\353\240\214\355\213\260 ", "Valenti ", 104.0000, { 2, 4, 9, 4, 11 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 196, 0, 1, "104", 107 }, /* 194 */
+    { 0xD208, "H.O.T ", "H.O.T ", "\355\210\254\354\247\200(N/C/NM) ", "Fighting Spirit ", 98.0000, { 99, -1, 13, -1, 16 } /* era { 99, -1, 99, -1, 99 }. Informado pelo usuário: CRAZY 13, NIGHTMARE 1 caveira (15 ou 16 em levelSlots; ele lembra 16 ou 17 -> 16), NORMAL sem nível (nunca foi ativado no original). FREESTYLE desligado: seção 5 = mesmas notas do FREESTYLE da 208 */, 1, 1, { 1, 1, 1, 1, 1 }, 0x208, 6, 197, 0, 1, "98", 92 }, /* 195 */
 };
 
 const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX] = {

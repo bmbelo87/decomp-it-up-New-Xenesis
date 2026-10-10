@@ -199,9 +199,17 @@ bool Gameplay_IsFrozen(void) { return g_stageBreakFreezeTimer >= 0.0f; }   /* te
  * Só o lifeSpeed muda — e ele é o multiplicador de ganho, então um lifeSpeed
  * inicial menor faz a vida subir bem mais devagar no HARD.
  */
-static const int k_lifeSpeedInit[3] = {  500, 300, 100 };  /* easy, normal, hard */
-static const int k_lifeSpeedMin [3] = {  200, 100,   0 };
-static const int k_lifeSpeedMax [3] = { 1000, 900, 800 };
+/* era (ordem do Prex3): Init { 500, 300, 100 }, Min { 200, 100, 0 }, Max { 1000, 900, 800 }.
+ * NX: tabela 0x80ff420 do piu, {Min, Max, Miss, Factor} indexada pelo LEVEL do Service
+ * Menu ([0x9e3dbcf], 0x8067f70; >= 3 vira 1) = FactorTable do NX2 (gauge.cpp):
+ *   0 EASY   {200, 1000, -700, 500}
+ *   1 NORMAL {  0,  800, -700, 100}
+ *   2 HARD   {100,  900, -700, 300}
+ * No original o NORMAL tem a curva mais dura e o HARD a intermediária (os comentários
+ * do NX2 dizem "Normal"/"Hard" nessa mesma ordem). */
+static const int k_lifeSpeedInit[3] = {  500, 100, 300 };  /* easy, normal, hard */
+static const int k_lifeSpeedMin [3] = {  200,   0, 100 };
+static const int k_lifeSpeedMax [3] = { 1000, 800, 900 };
 
 static int lifeLevel(void)
 {
@@ -237,11 +245,29 @@ static void applyLife(int player, JudgeType jt)
              * do case 5), que em inteiro é "life - life/4 - 20". Escrito assim
              * de propósito: (life*3)/4 arredonda 1 unidade para baixo quando
              * life não é múltiplo de 4. */
-            *life   = *life - (*life / 4) - 20;
+            /* era: *life = *life - (*life / 4) - 20;
+             * piu 0x8068190 / NX2 gauge.cpp: o quarto é de min(life, 1000) — a reserva
+             * acima de 1000 (limite por nível, abaixo) não aumenta a perda. */
+            {
+                int capped = (*life > 1000) ? 1000 : *life;
+                *life = *life - (capped / 4) - 20;
+            }
             *speed += LIFE_SPEED_PENALTY;        /* -= 700 */
             break;
         default:
             break;
+    }
+    /* Teto da vida (não havia nenhum): piu 0x8070e2c grava 1000 + 3 * nível^2 em
+     * [gauge+0x10] e 0x8068130 limita a vida a ele = NX2 m_iLimit (player.cpp:80).
+     * A barra mostra até 1000; o que passa é reserva invisível. Nível limitado a 30
+     * como no NX2 (LevelLimit); no piu esse corte não foi conferido. */
+    {
+        int lv = g_nxLevel[player];
+        if (lv <= 0) lv = g_nxLevel[player ^ 1];   /* Double/Nightmare do P2: campo é o jogador 0 */
+        if (lv < 0) lv = 0;
+        if (lv > 30) lv = 30;
+        int limit = 1000 + 3 * lv * lv;
+        if (*life > limit) *life = limit;
     }
     /* Exceed (0x409BC2..0x40A0CD): a vida em [+0x168] nunca é limitada —
      * pode ficar negativa e passar de 1000; só o desenho (0x40B084) faz clamp.
@@ -779,6 +805,12 @@ static int g_nextNoteRow[2][MAX_PANELS];
 
 // Hold tracking: which rows have active hold heads per player/panel
 static int g_holdRows[2][MAX_PANELS]; // row index of active hold (-1 = none)
+/* Extra do port (sempre ligado; começou só no MODDED): linha da ponta de um long já julgada com o
+ * botão segurado ANTES de chegar ao receptor. O original (NX2 step.cpp:997, piu) julga
+ * corpo e ponta até 'Perfect' ms antes da linha e a nota some na hora; em velocidade
+ * alta isso corta o fim do long alguns pixels antes do receptor. Aqui a ponta segue
+ * desenhada até a linha chegar (só o desenho; julgamento e pontuação não mudam). */
+static int g_tailGhost[2][MAX_PANELS];   /* -1 = nenhuma */
 
 static float g_judgeDisplayTimer[2];
 static JudgeType g_judgeDisplayType[2];
@@ -943,7 +975,7 @@ static void zeroHoldDrawOld(int panel, int col, float left, float yh, float yt, 
  * próprio x do .spr (rcVtx[X1]). */
 static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, bool held)
 {
-    (void)panel; (void)held;   /* segurado: o chamador já passa yh = receptor */
+    (void)panel;   /* segurado (held): o chamador já passa yh = receptor */
     if (g_skinL1[col] < 0 || g_skinL2[col] < 0 || g_skinL3[col] < 0) return;
     int st = arrowAnimFrame();   /* m_ArrowState: o mesmo quadro nas três peças */
     int iL1 = g_skinL1[col] + st, iL2 = g_skinL2[col] + st, iL3 = g_skinL3[col] + st;
@@ -973,6 +1005,29 @@ static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, boo
         Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - (float)(tt->srcY + tt->srcH),
                        (float)tt->srcW, (float)tt->srcH,
                        tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+    } else if (held && g_skinTap[col] >= 0) {
+        /* Fim do long SEGURADO (ajuste do port, pedido do usuário após comparar com o
+         * original): a ponta entra por baixo da seta do receptor e some aos poucos.
+         * O desenho do NX2 (ramo abaixo) corta a ponta na base da célula e desenha a
+         * cabeça skinN_l1 por cima; a faixa de corpo que faz parte da l1 ficava
+         * aparecendo sobre a ponta já cortada. Aqui a ponta é cortada no CENTRO da
+         * seta (fica escondida atrás dela) e a cabeça vira a seta comum, sem a faixa. */
+        float rowsV = height + 32.0f;                       /* linhas da ponta abaixo do centro */
+        if (rowsV > (float)tt->srcH) rowsV = (float)tt->srcH;
+        float len = tt->v2 - tt->v1;
+        float vTop = tt->v2 - len * (rowsV / (float)tt->srcH);
+        Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - (float)tt->srcY - rowsV, (float)tt->srcW, rowsV,
+                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+        int iT = g_skinTap[col] + st;
+        if (iT >= g_game.sprTileCount) iT = g_skinTap[col];
+        SPRTileDef* ns = &g_game.sprTiles[iT];              /* seta comum (skinN.spr) */
+        int nw = Texture_GetWidth(ns->texId); if (nw <= 0) nw = 256;
+        int nh = Texture_GetHeight(ns->texId); if (nh <= 0) nh = 256;
+        float lineN = lineT - height;
+        Texture_DrawUV(ns->texId, left + (float)ns->srcX, lineN - (float)(ns->srcY + ns->srcH),
+                       (float)ns->srcW, (float)ns->srcH,
+                       ns->u1 * nw, ns->v1 * nh, ns->u2 * nw, ns->v2 * nh, 1, 1, 1, 1);
+        return;
     } else {
         /* LongEnd.DrawPicYY_UV(st, 0 + vtxY, height + 1 + vtxY, (height + 1) / 63, 0) */
         float yLo = (float)tt->srcY, yHi = height + 1.0f + (float)tt->srcY;
@@ -1258,6 +1313,32 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         for (int a = 0; a < 10; a++) g_autoPanel[a] = true;
     }
 
+    /* Double/Nightmare/HalfDouble: um campo só, tratado como jogador 0 em todo o
+     * gameplay (velocidade, desenho, modificadores). Quando quem joga é o P2, os
+     * comandos dele estão no índice 1 e não eram lidos (ex.: Nightmare com 4X no
+     * lado do P2 saía em 1X). Copia para o índice 0, como nxSkinUse já faz com a
+     * skin. O índice 1 fica intacto (Mirror/RS e o resultado leem dele). */
+    {
+        static bool isHDMode(void);
+        static bool isDNMode(void);
+        if ((isDNMode() || isHDMode()) && g_game.activePlayerMask == 0x2) {
+            g_game.cmdSpeedNx[0]        = g_game.cmdSpeedNx[1];
+            g_game.cmdSpeedMult[0]      = g_game.cmdSpeedMult[1];
+            g_game.cmdRandomVelocity[0] = g_game.cmdRandomVelocity[1];
+            g_game.cmdEarthworm[0]      = g_game.cmdEarthworm[1];
+            g_game.cmdFreedom[0]        = g_game.cmdFreedom[1];
+            g_game.cmdVanish[0]         = g_game.cmdVanish[1];
+            g_game.cmdNonStep[0]        = g_game.cmdNonStep[1];
+            g_game.cmdXMode[0]          = g_game.cmdXMode[1];
+            g_game.cmdAccel[0]          = g_game.cmdAccel[1];
+            g_game.cmdDecel[0]          = g_game.cmdDecel[1];
+            g_game.cmdFlash[0]          = g_game.cmdFlash[1];
+            g_game.cmdGradeRev[0]       = g_game.cmdGradeRev[1];
+            g_game.cmdNXMode[0]         = g_game.cmdNXMode[1];
+            g_game.cmdUnderAttack[0]    = g_game.cmdUnderAttack[1];
+        }
+    }
+
     /* Aplica multiplicador de velocidade do Command — por player. */
     for (int _ip = 0; _ip < 2; _ip++) {
         float spd = (g_game.cmdSpeedMult[_ip] >= 1) ? (float)g_game.cmdSpeedMult[_ip] : 1.0f;
@@ -1273,7 +1354,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     memset(g_nextNoteRow, 0, sizeof(g_nextNoteRow));
     for (int p = 0; p < 2; p++)
         for (int pan = 0; pan < MAX_PANELS; pan++)
-            g_holdRows[p][pan] = -1;
+            g_holdRows[p][pan] = g_tailGhost[p][pan] = -1;
 
     g_baseBeatSplit = g_chart->segments[0].beatSplit;
     g_baseBpm = g_chart->segments[0].bpm;
@@ -1890,7 +1971,10 @@ static void zeroJudge(int p)
                 zeroExplode(p, pan, ri);
                 ZJ_CLR(ri, pan);
                 g_zRowJ[p][ri] = (int8_t)JT_PERFECT;           /* [+0x1a] = 1 */
-                g_holdRows[p][pan] = (v == NT_HOLD_T) ? -1 : ri;
+                /* era: ... && g_game.gameStyleModded (só no MODDED). Pedido do usuário:
+                 * a ponta tem de ser consumida aos poucos sempre, nos dois estilos. */
+                if (v == NT_HOLD_T && holdHit && diff < 0.0)
+                    g_tailGhost[p][pan] = ri;                  /* extra: ver g_tailGhost */                g_holdRows[p][pan] = (v == NT_HOLD_T) ? -1 : ri;
                 g_lastPerfectRow[p][pan] = ri;
             } else {
                 g_zHit[p][ri] |= (uint16_t)(1u << pan);
@@ -2648,10 +2732,38 @@ static void processMisses(void)
     }
 }
 
+/* Registro de autoplay no pumpy.log (pedido do usuário: descobrir se o autoplay
+ * "ligando sozinho" é tecla apertada sem querer). Uma linha por evento, com a
+ * origem, a hora do relógio do PC, a música e o tempo dela. Procure "AUTOPLAY:". */
+static int s_apSongId = -1;
+static void autoplayLog(const char* origem, bool ligado)
+{
+    char hora[16] = "";
+    time_t t = time(NULL);
+    struct tm* lt = localtime(&t);
+    if (lt) strftime(hora, sizeof(hora), "%H:%M:%S", lt);
+    Log_Print("AUTOPLAY: %s | origem=%s | hora=%s | musica=%03X | tempo=%.2fs | jogadores=0x%X\n",
+              ligado ? "LIGADO" : "DESLIGADO", origem, hora, (unsigned)s_apSongId,
+              g_songTime, (unsigned)g_game.activePlayerMask);
+}
+
 void Gameplay_Start(int songId)
 {
     g_stageBreakFreezeTimer = -1.0f;
-    if (getenv("PUMPY_AUTOPLAY")) for (int a_ = 0; a_ < MAX_PANELS; a_++) g_autoPanel[a_] = true;   /* teste */
+    s_apSongId = songId;
+    /* era: if (getenv("PUMPY_AUTOPLAY")) for (...) g_autoPanel[a_] = true;   (teste, sem log) */
+    {
+        bool jaLigado = false;
+        for (int a_ = 0; a_ < MAX_PANELS; a_++) if (g_autoPanel[a_]) jaLigado = true;
+        if (getenv("PUMPY_AUTOPLAY")) {
+            for (int a_ = 0; a_ < MAX_PANELS; a_++) g_autoPanel[a_] = true;   /* teste */
+            autoplayLog("variavel de ambiente PUMPY_AUTOPLAY", true);
+        } else if (jaLigado) {
+            /* o F8 não é desfeito no fim da música: continua valendo nas seguintes */
+            autoplayLog("herdado de antes (F8 em musica anterior, nunca desligado)", true);
+        }
+        if (g_game.input.autoplay) autoplayLog("g_game.input.autoplay", true);
+    }
     memset(&g_game.stats, 0, sizeof(g_game.stats));
     memset(s_exPrev, 0, sizeof(s_exPrev));
     g_game.stats.life[0]      = LIFE_INITIAL; /* source oficial: m_Gauge = 500 (era 224, ajuste visual) */
@@ -2674,7 +2786,7 @@ void Gameplay_Start(int songId)
     memset(g_noteExplodeFrame, 0, sizeof(g_noteExplodeFrame));
     for (int p = 0; p < 2; p++)
         for (int pan = 0; pan < MAX_PANELS; pan++)
-            g_holdRows[p][pan] = -1;
+            g_holdRows[p][pan] = g_tailGhost[p][pan] = -1;
 
     g_game.bgaFrame = 0;
     g_blindTimer[0] = 0;
@@ -2952,7 +3064,8 @@ void Gameplay_Update(float dt)
             for (int a = 0; a < MAX_PANELS; a++)
                 g_autoPanel[a] = !allOn;
 
-            Log_Print("GP: autoplay (todas as setas): %s\n", allOn ? "OFF" : "ON");
+            /* era: Log_Print("GP: autoplay (todas as setas): %s\n", allOn ? "OFF" : "ON"); */
+            autoplayLog("tecla F8 do teclado", !allOn);
         }
 
         g_autoplay = true;
@@ -3480,7 +3593,8 @@ static void exLifebarDraw(int p, float beat, bool dbl)
 }
 
 /* NX 0x80681c0(gauge, jogador, t): lifebar do BGA/00.DAT (nxgauge.spr, 9 tiles).
- * t = fração da batida (0 no tempo, 0x806ca5c). Tiles: 0 moldura, 1 ponta direita,
+ * t = "blink" (0x806ca93 / NX2 gauge.cpp Draw): 1 em cima da batida, cai até 0 na
+ * metade e fica 0 até a próxima. era: descrito como "fração da batida (0 no tempo)". Tiles: 0 moldura, 1 ponta direita,
  * 2 barra (arco-íris), 3 brilho cheio, 4 vermelho, 5 ponta amarela, 6 moldura
  * externa, 7 ponta externa, 8 reflexo. Espelhada no P2 (translate 640 + rotate 180 Y).
  * otherActive: (0x81f8904 & (2 >> p)) — o outro jogador está jogando (sem pontas). */
@@ -3553,7 +3667,13 @@ static void nxLifebarDraw(int p, float t, bool otherActive)
     exLifeTile(g + 8, 1, 1, 1, 1);
     glPopMatrix();
     glColor4f(1, 1, 1, 1);
-    s_nxGaugeBlink[p] = 1 - s_nxGaugeBlink[p];
+    /* era: alternava em todo desenho. O original alterna uma vez por quadro de 60 Hz
+     * (NX2 gauge.cpp: Cnt[Player] = 1 - Cnt[Player]); nos desenhos extras do port
+     * (monitor > 60 Hz, g_renderTick = false) o pisca ficava mais rápido. */
+    {
+        extern bool g_renderTick;
+        if (g_renderTick) s_nxGaugeBlink[p] = 1 - s_nxGaugeBlink[p];
+    }
 }
 
 /* ------------------------------------------------------------------------
@@ -4106,6 +4226,12 @@ void Gameplay_Render(void)
                 if (held >= 0) {
                     int t; Z_TAIL(held, t);
                     if (t >= 0) { Z_DRAW(held, t, true); lastTail = t; }
+                }
+                /* extra (MODDED): ponta já julgada, desenhada até a linha chegar ao receptor */
+                if (g_tailGhost[p][panel] >= 0) {
+                    int gt = g_tailGhost[p][panel];
+                    if (held >= 0 || gt >= rows || g_songTime >= getRowTime(gt)) g_tailGhost[p][panel] = -1;
+                    else Z_DRAW(gt, gt, true);
                 }
                 /* 2) cabeça acima da tela (não segurada): só se a linha inicial for
                  * corpo/ponta de um hold que ainda tem a cabeça no gráfico */
@@ -4849,28 +4975,37 @@ void Gameplay_Render(void)
 
     // Life bars (03/04/05 ou W03/W04/W05) — renderizadas DEPOIS de todos os players
     if (s_nxGauge >= 0) {
-        /* NX: 0x806ca5c passa a fração da batida; o "beat" daqui é 1 - fração */
-        float beat = 1.0f;
-        if (g_chart && g_songLoaded && (float)g_songTime > 0.1f) {
-            float curBpm = (float)g_chart->segments[0].bpm;
-            double acc = g_chartDelay;
-            for (int s = 0; s < g_chart->segmentCount; s++) {
-                double segDur = g_chart->segments[s].rowCount * getSegmentSpr(s) + getSegmentDelay(s);
-                if (g_songTime < acc + segDur || s == g_chart->segmentCount - 1) {
-                    curBpm = (float)g_chart->segments[s].bpm;
-                    break;
-                }
-                acc += segDur;
-            }
-            if (curBpm > 0.0f) {
-                float period = 60.0f / curBpm;
-                beat = 1.0f - fmodf((float)g_songTime, period) / period;
-            }
-        }
+        /* era: beat = 1 - fmod(g_songTime, 60/bpm) / (60/bpm), e a lifebar recebia
+         * (1 - beat) = fração da batida crescendo de 0 a 1. Com isso a barra ficava
+         * no MÍNIMO em cima da batida e crescia até a próxima (invertido), e a fase
+         * vinha do tempo 0 da música, não do início do bloco.
+         * piu 0x806c9d8..0x806ca93 = NX2 playengine.cpp:2035 (blink):
+         *   x = (tempo - início do bloco) / (msPerLine * beatSplit)   [batidas no bloco]
+         *   fora de 0 <= x < (linhas + beatSplit - 1) / beatSplit -> blink = 0
+         *   f = x - int(x);  blink = f <= 0.5 ? 1 - 2f : 0
+         * Se o bloco atual ainda não começou, usa o anterior. Por jogador (chart próprio). */
         bool both = (pRend1 - pRend0) >= 2;
+        for (int p = pRend0; p < pRend1; p++) {
+            float blink = 0.0f;
+            if (g_ctxN > 1) ctxUse(p);
+            if (g_chart && g_songLoaded && g_chart->segmentCount > 0) {
+                int cs = 0;
+                for (int s = g_chart->segmentCount - 1; s >= 0; s--)
+                    if (g_songTime >= getRowTime(g_chart->segments[s].rowStart)) { cs = s; break; }
+                double bpmS = (double)g_chart->segments[cs].bpm;
+                int bs = (int)g_chart->segments[cs].beatSplit;
+                if (bpmS > 0.0 && bs > 0) {
+                    double x = (g_songTime - getRowTime(g_chart->segments[cs].rowStart)) * bpmS / 60.0;
+                    int beats = ((int)g_chart->segments[cs].rowCount + bs - 1) / bs;
+                    if (x >= 0.0 && x < (double)beats) {
+                        float f = (float)(x - (double)(int)x);
+                        blink = (f <= 0.5f) ? 1.0f - 2.0f * f : 0.0f;
+                    }
+                }
+            }
+            nxLifebarDraw(p, blink, both);
+        }
         ctxUse(0);
-        for (int p = pRend0; p < pRend1; p++)
-            nxLifebarDraw(p, 1.0f - beat, both);
         /* NX 0x8069b00 (depois da lifebar, 0x806ce65): m00 1st, m01 2nd, m02 Final,
          * m03 BONUS — o m0%d.spr inteiro (texto + moldura M04) */
         int stg = g_game.isBonusSong ? g_fontSprM04 : g_game.stageCount == 2 ? g_fontSprM01
@@ -5387,6 +5522,22 @@ void Gameplay_Render(void)
         Font_DrawStringCentered(g_game.screenWidth/2, 10, timeBuf, 0.7f, 0.7f, 0.7f, 1.0f);
     }
     */
+
+    /* Extra do port (pedido do usuário): aviso "AUTOPLAY" com o autoplay ligado.
+     * Font_DrawStringCenteredScaled: x = centro do texto, y = topo (Y para baixo),
+     * glifo 8x16 * escala. X central, Y 30% da altura abaixo do centro (240 + 144).
+     * Fora da demo, que já é autoplay por definição no original. */
+    if (g_autoplay && !g_exDemo) {
+        int ax = g_game.screenWidth / 2;
+        int ay = g_game.screenHeight / 2 + (g_game.screenHeight * 30) / 100;
+        /* borda preta de 2 px (um pixel da fonte na escala 2) nas 8 direções, para
+         * o texto branco aparecer sobre qualquer BGA; era: só o branco a 85%. */
+        for (int oy = -2; oy <= 2; oy += 2)
+            for (int ox = -2; ox <= 2; ox += 2)
+                if (ox || oy)
+                    Font_DrawStringCenteredScaled(ax + ox, ay + oy, "AUTOPLAY", 0.0f, 0.0f, 0.0f, 1.0f, 2.0f);
+        Font_DrawStringCenteredScaled(ax, ay, "AUTOPLAY", 1.0f, 1.0f, 1.0f, 1.0f, 2.0f);
+    }
 
     if (anyAutoPanel()) {
         char buf[64] = {0}; int pos = 0;

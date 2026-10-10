@@ -920,8 +920,21 @@ void Texture_DrawUV(int id, float x, float y, float w, float h,
     float du = u2 - u1, dv = v2 - v1;
     if (du < 0) du = -du;
     if (dv < 0) dv = -dv;
-    if (fabsf(du - w) > 0.01f || fabsf(dv - h) > 0.01f)
-        Texture_InsetUV((int)texW, (int)texH, &nu1, &nv1, &nu2, &nv2);
+    /* era: if (fabsf(du - w) > 0.01f || fabsf(dv - h) > 0.01f)
+     *          Texture_InsetUV((int)texW, (int)texH, &nu1, &nv1, &nu2, &nv2);
+     * Recuava os DOIS eixos quando só um estava redimensionado. O corpo do long
+     * (skinN_l2: 63 px de largura 1:1, só a altura esticada) perdia meio texel
+     * de cada lado em U e saía mais largo que a cabeça e a ponta, desenhadas
+     * 1:1 sem recuo. NX2 (PEngineSprite.cpp DrawPicYY / S3DTexRect): rcTex
+     * direto, sem recuo. Agora o recuo vale só no eixo redimensionado. */
+    {
+        float z1 = 0.0f, z2 = 0.0f;   /* 0 = borda: Texture_InsetUV não mexe */
+        if (fabsf(du - w) > 0.01f)
+            Texture_InsetUV((int)texW, (int)texH, &nu1, &z1, &nu2, &z2);
+        z1 = z2 = 0.0f;
+        if (fabsf(dv - h) > 0.01f)
+            Texture_InsetUV((int)texW, (int)texH, &z1, &nv1, &z2, &nv2);
+    }
     glBegin(GL_QUADS);
     glTexCoord2f(nu1, nv2);
     glVertex2f(x, yUp);

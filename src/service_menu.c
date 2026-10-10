@@ -274,7 +274,9 @@ static void svcRenderFooter(void)
     /* NX 0x80864e0: três linhas em x = 48 (Y para cima) */
     svcText(48.0f, 64.0f, "PUMP IT UP: NX");
     svcText(48.0f, 48.0f, "(C) 1999-2006 ANDAMIRO CO., LTD.");
-    svcText(48.0f, 32.0f, "(BUILD:1.08)");
+    /* era: svcText(48.0f, 32.0f, "(BUILD:1.08)");  (build do piu original)
+     * Pedido do usuário: mostra a versão do projeto, "RECOMP-<versão>". */
+    svcText(48.0f, 32.0f, "(BUILD:RECOMP-" RECOMP_VERSION ")");
 
     /* NX 0x808656f (tabela 0x81144f0): topo, SOUND, BOOKKEEPING e confirmações =
      * MOVE/SELECT; I/O e SCREEN = EXIT; STATISTICS = MOVE PAGE/EXIT; as páginas de
@@ -358,19 +360,21 @@ static void svcRenderMain(void)
     /* NX 0x8086290: teste da trava a cada 60 quadros -> OK/Err, em (276,132);
      * sem dispensador de tickets ([0x9e40060] == 0), o aviso em (196,112) e
      * "NOT CONNECTED" em vermelho em (356,112). No PC não há trava nem dispensador. */
+    /* DESATIVADO (pedido do usuário): "Lock OK = n Err = 0" fora do menu de operador.
     {
         static int lockFrame, lockOk;
         char lb[48];
         if (lockFrame++ % 60 == 0) lockOk++;
         snprintf(lb, sizeof(lb), "Lock OK = %d Err = %d", lockOk, 0);
         svcColor(SVC_NORMAL);
-        /* era: svcText(276.0f, 132.0f, lb); + aviso do dispensador em (196,112)/(356,112)
-         * Pedido do usuário: sem o aviso do Ticket Dispenser; o Lock OK vai para a posição dele */
-        svcText(196.0f, 92.0f, lb);   /* era: 112 — desceu uma linha (o EXIT foi para 112 com o RESTRICTION) */
-        /* svcText(196.0f, 112.0f, "Ticket Dispenser is NOT CONNECTED.");
-        svcColor(SVC_HIGHLIGHT);
-        svcText(356.0f, 112.0f, "NOT CONNECTED"); */
+        // era: svcText(276.0f, 132.0f, lb); + aviso do dispensador em (196,112)/(356,112)
+        // Pedido do usuário: sem o aviso do Ticket Dispenser; o Lock OK vai para a posição dele
+        svcText(196.0f, 92.0f, lb);   // era: 112 — desceu uma linha (o EXIT foi para 112 com o RESTRICTION)
+        // svcText(196.0f, 112.0f, "Ticket Dispenser is NOT CONNECTED.");
+        // svcColor(SVC_HIGHLIGHT);
+        // svcText(356.0f, 112.0f, "NOT CONNECTED");
     }
+    */
 
     if (hit & SVC_BIT_TEST) {
         do {
@@ -741,9 +745,12 @@ static void svcRenderGameOption(void)
  * MERCY TICKET: a lista do script usa "SETUP_VALU_1" (erro de digitação, nil), e
  * o GetMenuValuesNum para no nil -> só "OFF" existe no original. */
 /* era: 11 itens; "UNLOCK SPECIAL ZONE" (índice 8) é extra do port, não existe no NX */
-static const char* SVC_GAMEOPT_ITEMS[12] = {
+/* era: 12 itens; "GAME STYLE" (índice 9) é extra do port: VANILLA = só os códigos
+ * do piu, MODDED = também os códigos extras do port (skins fora do piu, BGA Off) */
+static const char* SVC_GAMEOPT_ITEMS[13] = {
     "GAME MODE", "LEVEL", "STAGE BREAK", "DEMO SOUND", "SHOW HELP",
-    "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "UNLOCK SPECIAL ZONE", "", "DEFAULT SETTING", "EXIT"
+    "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "UNLOCK SPECIAL ZONE", "GAME STYLE",
+    "", "DEFAULT SETTING", "EXIT"
 };
 static const char* SVC_LEVEL_NAMES[3]  = { "1. EASY", "2. NORMAL", "3. HARD" };
 static const char* SVC_STAGEBRK_NX[5]  = { "OFF", "1ST STAGE", "2ND STAGE", "3RD STAGE", "4TH STAGE" };
@@ -763,6 +770,7 @@ static void svcGameOptionReset(void)
     Eeprom_Set8(0xED3, 0);          /* MERCY TICKET OFF */
     Eeprom_Set8(0xED4, 0);          /* SCORE PER TICKET OFF */
     g_game.nxUnlockSpecial  = false;  /* extra do port */
+    g_game.gameStyleModded  = false;  /* extra do port: VANILLA */
 }
 
 static void svcRenderGameOption(void)
@@ -778,9 +786,9 @@ static void svcRenderGameOption(void)
     svcColor(SVC_NORMAL);
     svcText(276.0f, 428.0f, "GAME OPTION");
 
-    for (i = 0; i < 12; i++) {
+    for (i = 0; i < 13; i++) {   /* era 12, MENU_BLANK no 9 */
         float y = (float)(352 - i * 20);
-        if (i == 9) continue;   /* MENU_BLANK */
+        if (i == 10) continue;   /* MENU_BLANK */
         svcColorFor(i, g_svcCursor);
         svcText(196.0f, y, SVC_GAMEOPT_ITEMS[i]);
 
@@ -821,6 +829,10 @@ static void svcRenderGameOption(void)
             if (!g_game.nxUnlockSpecial) svcColor(SVC_SUCCESS);
             svcText(404.0f, y, g_game.nxUnlockSpecial ? "ON" : "OFF");
             break;
+        case 9:   /* extra do port */
+            if (!g_game.gameStyleModded) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.gameStyleModded ? "MODDED" : "VANILLA");
+            break;
         default:
             break;
         }
@@ -829,8 +841,8 @@ static void svcRenderGameOption(void)
     if (hit & SVC_BIT_TEST) {
         do {
             g_svcCursor++;
-            if (g_svcCursor > 11) g_svcCursor = 0;
-        } while (g_svcCursor == 9);
+            if (g_svcCursor > 12) g_svcCursor = 0;   /* era 11 */
+        } while (g_svcCursor == 10);                 /* era 9 */
     }
     if (hit & SVC_BIT_SERVICE) {
         switch (g_svcCursor) {
@@ -843,8 +855,9 @@ static void svcRenderGameOption(void)
         case 6: Eeprom_Set8(0xED3, (uint8_t)((mercy + 1) % SVC_MERCY_COUNT)); break;
         case 7: Eeprom_Set8(0xED4, (uint8_t)((stkt + 1) % 7)); break;
         case 8: g_game.nxUnlockSpecial = !g_game.nxUnlockSpecial; break;
-        case 10: svcGameOptionReset(); break;
-        case 11:
+        case 9: g_game.gameStyleModded = !g_game.gameStyleModded; break;
+        case 11: svcGameOptionReset(); break;   /* era 10 */
+        case 12:                                /* era 11 */
             GameOption_Save();
             g_svcPage = 0;
             break;

@@ -101,6 +101,13 @@ int Song_DataId(int id) {
 int NX_ResId(int id) {
     for (int i = 0; i < NX_RESMAP_COUNT; i++)
         if ((int)g_nxResMap[i][1] == id) return (int)g_nxResMap[i][0];
+    /* era: return -1 direto. Os extras do port (índices >= NX_SONG_BASE) não estão
+     * em 0x813f860; o recurso deles é o baseId da própria entrada (D208 -> 208).
+     * Sem isso TITLE, disco (TEST.DAT) e PREVIEW da D208 não achavam a 208. */
+#ifdef NX_SONG_BASE
+    for (int i = NX_SONG_BASE; i < EX_SONG_COUNT; i++)
+        if ((int)g_exSongs[i].id == id) return g_exSongs[i].baseId;
+#endif
     return -1;
 }
 

@@ -164,7 +164,11 @@ static unsigned s_nxFlags[2] = { 0, 0 };   /* +0x494 */
 static unsigned s_nxSpeed[2] = { 4, 4 };   /* +0x498: 4 x1, 8 x2, 0xc x3, 0x10 x4, 0x20 x8, 0x100 RV, 0x200 EW */
 static int      s_nxSkinIcon[2] = { -1, -1 };   /* posição 3 (skin) por jogador; era um só para os dois */
 static int      s_posIcon[2][5];           /* ícone mostrado em cada posição (-1 nenhum) */
-static BGALayerSrc s_cmdIcon[37];          /* COMMAND slots 11..36 */
+/* era: s_cmdIcon[37], só os slots 11..36 (all-*.spr). Os wor-*.spr (37..53)
+ * ficam no command2.tga: 48 = wor-NOTE (Melody), 51 = wor-SM (Slime), os mesmos
+ * slots da tabela de skins do World (0x810f4c0, nx_world.c k_skinIcon). */
+static BGALayerSrc s_cmdIcon[54];          /* COMMAND slots 11..36 + 48 e 51 */
+static bool     s_cmdIconOk[54];           /* slots extras carregados */
 static bool     s_cmdOk;
 
 /* ---------------------------------------------------------------------------
@@ -221,7 +225,10 @@ static void kcalDraw(float lx, float nx, int value) {
 static int pushCode(int p, int button) {   /* 0x804d200 + 0x804d240 */
     if (s_histLen[p] == NX_HIST) { memmove(s_hist[p], s_hist[p] + 1, NX_HIST - 1); s_histLen[p]--; }
     s_hist[p][s_histLen[p]++] = (uint8_t)button;
-    for (int k = 0; k < 23; k++) {   /* era 19 (sem os extras 19..22) */
+    /* GAME STYLE (Service Menu): VANILLA aceita só os códigos do piu (0..18);
+     * MODDED aceita também os extras do port (19..22 e o TestBGA abaixo). */
+    int nCodes = g_game.gameStyleModded ? 23 : 19;
+    for (int k = 0; k < nCodes; k++) {   /* era: k < 23 sempre */
         int n = k_nxCodes[k].n;
         if (s_histLen[p] >= n && memcmp(s_hist[p] + s_histLen[p] - n, k_nxCodes[k].b, (size_t)n) == 0) {
             s_histLen[p] = 0;
@@ -231,7 +238,8 @@ static int pushCode(int p, int button) {   /* 0x804d200 + 0x804d240 */
     /* Extra do port (não existe no original): TestBGA, DL DL DL DL DR DR DR DR C,
      * mesmo código do Prex3 (song_select.c). Starfield no lugar do fundo. */
     static const uint8_t k_testBGA[9] = { NC_DL, NC_DL, NC_DL, NC_DL, NC_DR, NC_DR, NC_DR, NC_DR, NC_C };
-    if (s_histLen[p] >= 9 && memcmp(s_hist[p] + s_histLen[p] - 9, k_testBGA, 9) == 0) {
+    if (g_game.gameStyleModded &&
+        s_histLen[p] >= 9 && memcmp(s_hist[p] + s_histLen[p] - 9, k_testBGA, 9) == 0) {
         s_histLen[p] = 0;
         g_game.cmdTestBGA[p] = true;
         InitS();
@@ -258,6 +266,7 @@ static void cmdIcons(void) {
             if (ic[k] == s_posIcon[p][k]) continue;
             s_posIcon[p][k] = ic[k];
             if (ic[k] < 0 || !s_cmdOk) continue;
+            if (ic[k] > 36 && !s_cmdIconOk[ic[k]]) { s_posIcon[p][k] = -1; continue; }
             BGA_SetLayerSrc(NB_COMMAND, p * 5 + k + 1, &s_cmdIcon[ic[k]]);
             char sc[24];
             snprintf(sc, sizeof(sc), "%dp-%dcommand", p + 1, k + 1);
@@ -312,10 +321,13 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
         Zero_SetSkinIndexP(p, 8);   /* era: Zero_SetSkinIndex(8) — o código 18 zera só o jogador */
         s_nxSkinIcon[p] = -1;
         break;
-    case 19: case 20: case 21: case 22: {   /* extras do port, sem ícone próprio */
+    case 19: case 20: case 21: case 22: {   /* extras do port */
         static const int k_extraSkin[4] = { 0, 3, 5, 4 };   /* REbirth, EZ, MELODY, SLIME */
+        /* era: s_nxSkinIcon[p] = -1 (sem ícone). Melody = wor-NOTE (48) e
+         * Slime = wor-SM (51), do command2.tga (informado pelo usuário). */
+        static const int k_extraIcon[4] = { -1, -1, 48, 51 };
         Zero_SetSkinIndexP(p, k_extraSkin[code - 19]);
-        s_nxSkinIcon[p] = -1;
+        s_nxSkinIcon[p] = k_extraIcon[code - 19];
         break;
     }
     default: return;
@@ -359,6 +371,8 @@ void NxCmd_Begin(void) {
     s_cmdOk = true;
     for (int i = 11; i <= 36; i++) s_cmdOk &= BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);
     if (!s_cmdOk) Log_Print("TRAINING: ícones do COMMAND.DAT faltando\n");
+    s_cmdIconOk[48] = BGA_GetLayerSrc(NB_COMMAND, 48, &s_cmdIcon[48]);
+    s_cmdIconOk[51] = BGA_GetLayerSrc(NB_COMMAND, 51, &s_cmdIcon[51]);
     for (int p = 0; p < 2; p++) for (int k = 0; k < 5; k++) s_posIcon[p][k] = -1;
     cmdIcons();
 }
@@ -397,17 +411,43 @@ void NxCmd_ToGame(void) {
 /* ---------------------------------------------------------------------------
  * Lista (0x8062400): canais 0..3 com algum nível (2P: só N/H/C contam)
  * ------------------------------------------------------------------------- */
+static void listAdd(int i) {
+    const ExceedSong* e = &g_exSongs[i];
+    if (special()) {   /* 0x8062566: só canais 4..6 e custo <= corações */
+        if (!(e->channel & 4) || heartCost(e) > g_game.nxHearts) return;
+    } else if (e->channel & 4) return;
+    bool ok = e->level[0] >= 0 || e->level[1] >= 0 || e->level[2] >= 0;
+    if (!ok && !twoPlayers()) ok = e->level[3] >= 0 || e->level[4] >= 0;
+    if (ok && NxRestrict_IsOff(i)) ok = false;   /* extra do port: RESTRICTION do Service Menu */
+    if (ok) s_list[s_count++] = i;
+}
+
 static void buildList(void) {
     s_count = 0;
-    for (int i = 0; i < EX_SONG_COUNT; i++) {
-        const ExceedSong* e = &g_exSongs[i];
-        if (special()) {   /* 0x8062566: só canais 4..6 e custo <= corações */
-            if (!(e->channel & 4) || heartCost(e) > g_game.nxHearts) continue;
-        } else if (e->channel & 4) continue;
-        bool ok = e->level[0] >= 0 || e->level[1] >= 0 || e->level[2] >= 0;
-        if (!ok && !twoPlayers()) ok = e->level[3] >= 0 || e->level[4] >= 0;
-        if (ok && NxRestrict_IsOff(i)) ok = false;   /* extra do port: RESTRICTION do Service Menu */
-        if (ok) s_list[s_count++] = i;
+    /* era: for (i = 0; i < EX_SONG_COUNT; i++) com o corpo de listAdd.
+     * Os extras do port (índices >= NX_SONG_BASE) só entram com GAME STYLE =
+     * MODDED, logo depois da última música do mesmo canal na tabela do piu. */
+    /* Posição pedida pelo usuário: extra { id, antes de qual id }. Quem não está
+     * aqui vai para o fim do canal. Valenti (A10) fica antes da A11; a
+     * Fighting Spirit Another (D208) antes da Dr. M Another (D701); a
+     * Fighting Spirit (208) antes da Com'Back (212). */
+    static const uint32_t k_before[][2] = { { 0xA10, 0xA11 }, { 0xD208, 0xD701 }, { 0x208, 0x212 } };
+    const int nBefore = (int)(sizeof(k_before) / sizeof(k_before[0]));
+    for (int i = 0; i < NX_SONG_BASE; i++) {
+        if (g_game.gameStyleModded)
+            for (int b = 0; b < nBefore; b++)
+                if (k_before[b][1] == g_exSongs[i].id)
+                    for (int x = NX_SONG_BASE; x < EX_SONG_COUNT; x++)
+                        if (g_exSongs[x].id == k_before[b][0]) listAdd(x);
+        listAdd(i);
+        if (!g_game.gameStyleModded) continue;
+        int ch = g_exSongs[i].channel;
+        if (i + 1 < NX_SONG_BASE && g_exSongs[i + 1].channel == ch) continue;
+        for (int x = NX_SONG_BASE; x < EX_SONG_COUNT; x++) {
+            bool placed = false;
+            for (int b = 0; b < nBefore; b++) if (k_before[b][0] == g_exSongs[x].id) placed = true;
+            if (!placed && g_exSongs[x].channel == ch) listAdd(x);
+        }
     }
 }
 
@@ -699,6 +739,8 @@ void NxSelect_Enter(void) {
     s_cmdOk = true;
     for (int i = 11; i <= 36; i++) s_cmdOk &= BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);
     if (!s_cmdOk) Log_Print("NXSELECT: ícones do COMMAND.DAT faltando\n");
+    s_cmdIconOk[48] = BGA_GetLayerSrc(NB_COMMAND, 48, &s_cmdIcon[48]);
+    s_cmdIconOk[51] = BGA_GetLayerSrc(NB_COMMAND, 51, &s_cmdIcon[51]);
     s_kcalLblOk = BGA_GetLayerSrc(NB_COMMON, 48, &s_kcalLbl);   /* 0x807a3c7: kcal02.spr */
     {   /* 0x8079455: BGA/KFONT.DAT -> kfont.tga (dígitos da kcal) */
         char kp[MAX_PATH];

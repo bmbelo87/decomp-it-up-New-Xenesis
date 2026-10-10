@@ -38,6 +38,7 @@ typedef void* LPDIRECTSOUNDBUFFER;
 #include "step.h"
 
 #define GAME_VERSION "0.9.5"
+#define RECOMP_VERSION "0.2.4"   /* versão do projeto (tag do release); aparece no Service Menu como RECOMP-<versão> */
 #define GAME_BUILD_DATE "Jul 27 2026"
 #define GAME_BUILD_TIME "15:44"
 #define TARGET_FPS 60
@@ -147,7 +148,9 @@ typedef enum {
 #define EX_CH_REMIX   3
 #define EX_CH_ANOTHER 4
 */
-#define EX_SONG_COUNT     193   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão */
+/* era: EX_SONG_COUNT 193. +3 extras do port no fim da tabela (208, A10, D208), só no GAME STYLE MODDED */
+#define EX_SONG_COUNT     196   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 extras */
+#define NX_SONG_BASE      193   /* índices >= este são extras do port (fora do piu) */
 #define EX_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
 #define EX_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
 #define EX_CH_NX       0
@@ -462,6 +465,8 @@ typedef struct {
     int  gfxTexFilter;   /* 0 = SMOOTH (GL_LINEAR), 1 = SHARP (GL_NEAREST) */
     bool gfxShowFps;
     bool nxUnlockSpecial;   /* extra do port: SPECIAL ZONE com tudo liberado (PUMPY.INI UnlockSpecial) */
+    bool gameStyleModded;   /* extra do port: GAME STYLE (PUMPY.INI GameStyle). false = VANILLA (só os
+                             * códigos do piu); true = MODDED (códigos extras do port: skins, BGA Off) */
     int  gfxAspect;      /* 0 = 4:3 com bordas, 1 = esticar */
     int  gfxUpscale;     /* 0 = OFF, 2/3/4 = xBRZ ao carregar texturas (xbrz.c) */
     

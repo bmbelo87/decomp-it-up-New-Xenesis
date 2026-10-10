@@ -281,6 +281,13 @@ void Game_Init(HINSTANCE hInstance) {
         if (as && _stricmp(as, "SELECT") == 0) { Menu_ResetState(); Game_ChangeState(STATE_EXSELECT); }
         if (as && _stricmp(as, "STATION") == 0) Game_ChangeState(STATE_STATION);
         /* PUMPY_AUTOSTATE=NXTEST: D02 NORMAL em autoplay (demo) com NX Mode, para testes */
+        /* PUMPY_AUTOSTATE=RUN + PUMPY_TEST_ID=<hex> [+ PUMPY_TEST_MODE=0..4]: abre direto
+         * uma música/dificuldade (teste; combine com PUMPY_AUTOPLAY) */
+        if (as && _stricmp(as, "RUN") == 0 && getenv("PUMPY_TEST_ID")) {
+            const char* tm = getenv("PUMPY_TEST_MODE");
+            Menu_ResetState();
+            ExSelect_Run((int)strtol(getenv("PUMPY_TEST_ID"), NULL, 16), tm ? atoi(tm) : 0, 0);
+        }
         if (as && _stricmp(as, "NXTEST") == 0) {
             Menu_ResetState();
             if (ExSelect_Run(0xD02, 3, 0)) { g_game.cmdNXMode[0] = g_game.cmdNXMode[1] = true; }
