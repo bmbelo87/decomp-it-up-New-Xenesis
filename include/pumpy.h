@@ -224,6 +224,8 @@ void NxContinue_Update(float dt);
 void NxContinue_Render(void);
 void NxTraining_Enter(void);   /* nx_training.c */
 void NxSports_Store(int st);   /* nx_sports.c */
+extern int g_nxLevel[2];        /* nível do chart por jogador ([jogador+0], 0x807b3cc) */
+extern int g_nxDiffIdx[2];      /* dificuldade por jogador (0 N, 1 H, 2 C, 3 D, 4 NM) */
 void NxFont_Draw(float x, float y, const char* s);   /* nx_font.c: fonte do SETUP (CP949) */
 bool Gameplay_IsFrozen(void);  /* gameplay.c: stage break, tela parada */
 GameState NxSports_Route(GameState ns, bool fromStageBreak, int stage);
@@ -902,6 +904,7 @@ int  Eeprom_Load(void);   /* 1=ok, 0=inválido (resetado), -1=ausente */
 void Eeprom_Save(void);   /* lê PUMPY.INI; chama-se na inicialização do jogo */
 uint32_t Eeprom_Get32(int off);   /* u32 da imagem (offset no arquivo) */
 uint8_t  Eeprom_Get8(int off);
+bool     NxRestrict_IsOff(int songIdx);   /* service_menu.c: RESTRICTION (extra do port) */
 void     Eeprom_Set8(int off, uint8_t v);
 void     Eeprom_Set32(int off, uint32_t v);
 void GameOption_Save(void);   /* escreve PUMPY.INI; chama-se em cada alteração */

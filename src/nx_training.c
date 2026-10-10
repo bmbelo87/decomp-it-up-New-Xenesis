@@ -260,7 +260,8 @@ static void playerInput(int p) {
     for (int k = 0; k < 5; k++)
         if (Input_IsPadHit(p, k_pad[k]) && NxCmd_Push(p, 7 + k) >= 0) {
             s_confirmed = false;
-            if (p == 0) snd(TS_HIDDEN);
+            /* era: if (p == 0) snd(TS_HIDDEN);  (0x80801ba só no P1) — pedido: toca para P1 e P2 */
+            snd(TS_HIDDEN);
         }
     if (Input_IsPadHit(p, PAD_C)) {
         if (s_confirmed) { s_time = 0; snd(TS_SELECT); }

@@ -861,6 +861,8 @@ bool ExSelect_StartMission(int id, int diff, int level, unsigned joined)
     g_game.selectedSongIndex = si;
     g_game.selectedModeIndex = mi;
     g_game.selectedDifficulty = level;
+    g_nxLevel[0] = g_nxLevel[1] = level;   /* missão / lição: o mesmo chart para os dois */
+    g_nxDiffIdx[0] = g_nxDiffIdx[1] = diff;
     g_game.activePlayerMask = (int)(joined & 3);
     g_game.isBattleMode = false;
     /* 0x806b918: +0x494 |= flags, +0x498 = soma dos dígitos | 0x100 (s) / 0x200 (e) */

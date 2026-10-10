@@ -37,6 +37,8 @@
 #define NS_BGA 0
 
 float g_nxKcal[2][4];   /* +0x49c */
+int   g_nxLevel[2];     /* [jogador+0]: nível de cada jogador */
+int   g_nxDiffIdx[2];
 float g_nxVo2[2][4];    /* +0x4ac */
 
 double Gameplay_SongTimeSec(void);
@@ -60,14 +62,13 @@ void NxSports_Store(int st) {
     if (st == 0) { memset(g_nxKcal, 0, sizeof(g_nxKcal)); memset(g_nxVo2, 0, sizeof(g_nxVo2)); }
     const GameplayStats* s = &g_game.stats;
     float t = (float)(Gameplay_SongTimeSec() * 1000.0 / 60000.0);
-    int L = g_game.selectedDifficulty;   /* HIPÓTESE: o mesmo nível para os dois jogadores */
-    if (L == 0) L = 1;
-    if (L >= 31) L = 30;
-    bool crazy = g_game.selectedModeIndex >= 0 &&
-                 !strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "CRAZY");
-    float m = crazy ? 0.931f : 0.0f;
+    /* era: um nível para os dois (g_game.selectedDifficulty) e CRAZY pelo modo do P1 */
     for (int p = 0; p < 2; p++) {
         if (!(g_game.activePlayerMask & (1 << p))) continue;
+        int L = g_nxLevel[p] > 0 ? g_nxLevel[p] : g_game.selectedDifficulty;   /* [jogador+0] */
+        if (L == 0) L = 1;
+        if (L >= 31) L = 30;
+        float m = (g_nxDiffIdx[p] == 2) ? 0.931f : 0.0f;   /* CRAZY ("nhcdmp" código 3) */
         int c = (int)(s->perfectCount[p] + s->greatCount[p] + s->goodCount[p] + s->badCount[p] + s->missCount[p]);
         if (c <= 0) continue;
         float e = (float)(c - (int)s->missCount[p]);

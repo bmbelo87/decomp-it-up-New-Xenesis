@@ -167,6 +167,57 @@ static int      s_posIcon[2][5];           /* ícone mostrado em cada posição 
 static BGALayerSrc s_cmdIcon[37];          /* COMMAND slots 11..36 */
 static bool     s_cmdOk;
 
+/* ---------------------------------------------------------------------------
+ * kcal da música apontada (0x807b2af..0x807b6c3, estimativa 0x807eb00):
+ *   kcal = int((0.475 * nível + 7.414 + m) * duração / 60), nível 1..30, m = 0.931 no CRAZY;
+ *   rótulo COMMON slot 48 (kcal02.spr, [+0x328]) em (192|354, 151) e dois dígitos do
+ *   kfont.tga (BGA/KFONT.DAT, 0x8058e00 / 0x8059100: 24x23, passo 23) em (195|357, 151).
+ * ------------------------------------------------------------------------- */
+static DWORD s_enterTick;
+static bool  lateOk(void) { return timeGetTime() - s_enterTick >= 1000; }
+static BGALayerSrc s_kcalLbl;
+static bool s_kcalLblOk;
+static int  s_kfontTex = -2;
+
+static int kcalEstimate(const ExceedSong* e, int d) {   /* 0x807eb00 */
+    if (d < 0 || d > 4) d = 0;
+    int L = e->level[d];
+    if (L == 0) L = 1;
+    if (L >= 31) L = 30;
+    double m = (d == 2) ? 0.931 : 0.0;
+    return (int)((0.475 * L + 7.414 + m) * ((double)e->length / 60.0));
+}
+
+static void kcalQuad(int tex, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1) {
+    glBindTexture(GL_TEXTURE_2D, (GLuint)g_game.textures[tex].id);
+    glBegin(GL_QUADS);   /* Y para cima: v0 (topo da imagem) no y de cima */
+    glTexCoord2f(u0, v0); glVertex2f(x0, y1);
+    glTexCoord2f(u1, v0); glVertex2f(x1, y1);
+    glTexCoord2f(u1, v1); glVertex2f(x1, y0);
+    glTexCoord2f(u0, v1); glVertex2f(x0, y0);
+    glEnd();
+}
+
+static void kcalDraw(float lx, float nx, int value) {
+    glEnable(GL_TEXTURE_2D);
+    glColor4f(1, 1, 1, 1);
+    if (s_kcalLblOk && s_kcalLbl.isSPR && s_kcalLbl.sprTileStart >= 0) {   /* 0x805ad80(rótulo, 0, x, 151) */
+        SPRTileDef* t = &g_game.sprTiles[s_kcalLbl.sprTileStart];
+        if (t->texId >= 0 && t->texId < MAX_TEXTURES && g_game.textures[t->texId].inUse)
+            kcalQuad(t->texId, lx + t->srcX, 151.0f + t->srcY, lx + t->srcX + t->srcW, 151.0f + t->srcY + t->srcH,
+                     t->u1, t->v1, t->u2, t->v2);
+    }
+    if (s_kfontTex < 0 || !g_game.textures[s_kfontTex].inUse) return;
+    int dig[2], n = 0;   /* 0x8059100: até dois dígitos (dezena, unidade) */
+    if (value <= 9) dig[n++] = value < 0 ? 0 : value;
+    else { dig[n++] = (value / 10) % 10; dig[n++] = value % 10; }
+    float x = nx;
+    for (int i = 0; i < n; i++, x += 23.0f) {   /* 0x8058f50: u = d*24/256, v = 0..23/32 */
+        float u0 = (float)(dig[i] * 24) / 256.0f, u1 = (float)(dig[i] * 24 + 24) / 256.0f;
+        kcalQuad(s_kfontTex, x, 151.0f, x + 24.0f, 151.0f + 23.0f, u0, 0.0f, u1, 23.0f / 32.0f);
+    }
+}
+
 static int pushCode(int p, int button) {   /* 0x804d200 + 0x804d240 */
     if (s_histLen[p] == NX_HIST) { memmove(s_hist[p], s_hist[p] + 1, NX_HIST - 1); s_histLen[p]--; }
     s_hist[p][s_histLen[p]++] = (uint8_t)button;
@@ -355,6 +406,7 @@ static void buildList(void) {
         } else if (e->channel & 4) continue;
         bool ok = e->level[0] >= 0 || e->level[1] >= 0 || e->level[2] >= 0;
         if (!ok && !twoPlayers()) ok = e->level[3] >= 0 || e->level[4] >= 0;
+        if (ok && NxRestrict_IsOff(i)) ok = false;   /* extra do port: RESTRICTION do Service Menu */
         if (ok) s_list[s_count++] = i;
     }
 }
@@ -647,6 +699,14 @@ void NxSelect_Enter(void) {
     s_cmdOk = true;
     for (int i = 11; i <= 36; i++) s_cmdOk &= BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);
     if (!s_cmdOk) Log_Print("NXSELECT: ícones do COMMAND.DAT faltando\n");
+    s_kcalLblOk = BGA_GetLayerSrc(NB_COMMON, 48, &s_kcalLbl);   /* 0x807a3c7: kcal02.spr */
+    {   /* 0x8079455: BGA/KFONT.DAT -> kfont.tga (dígitos da kcal) */
+        char kp[MAX_PATH];
+        snprintf(kp, sizeof(kp), "%s/BGA/KFONT.DAT", g_game.currentDirectory);
+        s_kfontTex = -1;
+        if (RES_Open(kp)) { s_kfontTex = loadTextureFromRES("kfont.tga"); RES_Close(); }
+        if (s_kfontTex < 0) Log_Print("NXSELECT: kfont.tga não carregou\n");
+    }
     s_spOk = true;   /* 0x807a196..0x807a24b e fontes de 0x807e980 */
     static const int k_heart[3] = { 2, 0x62, 0x41 };
     for (int i = 0; i < 3; i++) {
@@ -739,6 +799,7 @@ void NxSelect_Enter(void) {
     s_time = 0x5a;
     s_prevTimeSnd = -1;
     s_timeTick = timeGetTime();
+    s_enterTick = s_timeTick;   /* extra do port: nível/kcal/título só 1 s depois da entrada */
     fixDiff();
     carousel(0);
     channelUpdate(true);
@@ -810,6 +871,11 @@ static void startGame(void) {
         unsigned v = s_nxSpeed[p];
         speed[p] = v == 8 ? 2 : v == 0xc ? 3 : v == 0x10 ? 4 : v == 0x20 ? 8 : 1;
         rv[p] = (v == 0x100);
+    }
+    for (int p = 0; p < 2; p++) {   /* 0x807b3c2: nível de cada jogador */
+        int d = twoPlayers() ? s_diff[p] : s_diff[0];
+        g_nxDiffIdx[p] = d;
+        g_nxLevel[p] = (d >= 0 && d <= 4) ? e->level[d] : 0;
     }
     if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv)) {
         s_started = false;
@@ -1009,8 +1075,16 @@ void NxSelect_Render(void) {
             }
         }
 
+    /* kcal da música apontada (0x807b2af: carrossel parado e música liberada) */
+    if (lateOk() && s_dir == 0 && cur() && songAvail(cur())) {
+        const ExceedSong* e = cur();
+        if (s_joined & 1) kcalDraw(192.0f, 195.0f, kcalEstimate(e, s_diff[0]));
+        if (s_joined & 2) kcalDraw(354.0f, 357.0f, kcalEstimate(e, s_diff[(s_joined & 1) ? 1 : 0]));
+        glColor4f(1, 1, 1, 1);
+    }
+
     /* nível e dificuldade */
-    if (s_dir == 0) {
+    if (lateOk() && s_dir == 0) {
         int np = twoPlayers() ? 2 : 1;
         for (int p = 0; p < np; p++) {
             /* 0x807b6f2..0x807b7db: nível > 14 -> "hell effect hold" ANTES da cena do
@@ -1039,7 +1113,7 @@ void NxSelect_Render(void) {
         }
         */
     }
-    NxText_Draw();   /* 0x807b7b5: todo quadro (MICROGBE.TTF, nx_text.c) */
+    if (lateOk()) NxText_Draw();   /* 0x807b7b5: todo quadro (MICROGBE.TTF, nx_text.c) */
     if (s_ready) BGA_ScenePlay(NB_COMMON, "center step", true);
     glColor4f(1, 1, 1, 1);
 }
