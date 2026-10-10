@@ -224,6 +224,7 @@ void NxContinue_Update(float dt);
 void NxContinue_Render(void);
 void NxTraining_Enter(void);   /* nx_training.c */
 void NxSports_Store(int st);   /* nx_sports.c */
+void NxFont_Draw(float x, float y, const char* s);   /* nx_font.c: fonte do SETUP (CP949) */
 bool Gameplay_IsFrozen(void);  /* gameplay.c: stage break, tela parada */
 GameState NxSports_Route(GameState ns, bool fromStageBreak, int stage);
 void NxSports_Update(float dt);

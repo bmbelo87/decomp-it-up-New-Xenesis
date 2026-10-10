@@ -219,6 +219,21 @@ void Gamestate_RenderIntro(void) {
 
     int c = g_game.stateFrame;
     unsigned joined = g_titleJoined;           /* [0x568FF4] */
+    /* NX CTitle (vtable 0x81149a8, quadro 0x808c7b0): cenas do COMMON.DAT
+     * ([0x9e0d118]) — com crédito "1p/2p center step", sem crédito "1p/2p insert
+     * coin", só do lado que ainda não entrou ([0x81f8904] bits 0/1). */
+    {
+        int cm = -1;
+        for (int i = 0; i < g_game.bgaPicCount; i++)
+            if (_stricmp(g_game.bgaPics[i].name, "COMMON") == 0) { cm = i; break; }
+        if (cm >= 0) {
+            bool cr = Coin_HasCredit();                       /* 0x804e5c0 */
+            if (!(joined & 1)) BGA_ScenePlay(cm, cr ? "1p center step" : "1p insert coin", true);
+            if (!(joined & 2)) BGA_ScenePlay(cm, cr ? "2p center step" : "2p insert coin", true);
+        }
+    }
+    (void)c;
+#if 0   /* era (Exceed): slots do BGA\82.DAT (0x41C1CE..0x41C483) */
     if (Coin_HasCredit()) {
         if (!(joined & 1)) {
             BGA_DrawSlot(0, 244 + c % 30, 16);
@@ -241,6 +256,7 @@ void Gamestate_RenderIntro(void) {
         }
     }
     BGA_DrawSlot(0, 0, 3);
+#endif
 
     /* 0x41C488: fade preto por cima, alpha = [CTitle+0x1C] / 60.0 */
     if (g_titleFade > 0) {

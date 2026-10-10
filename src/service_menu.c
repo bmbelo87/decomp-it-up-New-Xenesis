@@ -127,6 +127,11 @@ static int g_svcFontTex = -2;   /* -2 = ainda não tentou */
 
 static void svcText(float x, float y, const char* s)
 {
+    /* NX: a fonte do SETUP é a bitmap embutida no piu (objeto 0x9e0cf58, ASCII 8x16 +
+     * hangul johab), desenhada sem textura — ver nx_font.c. O SCOREFONT.TGA abaixo
+     * era uma aproximação e ficou desativado. */
+    NxFont_Draw(x, y, s);
+#if 0
     /* era: Font_DrawText(x, y, s); */
     if (g_svcFontTex == -2) {
         char path[MAX_PATH];
@@ -157,6 +162,7 @@ static void svcText(float x, float y, const char* s)
         glTexCoord2f(u0, vt); glVertex2f(x, y + 15.0f);
     }
     glEnd();
+#endif
 }
 
 static void svcColor(const float* c)
@@ -318,7 +324,7 @@ static const struct { const char* name; int page; } SVC_TOP[] = {
     { "BOOKKEEPING",       7 },
     { "STATISTICS",        8 },
     /* { "RESTRICTION", ? },  comentado no SETUP_COMMON.LUA */
-    { "LANGUAGE",          SVC_TOP_LANG },
+    { "LANGUAGE (\xBE\xF0\xBE\xEE)", SVC_TOP_LANG },   /* SETUP_EN.LUA: "LANGUAGE (언어)" em CP949 */
     { "GRAPHICS SETTINGS", SVC_PAGE_GRAPHICS },       /* extra do port */
     { "BUTTON CONFIG",     SVC_PAGE_BUTTON_CONFIG },  /* extra do port */
     { "",                  SVC_TOP_BLANK },
