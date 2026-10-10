@@ -3090,11 +3090,16 @@ void Gameplay_Update(float dt)
 
     // ── Velocidade por player: RV, Earthworm, interpolação ──────────────
     {
-        int currentRow = (int)getRowAtTimeFloat(g_songTime);
-
+        /* era: int currentRow = (int)getRowAtTimeFloat(g_songTime); uma vez, fora do laço,
+         * com o chart que estivesse ativo (o do P1). Com um chart por jogador (P1 NORMAL,
+         * P2 CRAZY), a linha atual e a velocidade do bloco do P2 eram tiradas do chart do
+         * P1: as acelerações e desacelerações do chart do P2 não aconteciam. Agora cada
+         * jogador usa o próprio chart (ctxUse), como no desenho. */
         for (int _p = 0; _p < 2; _p++)
         {
             if (!(g_game.activePlayerMask & (1 << _p))) continue;
+            if (g_ctxN > 1) ctxUse(_p);
+            int currentRow = (int)getRowAtTimeFloat(g_songTime);
 
             /* RV e Earthworm só trocam a velocidade na virada de compasso (48 rows).
              * Original (PUMPY.EXE 0x4141cc): DAT_00da24b4 % 0x30 == 0 && != DAT_00da24bc.
@@ -3151,6 +3156,7 @@ void Gameplay_Update(float dt)
             else
                 g_scrollSpeedX[_p] = g_scrollSpeedTarget[_p] * blockMul; /* era: g_scrollSpeedTarget[_p] */
         }
+        if (g_ctxN > 1) ctxUse(0);   /* o resto do Update espera o chart do P1 */
     }
 
     /* era:
