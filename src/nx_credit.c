@@ -28,7 +28,7 @@
 #include "pumpy.h"
 
 extern unsigned g_texGeneration;   /* texture.c: +1 a cada Texture_Shutdown */
-extern bool g_exDemo;
+extern bool g_demoPlay;
 
 static int      s_texText = -1;    /* CTEXTS.TGA   */
 static int      s_texCred = -1;    /* credit01.tga */
@@ -91,7 +91,7 @@ void NxCredit_Draw(void) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    if (g_exDemo && g_game.state == STATE_GAMEPLAY) {   /* DrawDemoPlay */
+    if (g_demoPlay && g_game.state == STATE_GAMEPLAY) {   /* DrawDemoPlay */
         crTile(s_texText, &k_demo, 128.0f, 440.0f, 220.0f, 32.0f, 0.8f, 0.0f);
         crTile(s_texText, &k_demo, 512.0f, 440.0f, 220.0f, 32.0f, 0.8f, 0.0f);
     }

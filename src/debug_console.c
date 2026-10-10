@@ -195,10 +195,10 @@ static void dcCmdSet(void)
  * música, sem precisar do desbloqueio dos códigos da Select. */
 static void dcCmdSkin(void)
 {
-    if (g_dcArgc < 2) { Debug_PrintString("skin = %d (uso: /skin 0..8)", Zero_SkinIndex()); return; }
+    if (g_dcArgc < 2) { Debug_PrintString("skin = %d (uso: /skin 0..8)", Skin_Index()); return; }
     int n = atoi(g_dcArgv[1]);
     if (n < 0 || n > 8) { Debug_PrintString("skin: 0..8"); return; }
-    Zero_SetSkinIndex(n);
+    Skin_SetIndex(n);
     Debug_PrintString("skin = %d (vale a partir da próxima música)", n);
 }
 
@@ -320,24 +320,24 @@ static const DCCommand g_dcCommands[] = {
 bool g_drawJudgeRange;              /* CPlayEngine +0x48D4A, começa FALSE (0x4016FB) */
 
 /* Procs registrados em 0x40F880.. (0x410244), na ordem do registro */
-static const char* const k_exProcs[] = {
+static const char* const k_procs[] = {
     "IDLE", "RWARN", "LOGO", "TITLE", "PLAY", "RUN", "NEXTSTAGE", "GAMEOVER",
     "STAGEBREAK", "GRADE", "SELECT", "NAMEINPUT", "IR", "HIGHSCORE", "SETUP",
     "INTRO", "COKE", NULL
 };
 
 /* Encerra o que estiver tocando antes de trocar de proc (o End() do proc atual) */
-static void exLeaveCurrent(void)
+static void procLeaveCurrent(void)
 {
     if (g_game.state == STATE_GAMEPLAY || g_game.state == STATE_GAME_INIT) Gameplay_Exit();
-    g_exDemo = false;
+    g_demoPlay = false;
     Movie_Close();
     BGM_Stop();
     Resource_ClearBGA();
 }
 
 /* PLAY / RUN (Begin em 0x401A0A): "<step> <modo> [-demo|-demo2]" */
-static void exProcRun(const char* name, int argc, char argv[][DC_ARG_LEN])
+static void procRun(const char* name, int argc, char argv[][DC_ARG_LEN])
 {
     static const struct { const char* flag; int m; } kModes[] = {
         { "-n", 0 }, { "-h", 1 }, { "-c", 2 }, { "-d", 3 }, { "-nm", 4 }, { "-bt", 5 },
@@ -363,7 +363,7 @@ static void exProcRun(const char* name, int argc, char argv[][DC_ARG_LEN])
     }
     int id = (int)strtol(argv[1], NULL, 16);   /* nomes de arquivo por "%X" */
     /* -dv (Division) não existe no banco de músicas do Exceed */
-    if (m < 0 || !ExSelect_Run(id, m, demo)) {
+    if (m < 0 || !Select_Run(id, m, demo)) {
         Debug_PrintString("/%s: Incorrect parameters!", name);
         Attract_Idle();
         return;
@@ -372,23 +372,23 @@ static void exProcRun(const char* name, int argc, char argv[][DC_ARG_LEN])
 }
 
 /* SetCurProc(nome, parâmetros) do original, mapeado para os estados do projeto */
-static void exSetCurProc(int argc, char argv[][DC_ARG_LEN])
+static void procSetCur(int argc, char argv[][DC_ARG_LEN])
 {
     const char* p = argv[0];
     if (*p == '/') p++;             /* "/play ..." chega como "play ..." (0x41D2FA) */
     if (_stricmp(p, "PLAY") == 0 || _stricmp(p, "RUN") == 0) {
-        exLeaveCurrent();
-        exProcRun(p, argc, argv);
+        procLeaveCurrent();
+        procRun(p, argc, argv);
         return;
     }
-    exLeaveCurrent();
+    procLeaveCurrent();
     if      (_stricmp(p, "IDLE") == 0)       Attract_Idle();
     else if (_stricmp(p, "RWARN") == 0)      Game_ChangeState(STATE_WARNING_INIT);
     else if (_stricmp(p, "LOGO") == 0)       Game_ChangeState(STATE_LOGO_ENTER);
     else if (_stricmp(p, "TITLE") == 0)      Game_ChangeState(STATE_CREDIT);
     else if (_stricmp(p, "INTRO") == 0)      Game_ChangeState(STATE_INTRO);
     else if (_stricmp(p, "HIGHSCORE") == 0)  Game_ChangeState(STATE_HIGHSCORE);
-    else if (_stricmp(p, "SELECT") == 0)     Game_ChangeState(STATE_EXSELECT);
+    else if (_stricmp(p, "SELECT") == 0)     Game_ChangeState(STATE_SELECT);
     else if (_stricmp(p, "NAMEINPUT") == 0)  Game_ChangeState(STATE_NAMEINPUT);
     else if (_stricmp(p, "IR") == 0)         Game_ChangeState(STATE_IR);
     else if (_stricmp(p, "GAMEOVER") == 0)   Game_ChangeState(STATE_GAMEOVER_ENTER);
@@ -412,62 +412,62 @@ static void exSetCurProc(int argc, char argv[][DC_ARG_LEN])
     }
 }
 
-static void exCmdCredits(void)      /* 0x41D67C */
+static void conCmdCredits(void)      /* 0x41D67C */
 {
-    Debug_PrintString("%s %s", "PUMP IT UP - THE EXCEED", "V1");
+    Debug_PrintString("%s %s", "PUMP IT UP - NX", "V1");
     Debug_PrintString("     Team Manager: kann");
 }
 
-static void exCmdDrawFps(void)      /* 0x41D0F0: [0xA69044] */
+static void conCmdDrawFps(void)      /* 0x41D0F0: [0xA69044] */
 {
     g_game.showDebug = !g_game.showDebug;
     Debug_PrintString("DrawFPS Settings Changed to: %s", g_game.showDebug ? "TRUE" : "FALSE");
 }
 
-static void exCmdDrawJudgeRange(void)   /* 0x41D13C */
+static void conCmdDrawJudgeRange(void)   /* 0x41D13C */
 {
     g_drawJudgeRange = !g_drawJudgeRange;
     Debug_PrintString("DrawJudgeRange Settings Changed to: %s", g_drawJudgeRange ? "TRUE" : "FALSE");
 }
 
-static void exCmdProcList(void)     /* 0x41D1B9 */
+static void conCmdProcList(void)     /* 0x41D1B9 */
 {
     char buf[256] = "";
-    for (int i = 0; k_exProcs[i]; i++) {
-        strcat(buf, k_exProcs[i]);
+    for (int i = 0; k_procs[i]; i++) {
+        strcat(buf, k_procs[i]);
         strcat(buf, " ");
     }
     Debug_PrintString("Proc List: %s", buf);
 }
 
-static void exCmdRunProc(void)      /* 0x41D26A */
+static void conCmdRunProc(void)      /* 0x41D26A */
 {
     if (g_dcArgc < 2) {
         Debug_PrintString("%s: insufficient parameters", g_dcArgv[0]);
         return;
     }
     int found = 0;
-    for (int i = 0; k_exProcs[i]; i++)
-        if (_stricmp(g_dcArgv[1], k_exProcs[i]) == 0) found = 1;
+    for (int i = 0; k_procs[i]; i++)
+        if (_stricmp(g_dcArgv[1], k_procs[i]) == 0) found = 1;
     if (!found) {
         Debug_PrintString("%s: proc not found.", g_dcArgv[0]);
         return;
     }
-    exSetCurProc(g_dcArgc - 1, &g_dcArgv[1]);
+    procSetCur(g_dcArgc - 1, &g_dcArgv[1]);
 }
 
-static void exCmdPlay(void)         /* 0x41D2E2: SetCurProc("play ...") */
+static void conCmdPlay(void)         /* 0x41D2E2: SetCurProc("play ...") */
 {
-    exSetCurProc(g_dcArgc, g_dcArgv);   /* argv[0] = "/play" -> "play" */
+    procSetCur(g_dcArgc, g_dcArgv);   /* argv[0] = "/play" -> "play" */
 }
 
-static void exCmdSet(void)          /* 0x41D309: câmera da roda de banners da Select */
+static void conCmdSet(void)          /* 0x41D309: câmera da roda de banners da Select */
 {
     static const struct { const char* name; float* v; } kVars[] = {
-        { "x1", &g_exCamX1 }, { "x2", &g_exCamX2 }, { "y1", &g_exCamY1 }, { "y2", &g_exCamY2 },
-        { "z1", &g_exCamZ1 }, { "r", &g_exCamR }, { "r2", &g_exCamR2 }, { "r3", &g_exCamR3 },
-        { "tx", &g_exCamTx }, { "ty", &g_exCamTy }, { "p", &g_exCamP }, { "cy", &g_exCamCy },
-        { "cy2", &g_exCamCy2 },
+        { "x1", &g_selCamX1 }, { "x2", &g_selCamX2 }, { "y1", &g_selCamY1 }, { "y2", &g_selCamY2 },
+        { "z1", &g_selCamZ1 }, { "r", &g_selCamR }, { "r2", &g_selCamR2 }, { "r3", &g_selCamR3 },
+        { "tx", &g_selCamTx }, { "ty", &g_selCamTy }, { "p", &g_selCamP }, { "cy", &g_selCamCy },
+        { "cy2", &g_selCamCy2 },
     };
     for (size_t i = 0; i < sizeof(kVars) / sizeof(kVars[0]); i++) {
         if (_stricmp(g_dcArgv[1], kVars[i].name) == 0) {
@@ -476,18 +476,18 @@ static void exCmdSet(void)          /* 0x41D309: câmera da roda de banners da S
         }
     }
     Debug_PrintString("%g %g %g %g z: %g rot: %g %g %g tx: %g ty: %g p: %g cy: %g %g",
-                      g_exCamX1, g_exCamX2, g_exCamY1, g_exCamY2, g_exCamZ1, g_exCamR,
-                      g_exCamR2, g_exCamR3, g_exCamTx, g_exCamTy, g_exCamP, g_exCamCy, g_exCamCy2);
+                      g_selCamX1, g_selCamX2, g_selCamY1, g_selCamY2, g_selCamZ1, g_selCamR,
+                      g_selCamR2, g_selCamR3, g_selCamTx, g_selCamTy, g_selCamP, g_selCamCy, g_selCamCy2);
 }
 
-static const DCCommand g_exCommands[] = {
-    { "/credits",        exCmdCredits        },
-    { "/drawfps",        exCmdDrawFps        },
-    { "/drawjudgerange", exCmdDrawJudgeRange },
-    { "/proclist",       exCmdProcList       },
-    { "/runproc",        exCmdRunProc        },
-    { "/play",           exCmdPlay           },
-    { "/set",            exCmdSet            },
+static const DCCommand g_conCommands[] = {
+    { "/credits",        conCmdCredits        },
+    { "/drawfps",        conCmdDrawFps        },
+    { "/drawjudgerange", conCmdDrawJudgeRange },
+    { "/proclist",       conCmdProcList       },
+    { "/runproc",        conCmdRunProc        },
+    { "/play",           conCmdPlay           },
+    { "/set",            conCmdSet            },
     { NULL, NULL }
 };
 
@@ -522,7 +522,7 @@ void Debug_ConsoleExecute(const char* cmd)
     }
 
     if (g_dcArgc > 0) {
-        const DCCommand* cmds = g_exceedSongIds ? g_exCommands : g_dcCommands;
+        const DCCommand* cmds = g_hexSongIds ? g_conCommands : g_dcCommands;
         for (i = 0; cmds[i].name; i++) {
             if (_stricmp(g_dcArgv[0], cmds[i].name) == 0) {
                 cmds[i].fn();
@@ -530,7 +530,7 @@ void Debug_ConsoleExecute(const char* cmd)
             }
         }
         if (!cmds[i].name)
-            Debug_PrintString(g_exceedSongIds ? "Unknown Command: %s" : "comando desconhecido: %s",
+            Debug_PrintString(g_hexSongIds ? "Unknown Command: %s" : "comando desconhecido: %s",
                               g_dcArgv[0]);
     }
 

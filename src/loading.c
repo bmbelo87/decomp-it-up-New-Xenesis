@@ -50,7 +50,7 @@ void Loading_Enter(int songId) {
     /* Demo Play nunca carrega PNZ (Exceed2 PIU32.EXE 0x40419b: [0x484F7C] & 0x100000
      * pula a carga; regra das versões).
      * era: g_pnzTexId = Resource_LoadPNZ(path); */
-    g_pnzTexId = g_exDemo ? -1 : Resource_LoadPNZ(path);
+    g_pnzTexId = g_demoPlay ? -1 : Resource_LoadPNZ(path);
     if (g_pnzTexId < 0) {
         Log_Print("Loading: PNZ not found for song %d\n", songId);
     }
@@ -145,7 +145,7 @@ void Loading_BeginGameplay(void) {
     /* Espera ativa como no original (0x4116b5): nada é desenhado. */
     while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
         Sleep(1);
-    if (audOk && !(g_exDemo && !Demo_SoundOn()))   /* 0x40236A */
+    if (audOk && !(g_demoPlay && !Demo_SoundOn()))   /* 0x40236A */
         BGM_Play(false);
     g_game.stateFrame = 0;
     g_game.bgaFrame = 0;
@@ -173,7 +173,7 @@ void Loading_Update(float dt) {
 
         if (g_loadingTimer <= 0) {
             /* NX WORLD TOUR (0x806bee0): objetivo da missão antes da música */
-            if (g_exceedSongIds && (g_game.nxGameMode == 2 || g_game.nxGameMode == 3)) { g_pnzTexId = -1; NxMission_Enter(g_loadingSongId); return; }
+            if (g_hexSongIds && (g_game.nxGameMode == 2 || g_game.nxGameMode == 3)) { g_pnzTexId = -1; NxMission_Enter(g_loadingSongId); return; }
             Loading_BeginGameplay();
         }
         return;
@@ -197,7 +197,7 @@ void Loading_Render(void) {
         float dy = (480.0f - dh) / 2.0f;
 
         Texture_Draw(g_pnzTexId, dx, dy, scale, scale, 1.0f);
-    } else if (!g_exDemo) {
+    } else if (!g_demoPlay) {
         /* era: sempre. No DEMO PLAY o PNZ não é carregado de propósito, então este
          * texto de reserva ("Loading 3329...") aparecia; a demo carrega em tela preta. */
         char buf[64];

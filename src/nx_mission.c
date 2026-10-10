@@ -349,7 +349,7 @@ bool NxCond_Eval(const char* c, int p, int rank) {
  * ========================================================================= */
 static uint32_t s_clT0;
 static int s_sndConq = -1;
-static int s_clSong = -1;    /* música liberada (índice em g_exSongs) */
+static int s_clSong = -1;    /* música liberada (índice em g_songTable) */
 static int s_clPhase;        /* 0 vídeo, 1 "unlock" */
 void NxText_DrawCentered(const char* str, int x, int y);
 
@@ -365,7 +365,7 @@ void NxClear_Enter(void) {
     s_clT0 = timeGetTime();
     s_clPhase = 0;
     s_clSong = NxClear_UnlockSong();
-    if (s_clSong >= 0) Log_Print("CLEAR: libera %X %s\n", (unsigned)g_exSongs[s_clSong].id, g_exSongs[s_clSong].titleEn);
+    if (s_clSong >= 0) Log_Print("CLEAR: libera %X %s\n", (unsigned)g_songTable[s_clSong].id, g_songTable[s_clSong].titleEn);
 }
 
 void NxClear_Update(float dt) {
@@ -399,7 +399,7 @@ void NxClear_Render(void) {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glColor4f(1, 1, 1, 1);
         BGA_ScenePlay(0, "unlock", true);
-        const ExceedSong* e = &g_exSongs[s_clSong];
+        const TrackEntry* e = &g_songTable[s_clSong];
         NxText_DrawCentered(g_game.svcLangOption == 0 ? e->titleKr : e->titleEn, 0x140, 0xb9);
     }
 }

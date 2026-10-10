@@ -54,7 +54,7 @@ static void sfx(int k) { if (s_sfx[k] >= 0) Audio_Play(s_sfx[k], false); }
 /* ---------------------------------------------------------------------------
  * Estado (campos do objeto CSelect)
  * ------------------------------------------------------------------------- */
-static int  s_list[EX_SONG_COUNT];   /* [this+8]: índices em g_exSongs */
+static int  s_list[SONG_TABLE_COUNT];   /* [this+8]: índices em g_songTable */
 static int  s_count;                 /* +0x20 */
 static int  s_cursor;                /* +0x14 */
 static int  s_lastId = -1;           /* +0x18, lembrado entre stages */
@@ -75,7 +75,7 @@ static const char* s_arroDL;         /* +0x30 */
 static const char* s_arroDR;         /* +0x34 */
 static int  s_acc;                   /* +0x1a0: aceleração do DL/DR */
 static uint32_t s_holdT[2][2];
-static int  s_discTex[EX_SONG_COUNT];/* registro +0x38 */
+static int  s_discTex[SONG_TABLE_COUNT];/* registro +0x38 */
 static int  s_movieTex = -1;         /* textura do vídeo da prévia (slot de textura) */
 static int  s_prevTimeSnd = -1;
 
@@ -97,17 +97,17 @@ static bool s_srcOk;
 static bool special(void) { return g_game.nxGameMode == 1; }
 
 /* 0x8061ed0(id, 1): liga as travas por dificuldade (+0x3c..+0x40) e o avail (+0x36).
- * g_exSongs é constante: o estado liberado fica aqui. */
-static uint8_t s_unl[EX_SONG_COUNT];
-bool NxSong_Unlocked(int i) { return i >= 0 && i < EX_SONG_COUNT && s_unl[i]; }
+ * g_songTable é constante: o estado liberado fica aqui. */
+static uint8_t s_unl[SONG_TABLE_COUNT];
+bool NxSong_Unlocked(int i) { return i >= 0 && i < SONG_TABLE_COUNT && s_unl[i]; }
 void NxSong_Unlock(uint32_t id) {
-    for (int i = 0; i < EX_SONG_COUNT; i++) if (g_exSongs[i].id == id) { s_unl[i] = 1; return; }
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) if (g_songTable[i].id == id) { s_unl[i] = 1; return; }
 }
-static bool songAvail(const ExceedSong* e) { return e->avail || s_unl[e - g_exSongs]; }
+static bool songAvail(const TrackEntry* e) { return e->avail || s_unl[e - g_songTable]; }
 
 /* 0x8062572 / 0x807e9a9 / 0x807b4e4: custo em corações pelo canal */
-static int heartCost(const ExceedSong* e) {
-    return e->channel == EX_CH_FULLSONG ? 4 : e->channel == EX_CH_REMIX ? 3 : 2;
+static int heartCost(const TrackEntry* e) {
+    return e->channel == SONG_CH_FULLSONG ? 4 : e->channel == SONG_CH_REMIX ? 3 : 2;
 }
 
 /* cópias do tile de position.spr: um objeto por slot (o original troca obj+0x10) */
@@ -116,7 +116,7 @@ static int s_posSlot[NPOS], s_posTile[NPOS], s_posCount;
 static int s_posOrigTile = -1;      /* tile original do position.spr */
 
 static bool twoPlayers(void) { return (s_joined & 3) == 3; }
-static const ExceedSong* cur(void) { return s_count > 0 ? &g_exSongs[s_list[s_cursor]] : NULL; }
+static const TrackEntry* cur(void) { return s_count > 0 ? &g_songTable[s_list[s_cursor]] : NULL; }
 static int wrap(int i) { if (s_count <= 0) return 0; i %= s_count; return i < 0 ? i + s_count : i; }
 
 /* ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ static BGALayerSrc s_kcalLbl;
 static bool s_kcalLblOk;
 static int  s_kfontTex = -2;
 
-static int kcalEstimate(const ExceedSong* e, int d) {   /* 0x807eb00 */
+static int kcalEstimate(const TrackEntry* e, int d) {   /* 0x807eb00 */
     if (d < 0 || d > 4) d = 0;
     int L = e->level[d];
     if (L == 0) L = 1;
@@ -286,7 +286,7 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
     static const int k_skin[4] = { 2, 6, 7, 1 }, k_skinIcon[4] = { 30, 16, 17, 23 };
     switch (code) {
     case 0: case 1: case 2: case 3:   /* NOTESKIN = n (0x8050200) */
-        Zero_SetSkinIndexP(p, k_skin[code]);   /* era: Zero_SetSkinIndex (os dois) */
+        Skin_SetIndexP(p, k_skin[code]);   /* era: Skin_SetIndex (os dois) */
         s_nxSkinIcon[p] = k_skinIcon[code];
         break;
     case 4:  globalFlag(0x80); break;
@@ -318,7 +318,7 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
               * skin padrão do projeto (SKIN08, informado pelo usuário). */
         *f = 0; *v = 4;
         s_nxFlags[0] &= ~0x3080u; s_nxFlags[1] &= ~0x3080u;
-        Zero_SetSkinIndexP(p, 8);   /* era: Zero_SetSkinIndex(8) — o código 18 zera só o jogador */
+        Skin_SetIndexP(p, 8);   /* era: Skin_SetIndex(8) — o código 18 zera só o jogador */
         s_nxSkinIcon[p] = -1;
         break;
     case 19: case 20: case 21: case 22: {   /* extras do port */
@@ -326,7 +326,7 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
         /* era: s_nxSkinIcon[p] = -1 (sem ícone). Melody = wor-NOTE (48) e
          * Slime = wor-SM (51), do command2.tga (informado pelo usuário). */
         static const int k_extraIcon[4] = { -1, -1, 48, 51 };
-        Zero_SetSkinIndexP(p, k_extraSkin[code - 19]);
+        Skin_SetIndexP(p, k_extraSkin[code - 19]);
         s_nxSkinIcon[p] = k_extraIcon[code - 19];
         break;
     }
@@ -397,7 +397,7 @@ void NxCmd_Draw(unsigned joined) {   /* 0x807bf40 por jogador */
     }
 }
 
-/* depois do ExSelect_StartMission: modificadores e velocidade dos códigos */
+/* depois do Select_StartMission: modificadores e velocidade dos códigos */
 void NxCmd_ToGame(void) {
     cmdToGame();
     for (int p = 0; p < 2; p++) {
@@ -412,7 +412,7 @@ void NxCmd_ToGame(void) {
  * Lista (0x8062400): canais 0..3 com algum nível (2P: só N/H/C contam)
  * ------------------------------------------------------------------------- */
 static void listAdd(int i) {
-    const ExceedSong* e = &g_exSongs[i];
+    const TrackEntry* e = &g_songTable[i];
     if (special()) {   /* 0x8062566: só canais 4..6 e custo <= corações */
         if (!(e->channel & 4) || heartCost(e) > g_game.nxHearts) return;
     } else if (e->channel & 4) return;
@@ -424,7 +424,7 @@ static void listAdd(int i) {
 
 static void buildList(void) {
     s_count = 0;
-    /* era: for (i = 0; i < EX_SONG_COUNT; i++) com o corpo de listAdd.
+    /* era: for (i = 0; i < SONG_TABLE_COUNT; i++) com o corpo de listAdd.
      * Os extras do port (índices >= NX_SONG_BASE) só entram com GAME STYLE =
      * MODDED, logo depois da última música do mesmo canal na tabela do piu. */
     /* Posição pedida pelo usuário: extra { id, antes de qual id }. Quem não está
@@ -436,17 +436,17 @@ static void buildList(void) {
     for (int i = 0; i < NX_SONG_BASE; i++) {
         if (g_game.gameStyleModded)
             for (int b = 0; b < nBefore; b++)
-                if (k_before[b][1] == g_exSongs[i].id)
-                    for (int x = NX_SONG_BASE; x < EX_SONG_COUNT; x++)
-                        if (g_exSongs[x].id == k_before[b][0]) listAdd(x);
+                if (k_before[b][1] == g_songTable[i].id)
+                    for (int x = NX_SONG_BASE; x < SONG_TABLE_COUNT; x++)
+                        if (g_songTable[x].id == k_before[b][0]) listAdd(x);
         listAdd(i);
         if (!g_game.gameStyleModded) continue;
-        int ch = g_exSongs[i].channel;
-        if (i + 1 < NX_SONG_BASE && g_exSongs[i + 1].channel == ch) continue;
-        for (int x = NX_SONG_BASE; x < EX_SONG_COUNT; x++) {
+        int ch = g_songTable[i].channel;
+        if (i + 1 < NX_SONG_BASE && g_songTable[i + 1].channel == ch) continue;
+        for (int x = NX_SONG_BASE; x < SONG_TABLE_COUNT; x++) {
             bool placed = false;
-            for (int b = 0; b < nBefore; b++) if (k_before[b][0] == g_exSongs[x].id) placed = true;
-            if (!placed && g_exSongs[x].channel == ch) listAdd(x);
+            for (int b = 0; b < nBefore; b++) if (k_before[b][0] == g_songTable[x].id) placed = true;
+            if (!placed && g_songTable[x].channel == ch) listAdd(x);
         }
     }
 }
@@ -478,7 +478,7 @@ static void makePosCopy(int slot) {
  * moldura P-1 = cor do canal, lock P+2 = lock2 se indisponível, senão lock.spr */
 static void fillCard(int pos, int listIdx) {
     if (s_count <= 0) return;
-    const ExceedSong* e = &g_exSongs[s_list[wrap(listIdx)]];
+    const TrackEntry* e = &g_songTable[s_list[wrap(listIdx)]];
     int t = posTile(pos);
     int tex = s_discTex[s_list[wrap(listIdx)]];
     if (t >= 0 && tex >= 0) g_game.sprTiles[t].texId = tex;
@@ -518,7 +518,7 @@ static bool loadChBars(void) {
 }
 
 static void channelUpdate(bool force) {
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     if (!e) return;
     int ch = e->channel;
     if (ch < 0 || ch > 6) ch = 0;
@@ -563,7 +563,7 @@ static void levelSlots(int level, int base) {
 }
 
 static void levelUpdate(int p) {
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     if (!e) return;
     static const char* const k_pos[3]  = { "single level position", "1p level position", "2p level position" };
     static const char* const k_up[3]   = { "single star-hell", "1p star-hell", "2p star-hell" };
@@ -601,14 +601,14 @@ static void diffText(int p, bool sceneReset) {
     }
 }
 
-static bool diffOk(const ExceedSong* e, int d) {
-    if (d < 0 || d > 4 || e->level[d] < 0 || !(e->lock[d] || s_unl[e - g_exSongs])) return false;
+static bool diffOk(const TrackEntry* e, int d) {
+    if (d < 0 || d > 4 || e->level[d] < 0 || !(e->lock[d] || s_unl[e - g_songTable])) return false;
     return !twoPlayers() || d <= 2;
 }
 
 /* 0x807e7a0 (+1) / 0x807e710 (-1) */
 static int stepDiff(int p, int dir) {
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     int n = twoPlayers() ? 3 : 5;
     int d0 = s_diff[p];
     for (int i = 1; i < n; i++) {
@@ -620,7 +620,7 @@ static int stepDiff(int p, int dir) {
 
 /* 0x807e5f0: depois de trocar de música */
 static void fixDiff(void) {
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     if (!e) return;
     int np = twoPlayers() ? 2 : 1, n = twoPlayers() ? 3 : 5;
     for (int p = 0; p < np; p++) {
@@ -669,7 +669,7 @@ static void previewStop(void) {
 }
 
 static void previewStart(void) {
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     if (!e) return;
     char mov[MAX_PATH], aud[MAX_PATH];
     if (!nxFind((int)e->id, "%s/BGA/PREVIEW/%03X.MOV", mov, sizeof(mov)))
@@ -687,7 +687,7 @@ static void previewStart(void) {
  * (EEPROM +0xBA9 = svcLangOption): 0 (KOREAN) -> "%s- %s- BPM:%s" com título/artista
  * KR (+0x10/+0x08); senão "%s- %s- BPM: %s" com título/artista EN (+0x14/+0x0C). */
 static void songText(void) {
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     char buf[512];
     if (!e || !songAvail(e))
         buf[0] = 0;
@@ -766,13 +766,13 @@ void NxSelect_Enter(void) {
 
     /* discos (0x8062210) */
     char path[MAX_PATH];
-    for (int i = 0; i < EX_SONG_COUNT; i++) s_discTex[i] = -1;
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) s_discTex[i] = -1;
     snprintf(path, sizeof(path), "%s/BGA/TEST.DAT", g_game.currentDirectory);
     if (RES_Open(path)) {
-        for (int i = 0; i < EX_SONG_COUNT; i++) {
-            if (((g_exSongs[i].channel & 4) != 0) != special()) continue;   /* era: sempre pulava canais 4..6 */
+        for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+            if (((g_songTable[i].channel & 4) != 0) != special()) continue;   /* era: sempre pulava canais 4..6 */
             char name[16];
-            for (int id = (int)g_exSongs[i].id, g = 0; id != -1 && g < 8 && s_discTex[i] < 0; g++, id = NX_ResId(id)) {
+            for (int id = (int)g_songTable[i].id, g = 0; id != -1 && g < 8 && s_discTex[i] < 0; g++, id = NX_ResId(id)) {
                 snprintf(name, sizeof(name), "%03X.TGA", (unsigned)id);
                 s_discTex[i] = loadTextureFromRES(name);
             }
@@ -800,7 +800,7 @@ void NxSelect_Enter(void) {
      * no início e só os stages seguintes voltam para a música jogada. */
     if (newGame) s_lastId = -1;
     for (int i = 0; i < s_count; i++)
-        if ((int)g_exSongs[s_list[i]].id == s_lastId) s_cursor = i;
+        if ((int)g_songTable[s_list[i]].id == s_lastId) s_cursor = i;
     if (newGame) {
         s_diff[0] = s_diff[1] = 0;
         s_nxFlags[0] = s_nxFlags[1] = 0;
@@ -886,13 +886,13 @@ static bool repeatHit(int p, int k, PadButton b) {
 
 static void startGame(void) {
     if (s_started) return;
-    const ExceedSong* e = cur();
+    const TrackEntry* e = cur();
     if (!e) return;
     if (special() && !songAvail(e)) {   /* 0x807b5cc -> 0x807bce0: sorteia uma disponível */
         bool any = false;
-        for (int i = 0; i < s_count && !any; i++) any = songAvail(&g_exSongs[s_list[i]]);
+        for (int i = 0; i < s_count && !any; i++) any = songAvail(&g_songTable[s_list[i]]);
         if (any) {
-            do s_cursor = rand() % s_count; while (!songAvail(&g_exSongs[s_list[s_cursor]]));
+            do s_cursor = rand() % s_count; while (!songAvail(&g_songTable[s_list[s_cursor]]));
             fixDiff();
             e = cur();
         }
@@ -919,7 +919,7 @@ static void startGame(void) {
         g_nxDiffIdx[p] = d;
         g_nxLevel[p] = (d >= 0 && d <= 4) ? e->level[d] : 0;
     }
-    if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv)) {
+    if (!Select_StartSong((int)e->id, s_diff[0], s_joined, speed, rv)) {
         s_started = false;
         g_game.nxHearts += heartCost(e);   /* extra do port: não começou, devolve */
     }
@@ -954,7 +954,7 @@ static void playerInput(int p) {
             }
             return;
         }
-        const ExceedSong* e = cur();
+        const TrackEntry* e = cur();
         if (s_ready) { s_time = 0; sfx(SFX_SELECT); }
         else if (e && songAvail(e)) {
             s_ready = true;
@@ -1131,7 +1131,7 @@ void NxSelect_Render(void) {
 
     /* kcal da música apontada (0x807b2af: carrossel parado e música liberada) */
     if (lateOk() && s_dir == 0 && cur() && songAvail(cur())) {
-        const ExceedSong* e = cur();
+        const TrackEntry* e = cur();
         if (s_joined & 1) kcalDraw(192.0f, 195.0f, kcalEstimate(e, s_diff[0]));
         if (s_joined & 2) kcalDraw(354.0f, 357.0f, kcalEstimate(e, s_diff[(s_joined & 1) ? 1 : 0]));
         glColor4f(1, 1, 1, 1);
@@ -1159,7 +1159,7 @@ void NxSelect_Render(void) {
             BGA_ScenePlay(NB_COMMON, "single mode text start", true);
         }
         /* era: "artista- título- BPM" com a fonte 8x8, centrado em (320,405), só parado.
-        const ExceedSong* e = cur();
+        const TrackEntry* e = cur();
         if (e) {
             char buf[256];
             snprintf(buf, sizeof(buf), "%s- %s- BPM:%s", e->artistEn, e->titleEn, e->bpmText ? e->bpmText : "");

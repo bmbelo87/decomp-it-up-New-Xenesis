@@ -88,7 +88,7 @@ const char* State_ToString(GameState state) {
         case STATE_LOGO_UPDATE: return "LOGO_UPDATE";
         case STATE_INTRO: return "INTRO";
         case STATE_CREDIT: return "CREDIT";
-        case STATE_EXSELECT: return "EXSELECT";
+        case STATE_SELECT: return "SELECT";
         case STATE_STATION: return "STATION";
         case STATE_NX_MISSION: return "NX_MISSION";
         case STATE_NX_CLEAR: return "NX_CLEAR";

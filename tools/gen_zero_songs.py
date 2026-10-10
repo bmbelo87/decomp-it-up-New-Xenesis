@@ -90,15 +90,15 @@ def main():
 
     L = []
     L.append("/* GERADO por tools/gen_zero_songs.py a partir do piu (Pump It Up Zero) - nao editar a mao.")
-    L.append(" *   g_exSongs     <- 0x08119040 (%d x 0x4C bytes)" % SONG_COUNT)
-    L.append(" *   g_exChannels  <- campo +0x24 de cada registro, na ordem da tabela */")
+    L.append(" *   g_songTable     <- 0x08119040 (%d x 0x4C bytes)" % SONG_COUNT)
+    L.append(" *   g_songChannels  <- campo +0x24 de cada registro, na ordem da tabela */")
     L.append('#include "pumpy.h"')
     L.append("")
-    L.append("#if EX_SONG_COUNT != %d || EX_CHANNEL_COUNT != %d || EX_CHANNEL_MAX != %d" % (len(songs), CHANNEL_COUNT, cmax))
-    L.append('#error "pumpy.h: EX_SONG_COUNT/EX_CHANNEL_COUNT/EX_CHANNEL_MAX fora do Zero (rode tools/gen_zero_songs.py)"')
+    L.append("#if SONG_TABLE_COUNT != %d || SONG_CHANNEL_COUNT != %d || SONG_CHANNEL_MAX != %d" % (len(songs), CHANNEL_COUNT, cmax))
+    L.append('#error "pumpy.h: SONG_TABLE_COUNT/SONG_CHANNEL_COUNT/SONG_CHANNEL_MAX fora do Zero (rode tools/gen_zero_songs.py)"')
     L.append("#endif")
     L.append("")
-    L.append("const ExceedSong g_exSongs[EX_SONG_COUNT] = {")
+    L.append("const TrackEntry g_songTable[SONG_TABLE_COUNT] = {")
     for i, s in enumerate(songs):
         L.append("    { 0x%X, %s, %s, %s, %s, %.4f, { %s }, %d, %d, { %s }, %s, %d, %d, %d, %d }, /* %d */" % (
             s["id"], c_escape(s["ak"]), c_escape(s["ae"]), c_escape(s["tk"]), c_escape(s["te"]), s["bpm"],
@@ -106,7 +106,7 @@ def main():
             ("0x%X" % s["base"]) if s["base"] >= 0 else "-1", s["ch"], s["seq"], s["demo"], s["arc"], i))
     L.append("};")
     L.append("")
-    L.append("const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX] = {")
+    L.append("const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX] = {")
     for c, ids in enumerate(chans):
         L.append("    /* %s (%d) */ { %s }," % (CHANNEL_NAMES[c], len(ids),
                  ", ".join("0x%X" % x for x in ids + [0] * (cmax - len(ids)))))
@@ -115,7 +115,7 @@ def main():
     open(sys.argv[2], "w", encoding="utf-8", newline="\n").write("\n".join(L))
     for c, ids in enumerate(chans):
         print("canal %d %-8s %3d musicas" % (c, CHANNEL_NAMES[c], len(ids)))
-    print("EX_CHANNEL_MAX = %d; gravado: %s" % (cmax, sys.argv[2]))
+    print("SONG_CHANNEL_MAX = %d; gravado: %s" % (cmax, sys.argv[2]))
     return 0
 
 

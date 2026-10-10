@@ -1,5 +1,5 @@
 /*
- * zero_select.c — tela de seleção de música do Pump It Up Zero (CSelect, piu).
+ * select_classic.c — tela de seleção de música do Pump It Up Zero (CSelect, piu).
  *
  * Classe CSelect (RTTI "7CSelect", vtable 0x081003c8): Begin 0x806a7a0, quadro
  * 0x806b530 (lógica e desenho juntos), End 0x806e240. A lista de músicas é um
@@ -43,12 +43,12 @@ enum { ZB_SELECT = 0, ZB_ICONDD = 1, ZB_ICONALL = 2, ZB_SELECT3 = 3 };
  *   (0x805a680 a partir de 0x0804f8xx) ainda não existem no projeto.
  * ------------------------------------------------------------------------- */
 static bool    s_unlockInit;
-static uint8_t s_avail[EX_SONG_COUNT];
-static uint8_t s_open[EX_SONG_COUNT][5];
+static uint8_t s_avail[SONG_TABLE_COUNT];
+static uint8_t s_open[SONG_TABLE_COUNT][5];
 
 static int songIndex(int id) {
-    for (int i = 0; i < EX_SONG_COUNT; i++)
-        if ((int)g_exSongs[i].id == id) return i;
+    for (int i = 0; i < SONG_TABLE_COUNT; i++)
+        if ((int)g_songTable[i].id == id) return i;
     return -1;
 }
 
@@ -76,9 +76,9 @@ static void unlockModes(int id, int n, int h, int c, int d, int nm) {
 static void initUnlocks(void) {
     if (s_unlockInit) return;
     s_unlockInit = true;
-    for (int i = 0; i < EX_SONG_COUNT; i++) {
-        s_avail[i] = g_exSongs[i].avail;
-        for (int d = 0; d < 5; d++) s_open[i][d] = g_exSongs[i].lock[d];
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+        s_avail[i] = g_songTable[i].avail;
+        for (int d = 0; d < 5; d++) s_open[i][d] = g_songTable[i].lock[d];
     }
     /* 0x805aa60 */
     static const int k_locked[] = {
@@ -119,11 +119,11 @@ static void sfx(int k) { if (s_sfx[k] >= 0) Audio_Play(s_sfx[k], false); }
 /* ---------------------------------------------------------------------------
  * Estado (campos do objeto CSelect)
  * ------------------------------------------------------------------------- */
-static int  s_list[EX_SONG_COUNT];     /* [+8]: cópia dos registros do canal */
+static int  s_list[SONG_TABLE_COUNT];     /* [+8]: cópia dos registros do canal */
 static int  s_count;                   /* lista +0x4C */
 static int  s_ch;                      /* +0x10 (lista +0xC) */
-static int  s_cursor[EX_CHANNEL_COUNT];/* +0x14 (lista +0x10) */
-static int  s_lastId[EX_CHANNEL_COUNT];/* +0x28 (lista +0x24): música lembrada por canal */
+static int  s_cursor[SONG_CHANNEL_COUNT];/* +0x14 (lista +0x10) */
+static int  s_lastId[SONG_CHANNEL_COUNT];/* +0x28 (lista +0x24): música lembrada por canal */
 static bool s_listInit;
 static int  s_diff[2];                 /* +0x74 / +0x78 */
 static int  s_diffSaved[2];            /* +0x7C / +0x80 */
@@ -151,7 +151,7 @@ static int  s_station = 1;             /* [obj 0x98c]+0xCC: 0 EASY 1 ARCADE 2 MI
 static bool s_anotherChannel;          /* [obj 0x98c]+0x108 == 1 (ANOTHERCHANNEL) */
 static bool s_started;
 static int  s_frame;
-static int  s_bannerTex[EX_SONG_COUNT];
+static int  s_bannerTex[SONG_TABLE_COUNT];
 static BGALayerSrc s_digTime[11], s_dig2P[11], s_dig1P[11];
 static bool s_digOk;
 
@@ -217,8 +217,8 @@ enum { IC_IN, IC_2X, IC_2X_O, IC_3X, IC_3X_O, IC_4X, IC_4X_O, IC_8X, IC_8X_O, IC
 
 /* Tabelas de códigos (0x0811c3a0 P1 / 0x0811c960 P2; o jogador está em cada passo) */
 enum { ZB_UL = 8, ZB_UR = 10, ZB_C = 9, ZB_DL = 7, ZB_DR = 11 };
-typedef struct { int n; uint8_t b[11]; } ZeroCode;
-static const ZeroCode k_codes[18] = {
+typedef struct { int n; uint8_t b[11]; } SelCode;
+static const SelCode k_codes[18] = {
     { 9, { ZB_UL, ZB_UR, ZB_DL, ZB_C, ZB_DL, ZB_DR, ZB_DR, ZB_UR, ZB_DL } },  /* 0 skin 3 */
     { 9, { ZB_UL, ZB_UR, ZB_DL, ZB_C, ZB_DL, ZB_DR, ZB_DR, ZB_UR, ZB_DR } },  /* 1 skin 5 */
     { 9, { ZB_UL, ZB_UR, ZB_DL, ZB_C, ZB_DL, ZB_DR, ZB_DR, ZB_UR, ZB_C } },   /* 2 skin 2 */
@@ -245,22 +245,22 @@ static const ZeroCode k_codes[18] = {
  * NX2 CPlayer::m_CurrentSkin: skin por jogador. NX: padrão SKIN08 (informado
  * pelo usuário); SKIN09..12 só existem na NX2, então o limite fica em 8. */
 static int s_skin[2] = { 8, 8 };
-int Zero_SkinIndex(void) { return s_skin[0]; }
-int Zero_SkinIndexP(int p) { return s_skin[(p == 1) ? 1 : 0]; }
-void Zero_SetSkinIndex(int n) { if (n >= 0 && n <= 8) s_skin[0] = s_skin[1] = n; }   /* console /skin */
-void Zero_SetSkinIndexP(int p, int n) { if (n >= 0 && n <= 8) s_skin[(p == 1) ? 1 : 0] = n; }
+int Skin_Index(void) { return s_skin[0]; }
+int Skin_IndexP(int p) { return s_skin[(p == 1) ? 1 : 0]; }
+void Skin_SetIndex(int n) { if (n >= 0 && n <= 8) s_skin[0] = s_skin[1] = n; }   /* console /skin */
+void Skin_SetIndexP(int p, int n) { if (n >= 0 && n <= 8) s_skin[(p == 1) ? 1 : 0] = n; }
 
 static bool twoPlayers(void) { return (s_joined & 3) == 3; }
 
-static const ExceedSong* curSong(void) {
+static const TrackEntry* curSong(void) {
     if (s_count <= 0) return NULL;
-    return &g_exSongs[s_list[s_cursor[s_ch]]];
+    return &g_songTable[s_list[s_cursor[s_ch]]];
 }
 static int curSongIdx(void) { return s_count > 0 ? s_list[s_cursor[s_ch]] : -1; }
 
 /* nível existe e dificuldade aberta (+0x28 + d*4 != -1 && +0x44 + d) */
 static bool modeOk(int si, int d) {
-    return si >= 0 && d >= 0 && d < 5 && g_exSongs[si].level[d] != -1 && s_open[si][d];
+    return si >= 0 && d >= 0 && d < 5 && g_songTable[si].level[d] != -1 && s_open[si][d];
 }
 
 /* 0x805af80(lista, canal, modo, força): canal == +0x24, +0x3E != 0, +0x3C == 0
@@ -268,8 +268,8 @@ static bool modeOk(int si, int d) {
 static void buildList(int ch) {
     int two = twoPlayers();
     s_count = 0;
-    for (int i = 0; i < EX_SONG_COUNT; i++) {
-        const ExceedSong* e = &g_exSongs[i];
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+        const TrackEntry* e = &g_songTable[i];
         if (e->channel != ch || !s_avail[i]) continue;
         if (two && e->level[0] == -1 && e->level[1] == -1 && e->level[2] == -1) continue;
         if (s_lastId[ch] == (int)e->id) s_cursor[ch] = s_count;
@@ -360,13 +360,13 @@ static void openPreview(int id) {
     Movie_Open(mov, true);
     BGM_Stop();
     if (BGM_LoadAUDDirect(aud)) BGM_Play(false);
-    Log_Print("ZSELECT: prévia %X -> '%s' + '%s'\n", (unsigned)id, mov, aud);
+    Log_Print("CSELECT: prévia %X -> '%s' + '%s'\n", (unsigned)id, mov, aud);
 }
 
 /* 0x806d3a0: troca de canal */
 static void setChannel(int ch) {
-    if (ch < 0 || ch >= EX_CHANNEL_COUNT) ch = 0;
-    Log_Print("ZSELECT: canal %d\n", ch);
+    if (ch < 0 || ch >= SONG_CHANNEL_COUNT) ch = 0;
+    Log_Print("CSELECT: canal %d\n", ch);
     s_ch = ch;
     s_chScene = k_chScene[ch];
     buildList(ch);
@@ -402,7 +402,7 @@ static void applyCode(int p, int code) {
     switch (code) {
     case 0: case 1: case 2: case 3: case 4: case 5:
         /* skins / 0x10000: exigem o desbloqueio em PIUZERO.INI (0x805a250) */
-        Log_Print("ZSELECT: código %d (travado no INI)\n", code);
+        Log_Print("CSELECT: código %d (travado no INI)\n", code);
         return;
     case 6:
         if (m & ZM_RV) m &= ~ZM_SPEED_GROUP;
@@ -481,7 +481,7 @@ static void applyCode(int p, int code) {
         s_bigIcon = big;
         BGA_SceneReset(ZB_ICONALL, big);
     }
-    Log_Print("ZSELECT: P%d código %d -> mods 0x%05X\n", p + 1, code, s_mods[p]);
+    Log_Print("CSELECT: P%d código %d -> mods 0x%05X\n", p + 1, code, s_mods[p]);
 }
 
 /* 0x806c360: escolhe a cena de cada grupo de ícones (entrada/saída) */
@@ -551,10 +551,10 @@ static void updateDigits(void) {
     if (!s_digOk) return;
     int si = curSongIdx();
     if (twoPlayers()) {
-        levelDigits(si >= 0 ? g_exSongs[si].level[s_diff[0]] : 0, 0x35, 0x36, s_dig2P);
-        levelDigits(si >= 0 ? g_exSongs[si].level[s_diff[1]] : 0, 0x37, 0x38, s_dig2P);
+        levelDigits(si >= 0 ? g_songTable[si].level[s_diff[0]] : 0, 0x35, 0x36, s_dig2P);
+        levelDigits(si >= 0 ? g_songTable[si].level[s_diff[1]] : 0, 0x37, 0x38, s_dig2P);
     } else {
-        levelDigits(si >= 0 ? g_exSongs[si].level[s_diff[0]] : 0, 0x10, 0x11, s_dig1P);
+        levelDigits(si >= 0 ? g_songTable[si].level[s_diff[0]] : 0, 0x10, 0x11, s_dig1P);
     }
     int t = s_time < 0 ? 0 : s_time;
     setDigit(0x13, &s_digTime[t % 10]);
@@ -562,7 +562,7 @@ static void updateDigits(void) {
 }
 
 /* 0x80a7690(fov): perspectiva com o plano z = 0 em 1:1 com 640x480 */
-static void zeroPerspective(float fov) {
+static void fieldPerspective(float fov) {
     const double W = 640.0, H = 480.0;
     double eye = (H * 0.5) / tan(fov * 0.5 * 3.14159265358979 / 180.0);
     double n = 0.1, f = 5000.0;
@@ -576,7 +576,7 @@ static void zeroPerspective(float fov) {
     glTranslatef(0.0f, 0.0f, -(float)eye);              /* gluLookAt(0,0,eye, 0,0,0) */
 }
 
-static void zeroOrtho(void) {   /* 0x80a75f0 */
+static void fieldOrtho(void) {   /* 0x80a75f0 */
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, 640, 0, 480, -500, 500);
@@ -592,7 +592,7 @@ static void drawWheel(int spin, int idxOff, float px, float py) {
     if (s_count <= 0) return;
     const float R = -174.0f, discW = 43.8003006f;
     glPushMatrix();
-    zeroPerspective(15.0f);
+    fieldPerspective(15.0f);
     glTranslatef(px + 320.0f, (25.0f - (0.5f * R + 200.0f)) + py, 0.0f);
     glRotatef(-75.0f, 1.0f, 0.0f, 0.0f);
     int off = (s_spinDir == 1) ? idxOff - 1 : idxOff;
@@ -620,13 +620,13 @@ static void drawWheel(int spin, int idxOff, float px, float py) {
         glPopMatrix();
     }
     glPopMatrix();
-    zeroOrtho();
+    fieldOrtho();
 }
 
 /* ---------------------------------------------------------------------------
  * Begin (0x806a7a0)
  * ------------------------------------------------------------------------- */
-void ZeroSelect_Enter(void) {
+void ClassicSelect_Enter(void) {
     initUnlocks();
     Title_StopMusic();
     Movie_Close();
@@ -635,7 +635,7 @@ void ZeroSelect_Enter(void) {
     static const char* const k_bga[4] = { "SELECT", "ICONDD", "ICONALL", "SELECT3" };
     for (int i = 0; i < 4; i++)
         if (!Resource_LoadBGAByName(k_bga[i]))
-            Log_Print("ZSELECT: falha ao carregar BGA\\%s.DAT\n", k_bga[i]);
+            Log_Print("CSELECT: falha ao carregar BGA\\%s.DAT\n", k_bga[i]);
     BGA_Reset();
 
     /* dígitos: slots 0x14.. (tempo), 0x3A.. (2P) e 0x46.. (1P) do SELECT3, 11 cada */
@@ -645,31 +645,31 @@ void ZeroSelect_Enter(void) {
         s_digOk &= BGA_GetLayerSrc(ZB_SELECT3, 0x3A + d, &s_dig2P[d]);
         s_digOk &= BGA_GetLayerSrc(ZB_SELECT3, 0x46 + d, &s_dig1P[d]);
     }
-    if (!s_digOk) Log_Print("ZSELECT: slots de dígito do SELECT3 incompletos\n");
+    if (!s_digOk) Log_Print("CSELECT: slots de dígito do SELECT3 incompletos\n");
 
     /* era (Zero 0x805ae20): discos "%X.TGA" do BGA/90.DAT, com a base como reserva.
      * NX 0x8062210: "%03X.TGA" do BGA/TEST.DAT -> registro +0x38; pula as músicas
      * com (canal & 4); sem o arquivo, tenta o recurso de 0x813f860 (baseId). */
     char path[MAX_PATH];
-    for (int i = 0; i < EX_SONG_COUNT; i++) s_bannerTex[i] = -1;
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) s_bannerTex[i] = -1;
     snprintf(path, sizeof(path), "%s/BGA/TEST.DAT", g_game.currentDirectory);
     if (RES_Open(path)) {
         int ok = 0;
-        for (int i = 0; i < EX_SONG_COUNT; i++) {
+        for (int i = 0; i < SONG_TABLE_COUNT; i++) {
             char name[16];
-            if (g_exSongs[i].channel & 4) continue;
-            snprintf(name, sizeof(name), "%03X.TGA", (unsigned)g_exSongs[i].id);
+            if (g_songTable[i].channel & 4) continue;
+            snprintf(name, sizeof(name), "%03X.TGA", (unsigned)g_songTable[i].id);
             s_bannerTex[i] = loadTextureFromRES(name);
-            if (s_bannerTex[i] < 0 && g_exSongs[i].baseId != -1) {
-                snprintf(name, sizeof(name), "%03X.TGA", (unsigned)g_exSongs[i].baseId);
+            if (s_bannerTex[i] < 0 && g_songTable[i].baseId != -1) {
+                snprintf(name, sizeof(name), "%03X.TGA", (unsigned)g_songTable[i].baseId);
                 s_bannerTex[i] = loadTextureFromRES(name);
             }
             if (s_bannerTex[i] >= 0) ok++;
         }
         RES_Close();
-        Log_Print("ZSELECT: %d/%d discos do TEST.DAT\n", ok, EX_SONG_COUNT);
+        Log_Print("CSELECT: %d/%d discos do TEST.DAT\n", ok, SONG_TABLE_COUNT);
     } else {
-        Log_Print("ZSELECT: falha ao abrir '%s'\n", path);
+        Log_Print("CSELECT: falha ao abrir '%s'\n", path);
     }
 
     for (int k = 0; k < SFX_COUNT; k++)
@@ -678,23 +678,23 @@ void ZeroSelect_Enter(void) {
     s_joined = Title_GetJoinedMask() & 3;
     if (s_joined == 0) s_joined = 1;
     /* estação: station.c (Exceed2) guarda 1 para REMIX; no Zero REMIX = 3 */
-    extern int g_exStation;
-    s_station = (g_exStation == 1) ? 3 : 1;
+    extern int g_selStation;
+    s_station = (g_selStation == 1) ? 3 : 1;
 
     bool newGame = (g_game.stageCount == 3 && !g_game.isBonusSong);
     if (newGame || !s_listInit) {
         s_listInit = true;
         s_mods[0] = s_mods[1] = 0;
-        for (int c = 0; c < EX_CHANNEL_COUNT; c++) {
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++) {
             s_cursor[c] = 0;
             /* +8 do objeto de jogo == 0 (1ª música): músicas iniciais */
             s_lastId[c] = k_startSong[s_station][c];
         }
         s_ch = 0;
-        for (int c = 0; c < EX_CHANNEL_COUNT; c++)
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++)
             if (s_lastId[c] != -1) {
                 int si = songIndex(s_lastId[c]);
-                if (si >= 0) s_ch = g_exSongs[si].channel;
+                if (si >= 0) s_ch = g_songTable[si].channel;
                 break;
             }
         s_diff[0] = s_diff[1] = 0;
@@ -730,10 +730,10 @@ void ZeroSelect_Enter(void) {
     s_frame = 0;
     s_diffSaved[0] = s_diff[0];
     s_diffSaved[1] = s_diff[1];
-    const ExceedSong* e = curSong();
+    const TrackEntry* e = curSong();
     if (e) { s_lastId[s_ch] = (int)e->id; requestPreview((int)e->id); }
     s_previewDone = true;
-    Log_Print("ZSELECT: estação %d, canal %d (%d músicas), P%s\n", s_station, s_ch, s_count,
+    Log_Print("CSELECT: estação %d, canal %d (%d músicas), P%s\n", s_station, s_ch, s_count,
               twoPlayers() ? "1+P2" : (s_joined & 2) ? "2" : "1");
 }
 
@@ -749,7 +749,7 @@ static void lateJoin(int p) {
     s_cursor[s_ch] = 0;
     bool found = false;
     for (int i = 0; i < s_count; i++)
-        if ((int)g_exSongs[s_list[i]].id == keepId) { s_cursor[s_ch] = i; found = true; }
+        if ((int)g_songTable[s_list[i]].id == keepId) { s_cursor[s_ch] = i; found = true; }
     setDiff(0, 0);
     setDiff(1, 0);
     if (!diffOk(curSongIdx())) fixDiff(curSongIdx());
@@ -768,7 +768,7 @@ static void move(int dir) {
         if (c < 0) c = s_count - 1;
         if (c >= s_count) c = 0;
         s_cursor[s_ch] = c;
-        s_lastId[s_ch] = (int)g_exSongs[s_list[c]].id;
+        s_lastId[s_ch] = (int)g_songTable[s_list[c]].id;
     }
     /* volta à dificuldade guardada (+0x7C/+0x80) */
     for (int p = 0; p < (twoPlayers() ? 2 : 1); p++)
@@ -780,7 +780,7 @@ static void move(int dir) {
     BGA_SceneReset(ZB_SELECT, s_moveScene);
     BGA_SceneReset(ZB_SELECT, s_moveFx);
     s_repeat++;
-    Log_Print("ZSELECT: move %+d -> cursor %d (%X)\n", dir, s_cursor[s_ch],
+    Log_Print("CSELECT: move %+d -> cursor %d (%X)\n", dir, s_cursor[s_ch],
               curSong() ? (unsigned)curSong()->id : 0u);
     s_spinDir = dir > 0 ? 1 : 2;
     s_spin = dir > 0 ? 0 : 0xF;
@@ -806,7 +806,7 @@ static bool repeatHit(int p, int k, PadButton b) {
 
 static void startGame(void) {
     if (s_started) return;
-    const ExceedSong* e = curSong();
+    const TrackEntry* e = curSong();
     if (!e) return;
     s_started = true;
     sfx(SFX_START);
@@ -818,12 +818,12 @@ static void startGame(void) {
         rv[p] = (m & ZM_RV) != 0;
     }
     static const char* const k_arg[5] = { "-n", "-h", "-c", "-d", "-nm" };
-    Log_Print("ZSELECT: RUN %X %s %s\n", (unsigned)e->id, k_arg[s_diff[0]],
+    Log_Print("CSELECT: RUN %X %s %s\n", (unsigned)e->id, k_arg[s_diff[0]],
               twoPlayers() ? k_arg[s_diff[1]] : " ");
     Movie_Close();
     BGM_Stop();
     g_nxDiffIdx[0] = g_nxDiffIdx[1] = s_diff[0];   /* chart do P2 diferente é só do NX */
-    if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv))
+    if (!Select_StartSong((int)e->id, s_diff[0], s_joined, speed, rv))
         s_started = false;
 }
 
@@ -882,7 +882,7 @@ static void playerInput(int p) {
     }
 }
 
-void ZeroSelect_Update(float dt) {
+void ClassicSelect_Update(float dt) {
     if (s_started) return;
     s_frame++;
 
@@ -906,7 +906,7 @@ void ZeroSelect_Update(float dt) {
     /* 30 quadros parado: prévia da música do cursor */
     if ((int)s_idle > 0x1D && !s_previewDone) {
         s_previewDone = true;
-        const ExceedSong* e = curSong();
+        const TrackEntry* e = curSong();
         if (e) requestPreview((int)e->id);
     }
 
@@ -928,7 +928,7 @@ void ZeroSelect_Update(float dt) {
     if (s_time < 1) startGame();
 }
 
-void ZeroSelect_Render(void) {
+void ClassicSelect_Render(void) {
     if (g_game.bgaPicCount < 4) return;
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -945,10 +945,10 @@ void ZeroSelect_Render(void) {
     }
     drawWheel(s_spin, idxOff, 0.0f, py);
 
-    zeroOrtho();
+    fieldOrtho();
     Movie_RenderRect(0.0f, 175.0f, 640.0f, 415.0f, 1.0f, s_previewA);
 
-    if (s_ch == EX_CH_ANOTHER && s_anotherChannel) {
+    if (s_ch == SONG_CH_ANOTHER && s_anotherChannel) {
         BGA_SetColor4(ZB_SELECT, 1, 1, 1, s_previewA);
         BGA_ScenePlay(ZB_SELECT, "ANOMARK", true);
         BGA_SetColor4(ZB_SELECT, 1, 1, 1, 1);

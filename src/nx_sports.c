@@ -81,7 +81,7 @@ void NxSports_Store(int st) {
 
 /* estado depois da nota/stage break: passa pela SPORTS quando o original passa */
 GameState NxSports_Route(GameState ns, bool fromStageBreak, int stage) {
-    if (!g_exceedSongIds || g_game.nxGameMode == 2) return ns;
+    if (!g_hexSongIds || g_game.nxGameMode == 2) return ns;
     if (ns != STATE_NAMEINPUT && ns != STATE_GAMEOVER_ENTER) return ns;
     if (g_game.svcGameMode == 1) return ns;            /* EVENT: [0x9e3dbce] == 1 */
     if (fromStageBreak && stage <= 0) return ns;       /* 0x806005a */

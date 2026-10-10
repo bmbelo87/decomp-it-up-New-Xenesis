@@ -228,7 +228,7 @@ void Eeprom_Save(void) {
 #if 0   /* DESATIVADO (08/10/2026): migração do pumpprex3.ini; só PIUNX.INI é usado. */
 /* Migração (extra deste projeto): importa as opções do pumpprex3.ini antigo
  * (imagem do PUMPY.EXE: "X3.1" em +0x68C, opções em +0x7E8, mesma convenção de g_game). */
-static bool eepImportPrex3(void) {
+static bool eepImportOld(void) {
     char path[MAX_PATH];
     uint8_t old[0x800];
     snprintf(path, sizeof(path), "%s/pumpprex3.ini", g_game.currentDirectory);
@@ -270,7 +270,7 @@ int Eeprom_Load(void) {
     if (!f) {                       /* 0x8061aa5: padrão e grava */
         eepDefaults();
         eepToGame();
-        /* eepImportPrex3(); */
+        /* eepImportOld(); */
         Eeprom_Save();
         return -1;
     }

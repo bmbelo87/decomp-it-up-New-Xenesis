@@ -30,7 +30,7 @@
 
 enum { MOVE_NONE, MOVE_LEFT, MOVE_RIGHT };
 
-extern uint32_t g_exIrTotal[2];
+extern uint32_t g_irTotal[2];
 
 /* bfont.cpp cnvTable */
 static const char k_cnv[BLOCK_MAX] = {
@@ -93,21 +93,21 @@ static int clampChar(int c)
 }
 
 /* ── ranking no eeprom.bin ─────────────────────────────────────────────── */
-/* static void eepPath(char* out, size_t n) { snprintf(out, n, "%s/PIUEXCEED2.INI", g_game.currentDirectory); } */   /* DESATIVADO: eeprom_x2.c */
+/* static void eepPath(char* out, size_t n) { snprintf(out, n, "%s/PIUEXCEED2.INI", g_game.currentDirectory); } */   /* DESATIVADO: old_save.c */
 
-/* Exceed2: a imagem é a do eeprom_x2.c (PIUEXCEED2.INI), compartilhada com a
+/* Exceed2: a imagem é a do old_save.c (PIUEXCEED2.INI), compartilhada com a
  * Select (contagem de jogos, Canon-D) para uma gravação não apagar a outra.
  * As versões anteriores liam/gravavam o arquivo direto (eeprom.bin). */
 static bool eepLoad(void)
 {
-    memcpy(g_eep, Eeprom2_Data(), sizeof(g_eep));
+    memcpy(g_eep, OldSave_Data(), sizeof(g_eep));
     return true;
 }
 
 static void eepSave(void)
 {
-    memcpy(Eeprom2_Data(), g_eep, sizeof(g_eep));
-    Eeprom2_Save();
+    memcpy(OldSave_Data(), g_eep, sizeof(g_eep));
+    OldSave_Save();
 }
 
 static uint32_t hsValue(int i)
@@ -217,7 +217,7 @@ static void timeNums(float x, float y, int value)
     }
 }
 
-/* S3DSetProjection(43.603) / S3DSetOrtho — mesmo espaço do exceed_select.c */
+/* S3DSetProjection(43.603) / S3DSetOrtho — mesmo espaço do select_core.c */
 static void setProjection(void)
 {
     const float n = 10.0f, f = 4000.0f, k = n / 600.0f;
@@ -282,20 +282,20 @@ static void NameInput_Enter(void)
     char path[MAX_PATH];
     eepLoad();
 
-    /* era (Exceed): hsGetGrade(g_exIrTotal[p]) != -1 na EEPROM */
+    /* era (Exceed): hsGetGrade(g_irTotal[p]) != -1 na EEPROM */
     g_nxWorld = g_game.nxGameMode == 2;
     g_phase = 0;
     Rank_Load();
     if (g_game.nxGameMode == 0) {          /* 0x8076994 */
-        g_flag[0] = (g_game.activePlayerMask & 1) && Rank_Find(g_exIrTotal[0]) != -1;
-        g_flag[1] = (g_game.activePlayerMask & 2) && Rank_Find(g_exIrTotal[1]) != -1;
+        g_flag[0] = (g_game.activePlayerMask & 1) && Rank_Find(g_irTotal[0]) != -1;
+        g_flag[1] = (g_game.activePlayerMask & 2) && Rank_Find(g_irTotal[1]) != -1;
     } else if (g_nxWorld) {                /* 0x8076c20 */
         g_nxLoc = NxWorld_Loc();
         g_nxNum = g_nxWorldStages[g_nxLoc].number;
         int p = (g_game.activePlayerMask & 1) ? 0 : 1;
         g_flag[0] = g_flag[1] = false;
-        if (g_exIrTotal[p] > Rank_LocScore(g_nxNum)) g_flag[p] = true;
-        Log_Print("NAMEINPUT: local %d, score %u, recorde %u\n", g_nxNum, (unsigned)g_exIrTotal[p], (unsigned)Rank_LocScore(g_nxNum));
+        if (g_irTotal[p] > Rank_LocScore(g_nxNum)) g_flag[p] = true;
+        Log_Print("NAMEINPUT: local %d, score %u, recorde %u\n", g_nxNum, (unsigned)g_irTotal[p], (unsigned)Rank_LocScore(g_nxNum));
     } else {
         g_flag[0] = g_flag[1] = false;
     }
@@ -424,9 +424,9 @@ static void finishPlayer(void)
     if (nm[0] == ' ' && nm[1] == ' ' && nm[2] == ' ' && nm[3] == ' ')
         memcpy(nm, "PUMP", 4);
     for (int i = 0; i < 4; i++) if (nm[i] == '\0' || nm[i] == CNV_END || nm[i] == CNV_BS) nm[i] = ' ';
-    /* era (Exceed): hsAddScore(g_exIrTotal[g_curPlayer], nm); */
+    /* era (Exceed): hsAddScore(g_irTotal[g_curPlayer], nm); */
     if (g_nxWorld) {                       /* 0x8077585 */
-        Rank_SetLoc(g_nxNum, g_exIrTotal[g_curPlayer], nm);
+        Rank_SetLoc(g_nxNum, g_irTotal[g_curPlayer], nm);
         Rank_Save();
         nxChangeSetup();
         g_phase = 2;
@@ -438,7 +438,7 @@ static void finishPlayer(void)
         BGA_SceneReset(NI_NCH, "change");
         return;
     }
-    Rank_Insert(g_exIrTotal[g_curPlayer], nm);   /* 0x80775b0 */
+    Rank_Insert(g_irTotal[g_curPlayer], nm);   /* 0x80775b0 */
     Rank_Save();
 
     bool two = (g_game.activePlayerMask & 3) == 3;
@@ -617,11 +617,11 @@ void NameInput_Render(void)
     BGA_DrawSlot(NI_BGA, 230 + (g_moveDir == MOVE_RIGHT ? g_moveCnt : 0), 18);
 
     glColor4f(1.0f, 1.0f, 1.0f, 0.7f);
-    snprintf(buf, sizeof(buf), "%02d", Rank_Find(g_exIrTotal[p]) + 1);   /* era: hsGetGrade */
+    snprintf(buf, sizeof(buf), "%02d", Rank_Find(g_irTotal[p]) + 1);   /* era: hsGetGrade */
     ifontPrint(80.0f, 40.0f, 50.0f, 50.0f, 28.0f, buf);
     snprintf(buf, sizeof(buf), "%c%c%c%c", g_name[p][0], g_name[p][1], g_name[p][2], g_name[p][3]);
     ifontPrint(165.0f, 40.0f, 50.0f, 50.0f, 38.0f, buf);
-    snprintf(buf, sizeof(buf), "%07u", (unsigned)g_exIrTotal[p]);
+    snprintf(buf, sizeof(buf), "%07u", (unsigned)g_irTotal[p]);
     ifontPrint(340.0f, 40.0f, 50.0f, 50.0f, 28.0f, buf);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 }

@@ -78,18 +78,18 @@ static void LoadBGAForState(GameState state) {
     case STATE_STAFF:
     case STATE_STAFF_END:        bgaName = ""; break;
     case STATE_STAGE_TRANSITION:
-        if (g_exceedSongIds)            /* Exceed: BGA\NST%d.MOV (sem .DAT) */
+        if (g_hexSongIds)            /* Exceed: BGA\NST%d.MOV (sem .DAT) */
             bgaName = "";
         else if (g_game.isBonusSong)
             bgaName = "lt03";
         else
             bgaName = "lt01";
         break;
-    case STATE_GAMEOVER_ENTER:   bgaName = g_exceedSongIds ? "" : "84"; break; /* Exceed: BGA\GAMEOVER.MOV */
+    case STATE_GAMEOVER_ENTER:   bgaName = g_hexSongIds ? "" : "84"; break; /* Exceed: BGA\GAMEOVER.MOV */
     case STATE_STAGE_BREAK:           /* Prex3: 083.DAT + 7-1.WAV; Exceed: BGA\SB.MOV (sem .DAT) */
-        bgaName = g_exceedSongIds ? "" : "083"; break;
+        bgaName = g_hexSongIds ? "" : "083"; break;
     case STATE_DANCE_GRADE_ENTER:
-    case STATE_DANCE_GRADE_DISPLAY: bgaName = g_exceedSongIds ? (g_game.nxGameMode == 2 ? "WORLDGRADE" : "GRADE") : "83"; break; /* Exceed 0x40CD2A: BGA\GRADE.DAT; NX WORLD TOUR 0x808e6c6: BGA/WORLDGRADE.DAT */
+    case STATE_DANCE_GRADE_DISPLAY: bgaName = g_hexSongIds ? (g_game.nxGameMode == 2 ? "WORLDGRADE" : "GRADE") : "83"; break; /* Exceed 0x40CD2A: BGA\GRADE.DAT; NX WORLD TOUR 0x808e6c6: BGA/WORLDGRADE.DAT */
     case STATE_HOWTOPLAY: bgaName = ""; break; /* limpa BGA do menu imediatamente; 03.DAT carrega no stateFrame==1 */
     case STATE_SERVICE_MENU: bgaName = ""; break; /* SETUP MENU desenha sobre fundo preto */
     default: break;
@@ -112,11 +112,11 @@ static void LoadBGAForState(GameState state) {
     }
 
     /* Exceed CSelect: SELECT.DAT + SELECT2.DAT juntos + banners do 90.DAT */
-    if (state == STATE_EXSELECT) {
+    if (state == STATE_SELECT) {
         BGM_Stop();
-        /* ZeroSelect_Enter(); */    /* Zero: CSelect (zero_select.c) */
+        /* ClassicSelect_Enter(); */    /* Zero: CSelect (select_classic.c) */
         NxSelect_Enter();            /* NX: CSelect (nx_select.c) */
-        /* ExSelect_Enter(); */      /* Exceed2 */
+        /* Select_Enter(); */      /* Exceed2 */
     }
 
     /* NX CStation: Begin no próprio quadro da troca (sem quadro preto entre Title e Station) */
@@ -232,7 +232,7 @@ void Game_Init(HINSTANCE hInstance) {
     bool dbOk = Song_LoadDatabase(cfgPath, &g_game.songDB);
     if (!dbOk) {
         /* Exceed: sem Stage.cfg, as músicas vêm das tabelas do exceed.exe */
-        ExSelect_BuildSongDB(&g_game.songDB);
+        Select_BuildSongDB(&g_game.songDB);
         dbOk = g_game.songDB.songCount > 0;
     }
     if (dbOk)
@@ -280,7 +280,7 @@ void Game_Init(HINSTANCE hInstance) {
     /* era (Exceed2): Game_ChangeState(STATE_WARNING_INIT); */
     {   /* extra deste projeto (teste): PUMPY_AUTOSTATE=SELECT abre direto a Select */
         const char* as = getenv("PUMPY_AUTOSTATE");
-        if (as && _stricmp(as, "SELECT") == 0) { Menu_ResetState(); Game_ChangeState(STATE_EXSELECT); }
+        if (as && _stricmp(as, "SELECT") == 0) { Menu_ResetState(); Game_ChangeState(STATE_SELECT); }
         if (as && _stricmp(as, "STATION") == 0) Game_ChangeState(STATE_STATION);
         if (as && _stricmp(as, "HIGHSCORE") == 0) Game_ChangeState(STATE_HIGHSCORE);   /* teste da tela de ranking */
         /* PUMPY_AUTOSTATE=NXTEST: D02 NORMAL em autoplay (demo) com NX Mode, para testes */
@@ -289,22 +289,22 @@ void Game_Init(HINSTANCE hInstance) {
         if (as && _stricmp(as, "RUN") == 0 && getenv("PUMPY_TEST_ID")) {
             const char* tm = getenv("PUMPY_TEST_MODE");
             Menu_ResetState();
-            ExSelect_Run((int)strtol(getenv("PUMPY_TEST_ID"), NULL, 16), tm ? atoi(tm) : 0,
+            Select_Run((int)strtol(getenv("PUMPY_TEST_ID"), NULL, 16), tm ? atoi(tm) : 0,
                          getenv("PUMPY_TEST_DEMO") ? 1 : 0);   /* PUMPY_TEST_DEMO: como DEMO PLAY */
         }
         if (as && _stricmp(as, "NXTEST") == 0) {
             Menu_ResetState();
-            if (ExSelect_Run(0xD02, 3, 0)) { g_game.cmdNXMode[0] = g_game.cmdNXMode[1] = true; }
+            if (Select_Run(0xD02, 3, 0)) { g_game.cmdNXMode[0] = g_game.cmdNXMode[1] = true; }
         }
         /* PUMPY_AUTOSTATE=NXTEST2: 2 jogadores, P1 NORMAL e P2 HARD (teste do chart por jogador) */
         if (as && _stricmp(as, "NXTEST2") == 0) {
             static const int sp[2] = { 1, 1 };
             static const bool rv[2] = { false, false };
             Menu_ResetState();
-            for (int i = 0; i < EX_SONG_COUNT; i++)
-                if (g_exSongs[i].id && g_exSongs[i].level[0] >= 0 && g_exSongs[i].level[1] >= 0 && !(g_exSongs[i].channel & 4)) {
+            for (int i = 0; i < SONG_TABLE_COUNT; i++)
+                if (g_songTable[i].id && g_songTable[i].level[0] >= 0 && g_songTable[i].level[1] >= 0 && !(g_songTable[i].channel & 4)) {
                     g_nxDiffIdx[0] = 0; g_nxDiffIdx[1] = 1;
-                    if (ExSelect_StartZero((int)g_exSongs[i].id, 0, 3, sp, rv)) break;
+                    if (Select_StartSong((int)g_songTable[i].id, 0, 3, sp, rv)) break;
                 }
         }
     }
@@ -473,10 +473,10 @@ void Game_Update(float dt) {
     case STATE_NAMEINPUT:
         NameInput_Update(dt);
         break;
-    case STATE_EXSELECT:
-        /* ZeroSelect_Update(dt); */
+    case STATE_SELECT:
+        /* ClassicSelect_Update(dt); */
         NxSelect_Update(dt);
-        /* ExSelect_Update(dt); */
+        /* Select_Update(dt); */
         break;
     case STATE_STATION:
         Station_Update(dt);
@@ -509,7 +509,7 @@ void Game_Update(float dt) {
         Gameplay_Update(dt);
         break;
     case STATE_DANCE_GRADE_ENTER:
-        if (g_exDemo) { Demo_End(); break; }    /* a demo não tem Grade */
+        if (g_demoPlay) { Demo_End(); break; }    /* a demo não tem Grade */
         if (g_game.stateFrame == 1) {
             Movie_Close();
             Result_Enter();
@@ -528,8 +528,8 @@ void Game_Update(float dt) {
              * 1 depois do stage 1, 2 depois do stage 2, 3 para o extra.
              * Abre BGA\NST<n>.MOV sem loop e toca NEXTSTAGE.WAV do início.
              * 0x4151F4: com decoded >= 57 (0x39) vai para SELECT. */
-            bool exDone = false;
-            if (g_exceedSongIds) {
+            bool stageDone = false;
+            if (g_hexSongIds) {
                 if (g_game.stateFrame == 1) {
                     int n = (g_game.stageCount > 0) ? 3 - g_game.stageCount : 3;
                     if (n < 1) n = 1;
@@ -553,17 +553,17 @@ void Game_Update(float dt) {
                 Movie_Update(dt);
                 /* NX PLAYMOVIE (0x80784d0): sai quando o vídeo E o áudio terminam
                  * ([+0xa] / [+9]). Era (Exceed): decoded >= 57. */
-                exDone = (!Movie_IsOpen() || Movie_HasEnded()) && !BGM_IsPlaying();
-                if (exDone) Movie_Close();
+                stageDone = (!Movie_IsOpen() || Movie_HasEnded()) && !BGM_IsPlaying();
+                if (stageDone) Movie_Close();
             }
-        if (g_exceedSongIds ? exDone : (g_game.stateFrame >= 60)) {
-            if (g_exceedSongIds && g_game.nxGameMode >= 1 && g_game.nxGameMode <= 3) {
+        if (g_hexSongIds ? stageDone : (g_game.stateFrame >= 60)) {
+            if (g_hexSongIds && g_game.nxGameMode >= 1 && g_game.nxGameMode <= 3) {
                 /* NX SPECIAL ZONE: os corações já decidiram em Result_GetNextState */
-                Game_ChangeState(STATE_EXSELECT);
+                Game_ChangeState(STATE_SELECT);
             } else if (g_game.bonusStage && g_game.stageCount == 0 && !g_game.isBonusSong) {
                 // Vai pro bonus stage
                 /* Exceed: volta para a CSelect */
-                Game_ChangeState(g_exceedSongIds ? STATE_EXSELECT : STATE_SONG_SELECT);
+                Game_ChangeState(g_hexSongIds ? STATE_SELECT : STATE_SONG_SELECT);
             } else if (g_game.isBonusSong) {
                 // Bonus terminou, game over
                 Game_ChangeState(STATE_GAMEOVER_ENTER);
@@ -572,19 +572,19 @@ void Game_Update(float dt) {
                 Game_ChangeState(STATE_GAMEOVER_ENTER);
             } else {
                 // Proximo stage
-                Game_ChangeState(g_exceedSongIds ? STATE_EXSELECT : STATE_SONG_SELECT);
+                Game_ChangeState(g_hexSongIds ? STATE_SELECT : STATE_SONG_SELECT);
             }
         }
         }
         break;
     case STATE_STAGE_BREAK:
-        if (g_exDemo) { Demo_End(); break; }
-        if (g_exceedSongIds && g_game.nxGameMode == 2) {   /* NX WORLD TOUR: CContinue (nx_mission.c) */
+        if (g_demoPlay) { Demo_End(); break; }
+        if (g_hexSongIds && g_game.nxGameMode == 2) {   /* NX WORLD TOUR: CContinue (nx_mission.c) */
             if (g_game.stateFrame == 1) NxContinue_Enter();
             NxContinue_Update(dt);
             break;
         }
-        if (g_exceedSongIds) {
+        if (g_hexSongIds) {
             /* exceed.exe 0x4152B0 (Begin): 0x4229C8("BGA\SB.MOV", 0) sem loop;
              * se falhar vai para IDLE (aqui: GameOver). Toca GAMESTOP.WAV
              * do início ([0xA6D2F0]: Stop, SetCurrentPosition(0), Play).
@@ -646,7 +646,7 @@ void Game_Update(float dt) {
         }
         break;
     case STATE_GAMEOVER_ENTER:
-        if (g_exceedSongIds) {
+        if (g_hexSongIds) {
             /* exceed.exe 0x415224: BGA\GAMEOVER.MOV sem loop (falha -> IDLE);
              * 0x41527C: cronômetro >= 4000 ms (0xFA0) -> IDLE. Sem som. */
             static uint32_t goStart;
@@ -890,14 +890,14 @@ void Game_Render(void) {
         g_game.state != STATE_SONG_SELECT &&
         g_game.state != STATE_SONG_SELECT_B &&
         g_game.state != STATE_CREDIT &&         /* CREDIT desenha por slot (intro.c) */
-        g_game.state != STATE_EXSELECT &&
+        g_game.state != STATE_SELECT &&
         g_game.state != STATE_STATION &&        /* STATION desenha por cena (station.c) */
         g_game.state != STATE_NX_MISSION &&     /* objetivo da missão desenha por cena (nx_mission.c) */
         g_game.state != STATE_NX_CLEAR &&
         g_game.state != STATE_NX_SPORTS &&       /* SPORTS desenha por cena (nx_sports.c) */
         g_game.state != STATE_HIGHSCORE &&
         g_game.state != STATE_IR &&
-        g_game.state != STATE_NAMEINPUT) {      /* NAMEINPUT desenha por slot (nameinput.c) */             /* IR desenha o próprio BGA (ir.c) */      /* HIGHSCORE desenha por slot (highscore.c) */       /* EXSELECT desenha por slot (exceed_select.c) */
+        g_game.state != STATE_NAMEINPUT) {      /* NAMEINPUT desenha por slot (nameinput.c) */             /* IR desenha o próprio BGA (ir.c) */      /* HIGHSCORE desenha por slot (highscore.c) */       /* EXSELECT desenha por slot (select_core.c) */
         BGA_Render(0, g_game.bgaFrame);
     }
 
@@ -915,10 +915,10 @@ void Game_Render(void) {
         case STATE_NAMEINPUT:
             NameInput_Render();
             break;
-        case STATE_EXSELECT:
-            /* ZeroSelect_Render(); */
+        case STATE_SELECT:
+            /* ClassicSelect_Render(); */
             NxSelect_Render();
-            /* ExSelect_Render(); */
+            /* Select_Render(); */
             break;
         case STATE_STATION:
             Station_Render();
@@ -951,14 +951,14 @@ void Game_Render(void) {
         Gameplay_Render();
         break;
     case STATE_STAGE_BREAK:
-        if (g_exceedSongIds && g_game.nxGameMode == 2) { NxContinue_Render(); break; }
-        if (g_exceedSongIds && Movie_IsOpen()) Movie_Render();   /* SB.MOV */
+        if (g_hexSongIds && g_game.nxGameMode == 2) { NxContinue_Render(); break; }
+        if (g_hexSongIds && Movie_IsOpen()) Movie_Render();   /* SB.MOV */
         break;
     case STATE_DANCE_GRADE_DISPLAY:
         Result_Render();
         break;
     case STATE_STAGE_TRANSITION:
-        if (g_exceedSongIds) {
+        if (g_hexSongIds) {
             if (Movie_IsOpen()) Movie_Render();   /* NST<n>.MOV */
         } else if (g_game.isBonusSong) {
             Font_DrawStringCentered(320, 240, "BONUS STAGE", 1, 1, 0, 1);
@@ -969,7 +969,7 @@ void Game_Render(void) {
         }
         break;
     case STATE_GAMEOVER_ENTER:
-        if (g_exceedSongIds) {
+        if (g_hexSongIds) {
             if (Movie_IsOpen()) Movie_Render();   /* GAMEOVER.MOV */
         } else
         Font_DrawStringCentered(320, 240, "GAME OVER", 1, 0, 0, 1);

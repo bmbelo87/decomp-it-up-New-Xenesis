@@ -10,7 +10,7 @@ Comparação entre `piu` da Zero (`E:\Pumps\ZeroPC\Zero PC\piu`) e da NX (`F:\18
 - Os algoritmos ENC2 (`.AUD`/`.PNZ`), RESPAC2 (`.DAT`, inclusive `STEP.DAT`) e MOV3 (`.MOV`) **não mudaram**:
   `tools/zero_decrypt.py` (agora com `nx_dog.key` por padrão, `--dog` para trocar) decifrou os
   694 arquivos da NX sem falha (Adler-32 OK). Nenhum arquivo ENC1 na NX.
-- `src/zero_dog.c` foi regenerado com a chave da NX (`tools/gen_zero_dog.py`).
+- `src/dog_table.c` foi regenerado com a chave da NX (`tools/gen_zero_dog.py`).
 - Aparecem strings `BF_encrypt`/`BF_cbc_encrypt` (Blowfish) — uso ainda desconhecido (hipótese: save/USB).
 
 ## Executável

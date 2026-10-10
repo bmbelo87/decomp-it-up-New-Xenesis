@@ -150,16 +150,16 @@ add_executable(Pumpy
     src/ir_password.c
     src/ir_mixtable.c
     src/nameinput.c
-    src/exceed_select.c
+    src/select_core.c
     # src/station.c   # Exceed2 — desativado
     # src/zero_station.c  # Zero — desativado
     src/nx_station.c
-    src/eeprom_x2.c
+    src/old_save.c
     # src/exceed_songs.c   (Exceed: tabelas do exceed.exe)
     # src/exceed2_songs.c   # Exceed2 — desativado
     # src/zero_songs.c     # Zero — desativado
     src/nx_songs.c
-    src/zero_select.c
+    src/select_classic.c
     src/nx_select.c
     src/service_menu.c
     src/coin.c
@@ -191,7 +191,7 @@ add_executable(Pumpy
     src/df_resource.c
     src/util.c
     src/resource.c
-    src/zero_dog.c
+    src/dog_table.c
     src/step.c
     src/song.c
     src/zlibinflate.c
@@ -203,12 +203,14 @@ add_executable(Pumpy
 target_include_directories(Pumpy PRIVATE include)
 
 # Versão do projeto (RECOMP_VERSION): cada commit soma 1 no último número.
-# Série atual: 0.2.x, contada a partir do commit da release v0.2.4.
-# Para abrir a 0.3: RECOMP_MAJOR_MINOR "0.3", RECOMP_PATCH_BASE 0 e
-# RECOMP_BASE_COMMIT = commit que fecha a 0.2 (ver cmake/recomp_version.cmake).
-set(RECOMP_MAJOR_MINOR "0.2")
-set(RECOMP_PATCH_BASE 4)
-set(RECOMP_BASE_COMMIT "f525b0d")
+# Série atual: 0.3.x. O commit da renomeação (o primeiro depois de 7fa854d) é a 0.3.0.
+# era: série 0.2.x, RECOMP_PATCH_BASE 4, base no commit da release v0.2.4 (f525b0d).
+# Para abrir a próxima série (ex.: 0.4): RECOMP_MAJOR_MINOR "0.4", RECOMP_PATCH_BASE -1 e
+# RECOMP_BASE_COMMIT = último commit da série anterior; o commit dessa troca vira o .0
+# (ver cmake/recomp_version.cmake).
+set(RECOMP_MAJOR_MINOR "0.3")
+set(RECOMP_PATCH_BASE -1)   # o 1º commit depois da base é o .0
+set(RECOMP_BASE_COMMIT "7fa854d")
 set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(recomp_version ALL
     COMMAND ${CMAKE_COMMAND}

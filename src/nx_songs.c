@@ -1,14 +1,14 @@
 /* GERADO por tools/gen_nx_songs.py a partir do piu (Pump It Up NX) - nao editar a mao.
- *   g_exSongs     <- 0x0813c200 (192 x 0x48 bytes)
- *   g_exChannels  <- campo +0x1C de cada registro, na ordem da tabela
+ *   g_songTable     <- 0x0813c200 (192 x 0x48 bytes)
+ *   g_songChannels  <- campo +0x1C de cada registro, na ordem da tabela
  *   g_nxResMap    <- 0x0813f860 (328 pares recurso/chart, 0x8061d10) */
 #include "pumpy.h"
 
-#if EX_SONG_COUNT != 196 || NX_SONG_BASE != 193 || EX_CHANNEL_COUNT != 7 || EX_CHANNEL_MAX != 46
-#error "pumpy.h: EX_SONG_COUNT/EX_CHANNEL_COUNT/EX_CHANNEL_MAX fora da NX (rode tools/gen_nx_songs.py)"
+#if SONG_TABLE_COUNT != 196 || NX_SONG_BASE != 193 || SONG_CHANNEL_COUNT != 7 || SONG_CHANNEL_MAX != 46
+#error "pumpy.h: SONG_TABLE_COUNT/SONG_CHANNEL_COUNT/SONG_CHANNEL_MAX fora da NX (rode tools/gen_nx_songs.py)"
 #endif
 
-const ExceedSong g_exSongs[EX_SONG_COUNT] = {
+const TrackEntry g_songTable[SONG_TABLE_COUNT] = {
     { 0xD01, "Yahpp ", "Yahpp ", "\354\234\204\354\271\230 \353\213\245\355\204\260 #1 ", "Witch Doctor#1 ", 122.0000, { 3, 7, 14, 5, 19 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 0, 0, 1, 1, "122", 101 }, /* 0 */
     { 0xD02, "Yahpp ", "Yahpp ", "\354\225\204\355\201\254 \354\230\244\353\270\214 \353\213\244\355\201\254\353\213\210\354\212\244 ", "Arch of Darkness ", 135.9000, { 3, 7, 14, 4, 17 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 0, 1, 1, 1, "135.9", 98 }, /* 1 */
     { 0xD03, "Yahpp ", "Yahpp ", "\355\202\244\353\251\224\353\235\274 ", "Chimera ", 210.0000, { 8, 16, 22, 20, 25 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 0, 2, 1, 1, "210", 109 }, /* 2 */
@@ -221,7 +221,7 @@ const ExceedSong g_exSongs[EX_SONG_COUNT] = {
     { 0xD208, "H.O.T ", "H.O.T ", "\355\210\254\354\247\200(N/C/NM) ", "Fighting Spirit ", 98.0000, { 99, -1, 13, -1, 16 } /* era { 99, -1, 99, -1, 99 }. Informado pelo usuário: CRAZY 13, NIGHTMARE 1 caveira (15 ou 16 em levelSlots; ele lembra 16 ou 17 -> 16), NORMAL sem nível (nunca foi ativado no original). FREESTYLE desligado: seção 5 = mesmas notas do FREESTYLE da 208 */, 1, 1, { 1, 1, 1, 1, 1 }, 0x208, 6, 197, 0, 1, "98", 92 }, /* 195 */
 };
 
-const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX] = {
+const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX] = {
     /* NX (29) */ { 0xD01, 0xD02, 0xD03, 0xD04, 0xD05, 0xD06, 0xD07, 0xD08, 0xD09, 0xD10, 0xD11, 0xD12, 0xD13, 0xD14, 0xD15, 0xD16, 0xD17, 0xD18, 0xD19, 0xD20, 0xD21, 0xD22, 0xD23, 0xD24, 0xD25, 0xD26, 0xD27, 0xD28, 0xD29 /* FIRE, à mão */, 0xD30, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 },
     /* K-POP (45) */ { 0xC08, 0xC09, 0xC10, 0xC11, 0xC12, 0xC14, 0xC15, 0xC16, 0xC17, 0xC18, 0xC19, 0xC20, 0xB01, 0xB02, 0xB05, 0xB06, 0xB08, 0xB09, 0xB11, 0xB12, 0xB13, 0xB14, 0xB15, 0xA08, 0xA09, 0xA11, 0xA12, 0x103, 0x109, 0x112, 0x212, 0x213, 0x312, 0x313, 0x318, 0x413, 0x516, 0x902, 0x906, 0x915, 0xA19, 0x919, 0x507, 0x909, 0xB03, 0x0 },
     /* POP (16) */ { 0xC21, 0xC22, 0xB20, 0xA14, 0xA15, 0xA17, 0xA18, 0xA20, 0xA21, 0xA22, 0xA23, 0x805, 0x806, 0x809, 0x814, 0x818, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 },

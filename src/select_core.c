@@ -1,5 +1,5 @@
 /*
- * exceed_select.c — tela de seleção de música do Exceed (CSelect).
+ * select_core.c — tela de seleção de música do Exceed (CSelect).
  *
  * Carga (0x4161E6..0x41624F):
  *   BGA\SELECT.DAT  -> [this+4]  (bgaPics[0])
@@ -33,8 +33,8 @@
 #define SEL_BGA   0   /* [this+4] */
 #define SEL2_BGA  1   /* [this+8] */
 
-static int  g_bannerTex[EX_SONG_COUNT];     /* 0x456B40[i].tex, -1 = sem banner */
-static int  g_list[EX_CHANNEL_MAX];         /* 0x563A00 */
+static int  g_bannerTex[SONG_TABLE_COUNT];     /* 0x456B40[i].tex, -1 = sem banner */
+static int  g_list[SONG_CHANNEL_MAX];         /* 0x563A00 */
 static int  g_listCount;                    /* 0x563AD0 */
 
 static int  g_frame;        /* +0x2C */
@@ -43,8 +43,8 @@ static int  g_curFrame;     /* +0x3C */
 static int  g_ch;           /* +0x5C */
 static int  g_chPrev;       /* +0x60 */
 static int  g_chDir;        /* +0x64: 0 parado, 1 canal-1, 2 canal+1 */
-static int  g_cursor[EX_CHANNEL_COUNT];     /* +0x68 */
-static int  g_cursorPrev[EX_CHANNEL_COUNT]; /* +0x74 */
+static int  g_cursor[SONG_CHANNEL_COUNT];     /* +0x68 */
+static int  g_cursorPrev[SONG_CHANNEL_COUNT]; /* +0x74 */
 static int  g_curDir;       /* +0x80: 0 parado, 1 cursor-1, 2 cursor+1 */
 
 /* Painel de dificuldade (1 jogador) */
@@ -74,23 +74,23 @@ static int g_sndChannel[3];  /* Exceed2: BANYA/KPOP/POP.WAV (definição abaixo)
 /* ── songDB sintético do Exceed ─────────────────────────────────────────────
  * Nomes de modo = seções do STX que step.c já conhece (Step_SelectChart):
  * NORMAL 1, HARD 2, CRAZY 4, DOUBLE 5 (FREESTYLE, "-d"), NIGHTMARE 3 ("-nm").
- * Mesma ordem de ExceedSong.level. */
-bool g_exceedSongIds = false;
+ * Mesma ordem de TrackEntry.level. */
+bool g_hexSongIds = false;
 static const char* k_dbModeName[6] = { "NORMAL", "HARD", "CRAZY", "DOUBLE", "NIGHTMARE", "DIVISION" };
-#define EX_DB_DIVISION 5   /* Exceed2 "RUN %X -BT" (0x416783): seção 7 do STX */
+#define SEL_DB_DIVISION 5   /* Exceed2 "RUN %X -BT" (0x416783): seção 7 do STX */
 
 const char* Song_IdStr(int id) {
     static char buf[4][16];
     static int slot;
     char* s = buf[slot++ & 3];
-    /* era (Zero): g_exceedSongIds ? "%X" : "%d" — NX: "%03X" em todos os nomes (STEP, BGA, TITLE, AUDIO) */
-    snprintf(s, 16, g_exceedSongIds ? "%03X" : "%d", id);
+    /* era (Zero): g_hexSongIds ? "%X" : "%d" — NX: "%03X" em todos os nomes (STEP, BGA, TITLE, AUDIO) */
+    snprintf(s, 16, g_hexSongIds ? "%03X" : "%d", id);
     return s;
 }
 
 /* Exceed2 (desativado): A26/A27 usavam TITLE/BGA/STEP da 401/402.
 int Song_DataId(int id) {
-    if (!g_exceedSongIds) return id;
+    if (!g_hexSongIds) return id;
     if (id == 0xA26) return 0x401;
     if (id == 0xA27) return 0x402;
     return id;
@@ -105,8 +105,8 @@ int NX_ResId(int id) {
      * em 0x813f860; o recurso deles é o baseId da própria entrada (D208 -> 208).
      * Sem isso TITLE, disco (TEST.DAT) e PREVIEW da D208 não achavam a 208. */
 #ifdef NX_SONG_BASE
-    for (int i = NX_SONG_BASE; i < EX_SONG_COUNT; i++)
-        if ((int)g_exSongs[i].id == id) return g_exSongs[i].baseId;
+    for (int i = NX_SONG_BASE; i < SONG_TABLE_COUNT; i++)
+        if ((int)g_songTable[i].id == id) return g_songTable[i].baseId;
 #endif
     return -1;
 }
@@ -114,8 +114,8 @@ int NX_ResId(int id) {
 /* Zero: id base do registro (+0x08, piu 0x805a460); -1 se não houver.
  * NX: gen_nx_songs.py preenche baseId com NX_ResId quando >= 0x100. */
 int Song_BaseId(int id) {
-    for (int i = 0; i < EX_SONG_COUNT; i++)
-        if ((int)g_exSongs[i].id == id) return g_exSongs[i].baseId;
+    for (int i = 0; i < SONG_TABLE_COUNT; i++)
+        if ((int)g_songTable[i].id == id) return g_songTable[i].baseId;
     /* NX: charts fora da tabela de músicas (missões AAnnk do WORLD TOUR) usam
      * direto o par recurso/chart de 0x8061d10 (ex.: AA011 -> 103). Ids < 0x100 não são músicas. */
     int r = NX_ResId(id);
@@ -158,23 +158,23 @@ const char* Song_DataIdStr(int id) {
     return Song_IdStr(Song_DataId(id));
 }
 
-void ExSelect_BuildSongDB(SongDB* db) {
+void Select_BuildSongDB(SongDB* db) {
     memset(db, 0, sizeof(*db));
-    g_exceedSongIds = true;
-    for (int i = 0; i < EX_SONG_COUNT && i < MAX_SONGS; i++) {
+    g_hexSongIds = true;
+    for (int i = 0; i < SONG_TABLE_COUNT && i < MAX_SONGS; i++) {
         SongEntry* e = &db->songs[db->songCount++];
-        e->id = (int)g_exSongs[i].id;
-        e->bpm = (float)g_exSongs[i].bpm;
-        const char* t = g_exSongs[i].titleEn[0] ? g_exSongs[i].titleEn : g_exSongs[i].titleKr;
+        e->id = (int)g_songTable[i].id;
+        e->bpm = (float)g_songTable[i].bpm;
+        const char* t = g_songTable[i].titleEn[0] ? g_songTable[i].titleEn : g_songTable[i].titleKr;
         strncpy(e->title, t, sizeof(e->title) - 1);
     }
     for (int m = 0; m < 5; m++) {
         SongMode* md = &db->modes[db->modeCount++];
         strncpy(md->name, k_dbModeName[m], sizeof(md->name) - 1);
-        for (int i = 0; i < EX_SONG_COUNT && md->songCount < MAX_SONGS_PER_MODE; i++) {
-            if (g_exSongs[i].level[m] == -1) continue;
-            md->songIds[md->songCount] = (int)g_exSongs[i].id;
-            md->difficulties[md->songCount] = g_exSongs[i].level[m];
+        for (int i = 0; i < SONG_TABLE_COUNT && md->songCount < MAX_SONGS_PER_MODE; i++) {
+            if (g_songTable[i].level[m] == -1) continue;
+            md->songIds[md->songCount] = (int)g_songTable[i].id;
+            md->difficulties[md->songCount] = g_songTable[i].level[m];
             md->songCount++;
         }
     }
@@ -182,15 +182,15 @@ void ExSelect_BuildSongDB(SongDB* db) {
      * tabela para esse modo: HIPÓTESE, usa o primeiro nível existente. */
     {
         SongMode* md = &db->modes[db->modeCount++];
-        strncpy(md->name, k_dbModeName[EX_DB_DIVISION], sizeof(md->name) - 1);
-        for (int c = 0; c < EX_CHANNEL_MAX && md->songCount < MAX_SONGS_PER_MODE; c++) {
-            int id = g_exChannels[4][c];
+        strncpy(md->name, k_dbModeName[SEL_DB_DIVISION], sizeof(md->name) - 1);
+        for (int c = 0; c < SONG_CHANNEL_MAX && md->songCount < MAX_SONGS_PER_MODE; c++) {
+            int id = g_songChannels[4][c];
             if (id == 0) break;
             int lv = 0;
-            for (int i = 0; i < EX_SONG_COUNT; i++) {
-                if ((int)g_exSongs[i].id != id) continue;
+            for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+                if ((int)g_songTable[i].id != id) continue;
                 for (int k = 0; k < 5; k++)
-                    if (g_exSongs[i].level[k] > 0) { lv = g_exSongs[i].level[k]; break; }
+                    if (g_songTable[i].level[k] > 0) { lv = g_songTable[i].level[k]; break; }
                 break;
             }
             md->songIds[md->songCount] = id;
@@ -198,41 +198,41 @@ void ExSelect_BuildSongDB(SongDB* db) {
             md->songCount++;
         }
     }
-    Log_Print("EXSELECT: songDB sintético: %d músicas, %d modos\n", db->songCount, db->modeCount);
+    Log_Print("SELECT: songDB sintético: %d músicas, %d modos\n", db->songCount, db->modeCount);
 }
 
 /* ── Códigos de comando (0x455140..0x455192, verificador 0x4155AC / 0x415958) ── */
-#define EXMOD_X2        0x0002
-#define EXMOD_X3        0x0004
-#define EXMOD_X4        0x0008
-#define EXMOD_X8        0x0010
-#define EXMOD_V         0x0020
-#define EXMOD_M         0x0040
-#define EXMOD_R         0x0080
-#define EXMOD_NS        0x0100
-#define EXMOD_200       0x0200   /* só é limpo pelos códigos; sem ícone */
-#define EXMOD_RV        0x0400
-#define EXMOD_800       0x0800   /* sem ícone, efeito não identificado */
-#define EXMOD_1000      0x1000   /* sem ícone, limpa velocidade; efeito não identificado */
-#define EXMOD_UNLOCK    0x2000   /* libera as ocultas em 0x4192F0 */
-#define EX_XMODE        0x8000   /* [0x568FF4]: X-MODE, global */
-#define EXMOD_DECEL     0x4000   /* Exceed2: Deceleration (códigos 7/8/9) */
-#define EXMOD_ACCEL     0x8000   /* Exceed2: Acceleration (código 10); bit do jogador, não o global */
+#define SELMOD_X2        0x0002
+#define SELMOD_X3        0x0004
+#define SELMOD_X4        0x0008
+#define SELMOD_X8        0x0010
+#define SELMOD_V         0x0020
+#define SELMOD_M         0x0040
+#define SELMOD_R         0x0080
+#define SELMOD_NS        0x0100
+#define SELMOD_200       0x0200   /* só é limpo pelos códigos; sem ícone */
+#define SELMOD_RV        0x0400
+#define SELMOD_800       0x0800   /* sem ícone, efeito não identificado */
+#define SELMOD_1000      0x1000   /* sem ícone, limpa velocidade; efeito não identificado */
+#define SELMOD_UNLOCK    0x2000   /* libera as ocultas em 0x4192F0 */
+#define SEL_XMODE        0x8000   /* [0x568FF4]: X-MODE, global */
+#define SELMOD_DECEL     0x4000   /* Exceed2: Deceleration (códigos 7/8/9) */
+#define SELMOD_ACCEL     0x8000   /* Exceed2: Acceleration (código 10); bit do jogador, não o global */
 
 static unsigned g_joined;       /* [0x568FF4] bits 0/1 */
 /* Exceed2: estação escolhida no CStation ([0x484FB4]: 0 ARCADE, 1 REMIX, 2 BATTLE)
  * e canal inicial vindo do argumento do proc ("SELECT" 0, "SELECT 3", "SELECT 4";
  * 0x413860..0x4138A4, só na primeira Select do crédito, [0x484FA4]). */
-int  g_exStation = 0;
+int  g_selStation = 0;
 static int  g_startChannel = -1;
-void ExSelect_SetStation(int station, int startChannel) {
-    g_exStation = station;
+void Select_SetStation(int station, int startChannel) {
+    g_selStation = station;
     g_startChannel = startChannel;
 }
 static unsigned g_flags;        /* [0x568FF4] acima de 0xFFF (X-MODE) */
-bool ExSelect_IsXMode(void) { return (g_flags & 0x8000u) != 0; }
+bool Select_IsXMode(void) { return (g_flags & 0x8000u) != 0; }
 /* [0x484F7C] acima de 0xFFF: skin (0x10000 / 0x20000, PIU32.EXE 0x4043A1) etc. */
-unsigned ExSelect_GetFlags(void) { return g_flags; }
+unsigned Select_GetFlags(void) { return g_flags; }
 static unsigned g_mods[2];      /* +0x184 de cada jogador */
 static int      g_joinFrame[2]; /* +0x4C (P1) / +0x54 (P2) */
 static uint8_t  g_buf9[2][9];   /* 0x5638E0 */
@@ -247,7 +247,7 @@ static const uint8_t k_code24[24] = {
 };
 /* EEPROM +0x525 do arcade. O layout de EEPROM do projeto ainda é o do Exceed,
  * então por enquanto vale só durante a execução. */
-static bool g_exCanonUnlocked = false;
+static bool g_canonUnlocked = false;
 
 static const uint8_t k_code6[6] = { 1, 2, 1, 2, 1, 2 };                  /* 0x455140 */
 static const uint8_t k_code5[2][5] = {                                   /* 0x455148 */
@@ -267,8 +267,8 @@ static const uint8_t k_code9[7][9] = {
 #endif
 /* Exceed2 (PIU32.EXE 0x45A3A8, 15 x 9; verificador 0x416C90 / 0x417040).
  * 5 e 6 botões (0x45A430 / 0x45A43C) são os mesmos do Exceed. */
-#define EX_CODE9_COUNT 15
-static const uint8_t k_code9[EX_CODE9_COUNT][9] = {
+#define SEL_CODE9_COUNT 15
+static const uint8_t k_code9[SEL_CODE9_COUNT][9] = {
     { 8, 16, 8, 16, 8, 16, 8, 16, 4 },    /* 0  ^rv, limpa x2/x3/x4  (0x416D31) */
     { 2, 1, 16, 8, 2, 1, 16, 8, 4 },      /* 1  ^m                   (0x416D43) */
     { 8, 16, 8, 16, 1, 2, 1, 2, 4 },      /* 2  ^r, limpa 0x200      (0x416D51) */
@@ -325,7 +325,7 @@ static void startPreview(void) {
     g_previewOn = true;
     BGM_Stop();
     if (BGM_LoadAUDDirect(path)) BGM_Play(true);
-    else Log_Print("EXSELECT: preview '%s' não abriu\n", path);
+    else Log_Print("SELECT: preview '%s' não abriu\n", path);
 }
 
 /* 0x4173E4 / 0x417611: som do DL/DR — 10-2 depois de 4 repetições, senão 3-2 */
@@ -339,24 +339,24 @@ static void checkCodes(int p) {
     unsigned oldMods = g_mods[p], oldFlags = g_flags;
     unsigned m = g_mods[p];
 
-    bool battle = (g_exStation == 2);   /* [0x484FB4] == 2 */
-    for (int k = 0; k < EX_CODE9_COUNT; k++) {
+    bool battle = (g_selStation == 2);   /* [0x484FB4] == 2 */
+    for (int k = 0; k < SEL_CODE9_COUNT; k++) {
         if (memcmp(g_buf9[p], k_code9[k], 9) != 0) continue;
         switch (k) {                                     /* 0x416D2A (tabela 0x417000) */
-        case 0: m = (m & ~0x0Eu) ^ EXMOD_RV; break;
-        case 1: m ^= EXMOD_M; break;
-        case 2: m = (m & ~EXMOD_200) ^ EXMOD_R; break;
-        case 3: m ^= EXMOD_800; break;
-        case 4: m = (m & ~0x41Eu) ^ EXMOD_1000; break;
+        case 0: m = (m & ~0x0Eu) ^ SELMOD_RV; break;
+        case 1: m ^= SELMOD_M; break;
+        case 2: m = (m & ~SELMOD_200) ^ SELMOD_R; break;
+        case 3: m ^= SELMOD_800; break;
+        case 4: m = (m & ~0x41Eu) ^ SELMOD_1000; break;
         case 5:   /* arcade piu 0x80634FD: só no ARCADE STATION */
-            if (g_exStation != 0) break;
-            m |= EXMOD_UNLOCK; g_mods[p] = m; unlockHidden(); break;   /* 0x4140A0 */
-        case 6: if (!battle) g_flags ^= EX_XMODE; break;
+            if (g_selStation != 0) break;
+            m |= SELMOD_UNLOCK; g_mods[p] = m; unlockHidden(); break;   /* 0x4140A0 */
+        case 6: if (!battle) g_flags ^= SEL_XMODE; break;
         case 7: m = ((m & ~0x4000u) ^ 0x8000u);          /* cai no caso 8 */
                 /* fallthrough */
         case 8: m = (m ^ 0x4000u) & ~0x8000u; break;
-        case 9: if (!battle) { g_flags |= EX_XMODE; m |= 0x4000u; } break;
-        case 10: if (!battle) { g_flags |= EX_XMODE; m |= 0x8000u; } break;
+        case 9: if (!battle) { g_flags |= SEL_XMODE; m |= 0x4000u; } break;
+        case 10: if (!battle) { g_flags |= SEL_XMODE; m |= 0x8000u; } break;
         case 11: g_flags = (g_flags & 0xFFF1FFFFu) | 0x10000u; break;
         case 12: g_flags = (g_flags & 0xFFF2FFFFu) | 0x20000u; break;
         case 13: g_flags = (g_flags & 0xFFF4FFFFu) | 0x40000u; break;
@@ -372,16 +372,16 @@ static void checkCodes(int p) {
         if (k == 0) {
             /* 0x41569F..0x415725: x1 -> x2 -> x3 -> x4 -> x8 -> rv -> x1 */
             unsigned c = m & ~0x41Eu;
-            if      (m & EXMOD_RV) m = c;
-            else if (m & EXMOD_X8) m = c ^ EXMOD_RV;
-            else if (m & EXMOD_X4) m = c ^ EXMOD_X8;
-            else if (m & EXMOD_X3) m = c ^ EXMOD_X4;
-            else if (m & EXMOD_X2) m = c ^ EXMOD_X3;
-            else                   m = c ^ EXMOD_X2;
+            if      (m & SELMOD_RV) m = c;
+            else if (m & SELMOD_X8) m = c ^ SELMOD_RV;
+            else if (m & SELMOD_X4) m = c ^ SELMOD_X8;
+            else if (m & SELMOD_X3) m = c ^ SELMOD_X4;
+            else if (m & SELMOD_X2) m = c ^ SELMOD_X3;
+            else                   m = c ^ SELMOD_X2;
         } else {
             /* 0x415732..0x41575A: 0 -> v -> ns -> v+ns -> 0 */
-            if (m & EXMOD_V) m = (m & ~0x220u) ^ EXMOD_NS;
-            else             m = (m & ~EXMOD_200) ^ EXMOD_V;
+            if (m & SELMOD_V) m = (m & ~0x220u) ^ SELMOD_NS;
+            else             m = (m & ~SELMOD_200) ^ SELMOD_V;
         }
         g_mods[p] = m;
         clearCodeBuffers(p);
@@ -390,12 +390,12 @@ static void checkCodes(int p) {
     /* 0x416F7D: DL DR DL DR DL DR zera o jogador e [0x484F7C] &= 0xFFF */
     /* arcade piu 0x8063715: código de 24 botões — Canon D FULL REMIX no REMIX */
     if (memcmp(g_buf24[p], k_code24, 24) == 0) {
-        if (g_exStation == 1 && !g_exCanonUnlocked) {
-            g_exCanonUnlocked = true;
-            Eeprom2_SetCanonUnlocked();   /* EEPROM +0x525 = 1, gravado */
+        if (g_selStation == 1 && !g_canonUnlocked) {
+            g_canonUnlocked = true;
+            OldSave_SetCanonUnlocked();   /* EEPROM +0x525 = 1, gravado */
             playWave(SND_2_1);   /* 0x8063736: efeito 9 (EFF_HIDDEN_SELECTED) */
             buildList();
-            Log_Print("EXSELECT: Canon D FULL REMIX (B57) liberada\n");
+            Log_Print("SELECT: Canon D FULL REMIX (B57) liberada\n");
         }
         clearCodeBuffers(p);
     }
@@ -408,15 +408,15 @@ static void checkCodes(int p) {
 
     if (g_mods[p] != oldMods || g_flags != oldFlags) {
         playWave(SND_2_1);
-        Log_Print("EXSELECT: P%d mods 0x%04X, X-MODE %s\n", p + 1, g_mods[p],
-                  (g_flags & EX_XMODE) ? "on" : "off");
+        Log_Print("SELECT: P%d mods 0x%04X, X-MODE %s\n", p + 1, g_mods[p],
+                  (g_flags & SEL_XMODE) ? "on" : "off");
     }
 }
 
 /* 0x4551C8 (bit do modo) e 0x4551B4 (slot do ícone no SELECT2), mesma ordem de
- * ExceedSong.level: NORMAL HARD CRAZY FREESTYLE NIGHTMARE */
+ * TrackEntry.level: NORMAL HARD CRAZY FREESTYLE NIGHTMARE */
 /* índice 5 = BATTLE: 0x4551A4 (bits N H C BATTLE) / 0x455194 (slot 49) */
-#define EX_MODE_BATTLE 5
+#define SEL_MODE_BATTLE 5
 static const int k_modeBit[6]  = { 0x10, 0x20, 0x400, 0x200, 0x800, 0x40 };
 static const int k_modeIcon[6] = { 44, 45, 46, 47, 48, 49 };
 /* sufixo do comando RUN (0x1283C44..0x1283C74) por modo */
@@ -427,35 +427,35 @@ static const int k_panelDir1[5]  = { 1080, 1020, 960, 900, 900 }; /* 0x456EE0 */
 static const int k_panelDir2[5]  = { 660, 660, 720, 780, 840 };   /* 0x456EF4 */
 
 /* Exceed: 0x456EC8 / 0x456ED4 — DESATIVADO
-static const int k_chLabelFrame[EX_CHANNEL_COUNT] = { 60, 120, 180 };
-static const int k_chLabelSlot[EX_CHANNEL_COUNT]  = { 19, 20, 21 };
+static const int k_chLabelFrame[SONG_CHANNEL_COUNT] = { 60, 120, 180 };
+static const int k_chLabelSlot[SONG_CHANNEL_COUNT]  = { 19, 20, 21 };
 */
 /* Exceed2: rótulo do canal 0x45A518 / 0x45A52C; brilho do canal (0x4146DB):
  * 15/16/17 nos canais do ARCADE, 0x29 no REMIX (3) e 0x28 no BATTLE (4) */
-static const int k_chLabelFrame[EX_CHANNEL_COUNT] = { 60, 120, 180, 239, 239 };
-static const int k_chLabelSlot[EX_CHANNEL_COUNT]  = { 19, 20, 21, 39, 38 };
-static const int k_chGlowSlot[EX_CHANNEL_COUNT]   = { 15, 16, 17, 41, 40 };
+static const int k_chLabelFrame[SONG_CHANNEL_COUNT] = { 60, 120, 180, 239, 239 };
+static const int k_chLabelSlot[SONG_CHANNEL_COUNT]  = { 19, 20, 21, 39, 38 };
+static const int k_chGlowSlot[SONG_CHANNEL_COUNT]   = { 15, 16, 17, 41, 40 };
 
 /* 0x415434: índice do registro pelo ID, -1 se não existe */
 static int findSong(int id) {
-    for (int i = 0; i < EX_SONG_COUNT; i++)
-        if ((int)g_exSongs[i].id == id) return i;
+    for (int i = 0; i < SONG_TABLE_COUNT; i++)
+        if ((int)g_songTable[i].id == id) return i;
     return -1;
 }
 
 /* 0x4192F0: monta a lista visível do canal. Música oculta (+0x35) entra se o
  * P1 ou o P2 tiver o bit 0x2000 (0x419376..0x4193C4). */
 static void buildList(void) {
-    bool unlocked = ((g_mods[0] | g_mods[1]) & EXMOD_UNLOCK) != 0;
+    bool unlocked = ((g_mods[0] | g_mods[1]) & SELMOD_UNLOCK) != 0;
     g_listCount = 0;
-    for (int i = 0; i < EX_CHANNEL_MAX; i++) {
-        int id = g_exChannels[g_ch][i];
+    for (int i = 0; i < SONG_CHANNEL_MAX; i++) {
+        int id = g_songChannels[g_ch][i];
         if (id == 0) break;
         int s = findSong(id);
         if (s < 0) continue;
-        if (Eeprom2_SongOff(s)) continue;   /* +0x36 <- EEPROM +0x52B (0x412F00) */
+        if (OldSave_SongOff(s)) continue;   /* +0x36 <- EEPROM +0x52B (0x412F00) */
         /* B57: com EEPROM +0x525 = 1 deixa de ser oculta (arcade 0x806336E) */
-        bool hid = g_exSongs[s].hidden != 0 && !(g_exCanonUnlocked && id == 0xB57);
+        bool hid = g_songTable[s].hidden != 0 && !(g_canonUnlocked && id == 0xB57);
         if (!hid || unlocked)   /* visible = (hidden == 0), 0x416474 */
             g_list[g_listCount++] = id;
     }
@@ -481,8 +481,8 @@ static void unlockHidden(void) {
 static void unlockHidden(void) {
     g_ch = 0;
     g_cursor[0] = 0;
-    for (int i = 0; i < EX_CHANNEL_MAX; i++)
-        if (g_exChannels[0][i] == 0xB18) { g_cursor[0] = i; break; }
+    for (int i = 0; i < SONG_CHANNEL_MAX; i++)
+        if (g_songChannels[0][i] == 0xB18) { g_cursor[0] = i; break; }
     buildList();
     if (g_cursor[0] >= g_listCount) g_cursor[0] = 0;   /* 0x414023 */
 }
@@ -500,13 +500,13 @@ static int bannerForId(int id) {
     return (s >= 0) ? g_bannerTex[s] : -1;
 }
 
-void ExSelect_Enter(void) {
+void Select_Enter(void) {
     /* 0x4161E6 / 0x4161F6: os dois BGAs ficam carregados juntos */
     Resource_ClearBGA();
     if (!Resource_LoadBGAByName("SELECT"))
-        Log_Print("EXSELECT: falha ao carregar BGA\\SELECT.DAT\n");
+        Log_Print("SELECT: falha ao carregar BGA\\SELECT.DAT\n");
     if (!Resource_LoadBGAByName("SELECT2"))
-        Log_Print("EXSELECT: falha ao carregar BGA\\SELECT2.DAT\n");
+        Log_Print("SELECT: falha ao carregar BGA\\SELECT2.DAT\n");
     BGA_Reset();
 
     /* 0x416206..0x41624F: banners do 90.DAT */
@@ -518,26 +518,26 @@ void ExSelect_Enter(void) {
      * EEPROM +0x7EF: 0 -> 90H). 90H e 90 (Exceed) ficam de reserva. */
     static const char* k_discDat[3] = { "90E", "90H", "90" };
     bool discOpen = false;
-    g_exCanonUnlocked = Eeprom2_CanonUnlocked();   /* EEPROM +0x525 */
-    /* for (int d = (Eeprom2_Language() != 0) ? 1 : 0; d < 3 && !discOpen; d++) { */
+    g_canonUnlocked = OldSave_CanonUnlocked();   /* EEPROM +0x525 */
+    /* for (int d = (OldSave_Language() != 0) ? 1 : 0; d < 3 && !discOpen; d++) { */
     for (int d = 0; d < 3 && !discOpen; d++) {
         snprintf(path, sizeof(path), "%s/BGA/%s.DAT", g_game.currentDirectory, k_discDat[d]);
         discOpen = RES_Open(path);
     }
-    for (int i = 0; i < EX_SONG_COUNT; i++) g_bannerTex[i] = -1;
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) g_bannerTex[i] = -1;
     if (discOpen) {
         int ok = 0;
-        for (int i = 0; i < EX_SONG_COUNT; i++) {
+        for (int i = 0; i < SONG_TABLE_COUNT; i++) {
             char name[16];
             /* A26/A27 usam o disco da 401/402 (Song_DataId) */
-            snprintf(name, sizeof(name), "%X.TGA", (unsigned)Song_DataId((int)g_exSongs[i].id));
+            snprintf(name, sizeof(name), "%X.TGA", (unsigned)Song_DataId((int)g_songTable[i].id));
             g_bannerTex[i] = loadTextureFromRES(name);
             if (g_bannerTex[i] >= 0) ok++;
         }
         RES_Close();
-        Log_Print("EXSELECT: %d/%d banners do 90.DAT\n", ok, EX_SONG_COUNT);
+        Log_Print("SELECT: %d/%d banners do 90.DAT\n", ok, SONG_TABLE_COUNT);
     } else {
-        Log_Print("EXSELECT: falha ao abrir '%s'\n", path);
+        Log_Print("SELECT: falha ao abrir '%s'\n", path);
     }
 
     /* 0x404540..0x404570: dígitos do font.tga do BGA\00.DAT */
@@ -547,7 +547,7 @@ void ExSelect_Enter(void) {
         g_fontTex = loadTextureFromRES("font.tga");
         RES_Close();
     }
-    if (g_fontTex < 0) Log_Print("EXSELECT: font.tga do 00.DAT não carregou\n");
+    if (g_fontTex < 0) Log_Print("SELECT: font.tga do 00.DAT não carregou\n");
 
     /* 0x41E5D7..0x41E61B: dígitos do contador (font4.tga do BGA\BFONT.DAT) */
     snprintf(path, sizeof(path), "%s/BGA/BFONT.DAT", g_game.currentDirectory);
@@ -556,7 +556,7 @@ void ExSelect_Enter(void) {
         g_timerTex = loadTextureFromRES("font4.tga");
         RES_Close();
     }
-    if (g_timerTex < 0) Log_Print("EXSELECT: font4.tga do BFONT.DAT não carregou\n");
+    if (g_timerTex < 0) Log_Print("SELECT: font4.tga do BFONT.DAT não carregou\n");
 
     g_startTick = timeGetTime();
     g_timeLeft = 60;
@@ -609,7 +609,7 @@ void ExSelect_Enter(void) {
      * apenas num jogo novo. */
     if (newGame) {
         g_ch = 0;
-        for (int c = 0; c < EX_CHANNEL_COUNT; c++) g_cursor[c] = 0;
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++) g_cursor[c] = 0;
     }
     /* Exceed2 0x413853: na primeira Select do crédito o canal vem do argumento */
     if (g_startChannel >= 0) {
@@ -619,7 +619,7 @@ void ExSelect_Enter(void) {
     g_chPrev = g_ch;
     g_chDir = 0;
     g_curDir = 0;
-    for (int c = 0; c < EX_CHANNEL_COUNT; c++)
+    for (int c = 0; c < SONG_CHANNEL_COUNT; c++)
         g_cursorPrev[c] = g_cursor[c];
     buildList();
 }
@@ -684,7 +684,7 @@ static void openPanel(void) {
     int rows = g_panel2P ? 3 : 5;
     g_battleDiff = 0;
     for (int m = 0; m < rows; m++)
-        if (g_exSongs[s].level[m] != -1 && g_exSongs[s].lock[m] == 0) {
+        if (g_songTable[s].level[m] != -1 && g_songTable[s].lock[m] == 0) {
             g_modeList[g_modeCount++] = m;   /* índice em k_modeBit */
             if (m < 3) g_battleDiff = m;
         }
@@ -698,14 +698,14 @@ static void openPanel(void) {
 
 /* 0x415514: nível da música no modo; a linha BATTLE mostra o da +0x8C */
 static int levelOf(int s, int m) {
-    if (m == EX_MODE_BATTLE) m = g_battleDiff;
-    return g_exSongs[s].level[m];
+    if (m == SEL_MODE_BATTLE) m = g_battleDiff;
+    return g_songTable[s].level[m];
 }
 
 /* 0x41816A..0x41822D: no painel de 2 jogadores, DR sem linha à direita troca
  * a dificuldade do BATTLE entre as disponíveis */
 static void cycleBattleDiff(int s) {
-    const int* lv = g_exSongs[s].level;
+    const int* lv = g_songTable[s].level;
     if (g_battleDiff == 1) {
         if (lv[0] != -1) g_battleDiff = 0;
         else if (lv[2] != -1) g_battleDiff = 2;
@@ -740,16 +740,16 @@ static void startGame(void) {
      * do cursor do canal 4 ([+0x70]); o gameplay usa a seção Division do STX.
      * Itens/medidores do modo batalha (SCRIPT\BATTLEMODE.LUA) ainda não existem. */
     if (g_ch == 4) {
-        int id = (int)g_exSongs[s].id;
+        int id = (int)g_songTable[s].id;
         g_started = true;
-        Eeprom2_CountPlay(s);   /* 0x4168FA */
+        OldSave_CountPlay(s);   /* 0x4168FA */
         stopPreview();
         playWave(SND_START);
-        Log_Print("EXSELECT: RUN %X -BT\n", (unsigned)id);
+        Log_Print("SELECT: RUN %X -BT\n", (unsigned)id);
         g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
-        g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[EX_DB_DIVISION]);
+        g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[SEL_DB_DIVISION]);
         if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) {
-            Log_Print("EXSELECT: songDB sem a música/DIVISION (%d/%d) — sem gameplay\n",
+            Log_Print("SELECT: songDB sem a música/DIVISION (%d/%d) — sem gameplay\n",
                       g_game.selectedSongIndex, g_game.selectedModeIndex);
             return;
         }
@@ -758,9 +758,9 @@ static void startGame(void) {
         g_game.isBattleMode = false;
         for (int p = 0; p < 2; p++) {
             unsigned mm = g_mods[p];
-            g_game.cmdSpeedMult[p] = (mm & EXMOD_X8) ? 8 : (mm & EXMOD_X4) ? 4 :
-                                     (mm & EXMOD_X3) ? 3 : (mm & EXMOD_X2) ? 2 : 1;
-            g_game.cmdRandomVelocity[p] = (mm & EXMOD_RV) != 0;
+            g_game.cmdSpeedMult[p] = (mm & SELMOD_X8) ? 8 : (mm & SELMOD_X4) ? 4 :
+                                     (mm & SELMOD_X3) ? 3 : (mm & SELMOD_X2) ? 2 : 1;
+            g_game.cmdRandomVelocity[p] = (mm & SELMOD_RV) != 0;
         }
         Loading_Enter(id);
         return;
@@ -771,42 +771,42 @@ static void startGame(void) {
     } else {
         int last = ((g_joined & 3) == 3) ? 3 : 5;   /* 2P: só N H C */
         for (int k = 0; k < last; k++)              /* 0x4164FB..0x41673C */
-            if (g_exSongs[s].level[k] != -1 && g_exSongs[s].lock[k] == 0) { m = k; break; }
+            if (g_songTable[s].level[k] != -1 && g_songTable[s].lock[k] == 0) { m = k; break; }
     }
     if (m < 0) return;
     g_started = true;
-    Eeprom2_CountPlay(s);   /* Exceed2 0x4168FA: EEPROM +0x633 + 2*i */
+    OldSave_CountPlay(s);   /* Exceed2 0x4168FA: EEPROM +0x633 + 2*i */
     stopPreview();          /* 0x418512 */
     playWave(SND_START);    /* 0x418521 */
     /* 0x4186D4..0x418712: BATTLE usa o sufixo da dificuldade +0x8C */
-    int argIdx = (m == EX_MODE_BATTLE) ? g_battleDiff : m;
-    Log_Print("EXSELECT: RUN %X %s%s (modo 0x%X, nível %d)\n",
-              (unsigned)g_exSongs[s].id, k_modeArg[argIdx],
-              (m == EX_MODE_BATTLE) ? " [BATTLE]" : "", k_modeBit[m],
+    int argIdx = (m == SEL_MODE_BATTLE) ? g_battleDiff : m;
+    Log_Print("SELECT: RUN %X %s%s (modo 0x%X, nível %d)\n",
+              (unsigned)g_songTable[s].id, k_modeArg[argIdx],
+              (m == SEL_MODE_BATTLE) ? " [BATTLE]" : "", k_modeBit[m],
               levelOf(s, m));
     g_armed = false;
 
     /* 0x4102D4 ("RUN ...") -> gameplay: aproveita o fluxo Loading/Gameplay do
      * projeto via songDB sintético. */
-    int id = (int)g_exSongs[s].id;
+    int id = (int)g_songTable[s].id;
     g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
     g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[argIdx]);
     if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) {
-        Log_Print("EXSELECT: songDB sem a música/modo (%d/%d) — sem gameplay\n",
+        Log_Print("SELECT: songDB sem a música/modo (%d/%d) — sem gameplay\n",
                   g_game.selectedSongIndex, g_game.selectedModeIndex);
         return;
     }
     g_game.selectedDifficulty = levelOf(s, m);
     g_game.activePlayerMask = (int)(g_joined & 3);
-    g_game.isBattleMode = (m == EX_MODE_BATTLE);
+    g_game.isBattleMode = (m == SEL_MODE_BATTLE);
     /* Velocidade confirmada pelos ícones (x2/x3/x4/x8); rv entra no mesmo
      * ciclo de velocidade. Os demais (r/m/v/ns, 0x800, 0x1000, X-MODE) ainda
      * não têm efeito no gameplay do projeto. */
     for (int p = 0; p < 2; p++) {
         unsigned mm = g_mods[p];
-        g_game.cmdSpeedMult[p] = (mm & EXMOD_X8) ? 8 : (mm & EXMOD_X4) ? 4 :
-                                 (mm & EXMOD_X3) ? 3 : (mm & EXMOD_X2) ? 2 : 1;
-        g_game.cmdRandomVelocity[p] = (mm & EXMOD_RV) != 0;
+        g_game.cmdSpeedMult[p] = (mm & SELMOD_X8) ? 8 : (mm & SELMOD_X4) ? 4 :
+                                 (mm & SELMOD_X3) ? 3 : (mm & SELMOD_X2) ? 2 : 1;
+        g_game.cmdRandomVelocity[p] = (mm & SELMOD_RV) != 0;
     }
     Loading_Enter(id);
 }
@@ -814,10 +814,10 @@ static void startGame(void) {
 /* Zero CSelect (piu 0x806badf): "RUN %X %s %s" -> fluxo Loading/Gameplay do
  * projeto. diff = 0..4 (-n -h -c -d -nm) do P1; o gameplay do projeto usa um
  * modo só para os dois lados, então o do P2 (2 jogadores) ainda não é aplicado. */
-bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2])
+bool Select_StartSong(int id, int diff, unsigned joined, const int speed[2], const bool rv[2])
 {
     int s = findSong(id);
-    if (s < 0 || diff < 0 || diff > 4 || g_exSongs[s].level[diff] == -1) return false;
+    if (s < 0 || diff < 0 || diff > 4 || g_songTable[s].level[diff] == -1) return false;
     g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
     g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[diff]);
     if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) {
@@ -825,7 +825,7 @@ bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], c
                   g_game.selectedSongIndex, g_game.selectedModeIndex);
         return false;
     }
-    g_game.selectedDifficulty = g_exSongs[s].level[diff];
+    g_game.selectedDifficulty = g_songTable[s].level[diff];
     g_game.activePlayerMask = (int)(joined & 3);
     g_game.isBattleMode = false;
     for (int p = 0; p < 2; p++) {
@@ -833,7 +833,7 @@ bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], c
         g_game.cmdSpeedMult[p] = speed[p] > 0 ? speed[p] : 1;
         g_game.cmdRandomVelocity[p] = rv[p];
     }
-    g_exDemo = false;
+    g_demoPlay = false;
     Loading_Enter(id);
     return true;
 }
@@ -841,7 +841,7 @@ bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], c
 /* NX WORLD TOUR (0x8084b10 "RUN AA%02d%d" + 0x806bd94): a missão vira um RUN com o
  * id do chart (0xAAnnk) e o modo da letra da condição. O chart não é música da
  * tabela; entra no songDB na hora (música + entrada no modo). diff = 0..4 NORMAL..NIGHTMARE. */
-bool ExSelect_StartMission(int id, int diff, int level, unsigned joined)
+bool Select_StartMission(int id, int diff, int level, unsigned joined)
 {
     SongDB* db = &g_game.songDB;
     if (diff < 0 || diff > 4) return false;
@@ -891,9 +891,9 @@ bool ExSelect_StartMission(int id, int diff, int level, unsigned joined)
         g_game.cmdAccel[p]      = (f & 0x400) != 0;
         g_game.cmdXMode[p]      = (f & 0x1000) != 0;
         g_game.cmdNXMode[p]     = (f & 0x2000) != 0;
-        if (g_nxMods.skin >= 0) Zero_SetSkinIndexP(p, g_nxMods.skin);
+        if (g_nxMods.skin >= 0) Skin_SetIndexP(p, g_nxMods.skin);
     }
-    g_exDemo = false;
+    g_demoPlay = false;
     Log_Print("WORLD: RUN %X %s (nível %d)\n", (unsigned)id, k_dbModeName[diff], level);
     Loading_Enter(id);
     return true;
@@ -901,38 +901,38 @@ bool ExSelect_StartMission(int id, int diff, int level, unsigned joined)
 
 /* Comando RUN/PLAY do console (parser 0x401A0A..0x401D56): "<id> <modo> [-demo|-demo2]".
  * Entra direto no gameplay, sem passar pela Select. m = índice de k_dbModeName ou
- * EX_MODE_BATTLE (-bt), que usa a última dificuldade disponível entre N/H/C.
+ * SEL_MODE_BATTLE (-bt), que usa a última dificuldade disponível entre N/H/C.
  * [0x568FF4] começa em 3 (os dois jogadores); -demo liga o autoplay da atração. */
-bool ExSelect_Run(int id, int m, int demo)
+bool Select_Run(int id, int m, int demo)
 {
     int s = findSong(id);
     if (s < 0) return false;
     int argIdx = m;
-    if (m == EX_MODE_BATTLE) {
+    if (m == SEL_MODE_BATTLE) {
         argIdx = -1;
         for (int k = 0; k < 3; k++)
-            if (g_exSongs[s].level[k] != -1) argIdx = k;
+            if (g_songTable[s].level[k] != -1) argIdx = k;
         if (argIdx < 0) return false;
         g_battleDiff = argIdx;
     }
-    if (argIdx < 0 || argIdx > 4 || g_exSongs[s].level[argIdx] == -1) return false;
+    if (argIdx < 0 || argIdx > 4 || g_songTable[s].level[argIdx] == -1) return false;
 
     g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
     g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[argIdx]);
     if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) return false;
 
     Menu_ResetState();
-    g_game.selectedDifficulty = g_exSongs[s].level[argIdx];
+    g_game.selectedDifficulty = g_songTable[s].level[argIdx];
     g_game.activePlayerMask = (argIdx == 3 || argIdx == 4 || demo == 2) ? 1 : 3;
-    g_game.isBattleMode = (m == EX_MODE_BATTLE);
+    g_game.isBattleMode = (m == SEL_MODE_BATTLE);
     for (int p = 0; p < 2; p++) {
         g_game.cmdSpeedMult[p] = 1;
         g_game.cmdSpeedNx[p] = 0;
         g_game.cmdRandomVelocity[p] = false;
     }
-    g_exDemo = (demo != 0);
+    g_demoPlay = (demo != 0);
     Log_Print("RUN %X %s%s%s\n", (unsigned)id, k_modeArg[argIdx],
-              (m == EX_MODE_BATTLE) ? " -bt" : "",
+              (m == SEL_MODE_BATTLE) ? " -bt" : "",
               demo == 2 ? " -demo2" : demo ? " -demo" : "");
     Loading_Enter(id);
     return true;
@@ -951,12 +951,12 @@ static void tryLateJoin(void) {
         Coin_ConsumeCredit();
         g_joined |= (1u << p);
         g_chosen = false;
-        Log_Print("EXSELECT: P%d entrou na Select\n", p + 1);
+        Log_Print("SELECT: P%d entrou na Select\n", p + 1);
         return;
     }
 }
 
-void ExSelect_Update(float dt) {
+void Select_Update(float dt) {
     (void)dt;
 
     if (g_intro) {
@@ -1148,28 +1148,28 @@ static void bannerQuad(int tex, float x0, float x1, float yA, float zA, float yB
  * Constantes: 0x456E9C..0x456EC4. tx/ty dos banners (0x563AC8/0x563ACC) só
  * mudam pelo console de debug: valem 0.
  * Todas são ajustáveis pelo /set do console (0x41D309), com estes nomes. */
-float g_exCamX1 = -62.0f;   /* 0x456E9C */
-float g_exCamX2 =  62.0f;   /* 0x456EA0 */
-float g_exCamY1 =   0.0f;   /* 0x563ACC */
-float g_exCamY2 =  90.0f;   /* 0x456EA4 */
-float g_exCamZ1 =  90.0f;   /* 0x456EA8 */
-float g_exCamR  = -27.69f;  /* 0x456EAC */
-float g_exCamR2 =  38.0f;   /* 0x456EB0 */
-float g_exCamR3 = -51.0f;   /* 0x456EB4 */
-float g_exCamTx =   0.0f;   /* 0x563AC8 */
-float g_exCamTy = 320.0f;   /* 0x456EB8 */
-float g_exCamP  =  50.0f;   /* 0x456EBC */
-float g_exCamCy =  73.0f;   /* 0x456EC0 */
-float g_exCamCy2 = 66.0f;   /* 0x456EC4 */
+float g_selCamX1 = -62.0f;   /* 0x456E9C */
+float g_selCamX2 =  62.0f;   /* 0x456EA0 */
+float g_selCamY1 =   0.0f;   /* 0x563ACC */
+float g_selCamY2 =  90.0f;   /* 0x456EA4 */
+float g_selCamZ1 =  90.0f;   /* 0x456EA8 */
+float g_selCamR  = -27.69f;  /* 0x456EAC */
+float g_selCamR2 =  38.0f;   /* 0x456EB0 */
+float g_selCamR3 = -51.0f;   /* 0x456EB4 */
+float g_selCamTx =   0.0f;   /* 0x563AC8 */
+float g_selCamTy = 320.0f;   /* 0x456EB8 */
+float g_selCamP  =  50.0f;   /* 0x456EBC */
+float g_selCamCy =  73.0f;   /* 0x456EC0 */
+float g_selCamCy2 = 66.0f;   /* 0x456EC4 */
 
 static void drawCarousel(int cursor, float angle, float r, float g, float b, float a) {
     if (g_listCount <= 0) return;
     glPushMatrix();
     enterS3DSpace();
-    glTranslatef(320.0f, g_exCamCy, g_exCamZ1);
-    glTranslatef(0.0f, g_exCamCy2, 0.0f);
-    glRotatef(g_exCamR3, 1.0f, 0.0f, 0.0f);
-    glTranslatef(0.0f, -g_exCamCy2, 0.0f);
+    glTranslatef(320.0f, g_selCamCy, g_selCamZ1);
+    glTranslatef(0.0f, g_selCamCy2, 0.0f);
+    glRotatef(g_selCamR3, 1.0f, 0.0f, 0.0f);
+    glTranslatef(0.0f, -g_selCamCy2, 0.0f);
     glColor4f(r, g, b, a);
     for (int i = -5; i < 6; i++) {
         int idx = cursor + i;
@@ -1178,18 +1178,18 @@ static void drawCarousel(int cursor, float angle, float r, float g, float b, flo
         if (idx < 0 || idx >= g_listCount) continue;
 
         glPushMatrix();
-        glTranslatef(0.0f, g_exCamP, 0.0f);
+        glTranslatef(0.0f, g_selCamP, 0.0f);
         glRotatef(angle, 0.0f, 0.0f, 1.0f);
-        glRotatef((float)i * g_exCamR, 0.0f, 0.0f, 1.0f);
+        glRotatef((float)i * g_selCamR, 0.0f, 0.0f, 1.0f);
         /* 0x4196C1..0x4196DE: Push / Rotatef(90,0,0,1) / Pop — sem efeito */
-        glTranslatef(0.0f, -g_exCamP, 0.0f);
+        glTranslatef(0.0f, -g_selCamP, 0.0f);
 
         int tex = bannerForId(g_list[idx]);
         if (tex >= 0) {
             glPushMatrix();
-            glTranslatef(g_exCamTx, g_exCamTy, 0.0f);
-            glRotatef(g_exCamR2, 1.0f, 0.0f, 0.0f);
-            bannerQuad(tex, g_exCamX1, g_exCamX2, g_exCamY2, 0.0f, g_exCamY1, 0.0f);
+            glTranslatef(g_selCamTx, g_selCamTy, 0.0f);
+            glRotatef(g_selCamR2, 1.0f, 0.0f, 0.0f);
+            bannerQuad(tex, g_selCamX1, g_selCamX2, g_selCamY2, 0.0f, g_selCamY1, 0.0f);
             glPopMatrix();
         }
         glPopMatrix();
@@ -1380,16 +1380,16 @@ static void drawModIcons(int p, int frame) {
     int base = (p == 0) ? 11 : 1;
     unsigned m = g_mods[p];
     BGA_SetColor(SEL2_BGA, 1.0f, 1.0f);
-    if      (m & EXMOD_X2) BGA_DrawSlot(SEL2_BGA, frame, base + 4);
-    else if (m & EXMOD_X3) BGA_DrawSlot(SEL2_BGA, frame, base + 3);
-    else if (m & EXMOD_X4) BGA_DrawSlot(SEL2_BGA, frame, base + 2);
-    else if (m & EXMOD_X8) BGA_DrawSlot(SEL2_BGA, frame, base + 1);
-    else if (m & EXMOD_RV) BGA_DrawSlot(SEL2_BGA, frame, base + 0);
+    if      (m & SELMOD_X2) BGA_DrawSlot(SEL2_BGA, frame, base + 4);
+    else if (m & SELMOD_X3) BGA_DrawSlot(SEL2_BGA, frame, base + 3);
+    else if (m & SELMOD_X4) BGA_DrawSlot(SEL2_BGA, frame, base + 2);
+    else if (m & SELMOD_X8) BGA_DrawSlot(SEL2_BGA, frame, base + 1);
+    else if (m & SELMOD_RV) BGA_DrawSlot(SEL2_BGA, frame, base + 0);
     else {
         BGA_SetColor(SEL2_BGA, 0.5f, 1.0f);   /* sem velocidade: x2 apagado */
         BGA_DrawSlot(SEL2_BGA, frame, base + 4);
     }
-    static const unsigned onOff[4] = { EXMOD_R, EXMOD_M, EXMOD_V, EXMOD_NS };
+    static const unsigned onOff[4] = { SELMOD_R, SELMOD_M, SELMOD_V, SELMOD_NS };
     for (int k = 0; k < 4; k++) {
         BGA_SetColor(SEL2_BGA, (m & onOff[k]) ? 1.0f : 0.5f, 1.0f);
         BGA_DrawSlot(SEL2_BGA, frame, base + 5 + k);
@@ -1410,7 +1410,7 @@ static void drawPlayerMods(int p) {
 }
 
 #if 0   /* Exceed (exceed.exe 0x416760) — DESATIVADO */
-void ExSelect_Render(void) {
+void Select_Render(void) {
     if (g_game.bgaPicCount <= 0) return;
     /* [this+0x90] (0x416965..0x4169C4): 1.0 sem escolha; com o painel aberto
      * cai para 0.5 em 10 quadros. Vai para o SELECT via 0x41F754 e para a cor
@@ -1587,7 +1587,7 @@ static void drawPanel2(void) {
     drawPanel();   /* fundo 31/33 + 0x18/0x19 (Exceed2), linhas, números e ícones */
 }
 
-void ExSelect_Render(void) {
+void Select_Render(void) {
     if (g_game.bgaPicCount <= 0) return;
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

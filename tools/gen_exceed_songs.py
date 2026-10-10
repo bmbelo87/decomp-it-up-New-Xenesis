@@ -52,11 +52,11 @@ def main():
     b = open(sys.argv[1], "rb").read()
     lines = []
     lines.append("/* GERADO por tools/gen_exceed_songs.py a partir do exceed.exe - nao editar a mao.")
-    lines.append(" *   g_exSongs     <- 0x004551E0 (105 x 56 bytes)")
-    lines.append(" *   g_exChannels  <- 0x004568E0 (int[3][50]) */")
+    lines.append(" *   g_songTable     <- 0x004551E0 (105 x 56 bytes)")
+    lines.append(" *   g_songChannels  <- 0x004568E0 (int[3][50]) */")
     lines.append('#include "pumpy.h"')
     lines.append("")
-    lines.append("const ExceedSong g_exSongs[EX_SONG_COUNT] = {")
+    lines.append("const TrackEntry g_songTable[SONG_TABLE_COUNT] = {")
     for i in range(SONG_COUNT):
         o = SONG_TABLE + i * SONG_SIZE
         r = struct.unpack_from("<6Id5iBBH", b, o)
@@ -70,7 +70,7 @@ def main():
         print("  %3d  %X  bpm=%-6g niveis=%s oculta=%d" % (i, sid, bpm, list(lv), hid))
     lines.append("};")
     lines.append("")
-    lines.append("const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX] = {")
+    lines.append("const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX] = {")
     for ch in range(3):
         ids = struct.unpack_from("<50I", b, CHANNEL_TABLE + ch * 200)
         n = next((k for k, x in enumerate(ids) if x == 0), 50)

@@ -268,8 +268,8 @@ void Station_Update(float dt) {
         if (g_fade >= 40) {
             /* ARCADE -> "SELECT"; REMIX -> "SELECT" (canal REMIX pela estação);
              * EASY / MISSION: telas ainda não feitas -> ARCADE */
-            if (g_sel == ST_REMIX) ExSelect_SetStation(1, 3);
-            else                   ExSelect_SetStation(0, 0);
+            if (g_sel == ST_REMIX) Select_SetStation(1, 3);
+            else                   Select_SetStation(0, 0);
             if (g_sel == ST_EASY || g_sel == ST_MISSION)
                 Log_Print("STATION: %s ainda não existe, indo para o ARCADE\n",
                           g_sel == ST_EASY ? "EASY STATION" : "MISSION STATION");
@@ -278,7 +278,7 @@ void Station_Update(float dt) {
             Title_StopMusic();
             Title_SetJoinedMask(g_joined);
             Menu_ResetState();
-            Game_ChangeState(STATE_EXSELECT);
+            Game_ChangeState(STATE_SELECT);
             return;
         }
         g_fade++;

@@ -215,7 +215,7 @@ static void leave(void) {   /* 0x808b68e */
     Menu_ResetState();
     /* 0x808b6b7: [0x81f8998] = tabela[estação]. TRAINING (3) ainda não existe aqui. */
     g_game.nxGameMode = k_mode[st0];
-    Game_ChangeState(STATE_EXSELECT);
+    Game_ChangeState(STATE_SELECT);
 }
 
 void Station_Update(float dt) {

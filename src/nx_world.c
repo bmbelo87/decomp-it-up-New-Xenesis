@@ -297,7 +297,7 @@ static void startMission(void) {
     }
     Log_Print("WORLD: %s (%d) stage %d -> %X \"%s\", corações %d\n", g_nxWorldStages[s_cur].name, num,
               stage + 1, (unsigned)id, m ? m->cond : "?", g_game.nxHearts);
-    if (!m || diff < 0 || !ExSelect_StartMission(id, diff, m->level, s_joined)) {
+    if (!m || diff < 0 || !Select_StartMission(id, diff, m->level, s_joined)) {
         Log_Print("WORLD: missão %X não existe\n", (unsigned)id);
         Game_ChangeState(STATE_GAMEOVER_ENTER);
     }
@@ -676,7 +676,7 @@ int NxClear_UnlockSong(void) {
     if (Rank_LocScore(num) != 0 || num - 1 < n) return -1;
     uint32_t id = g_nxWorldUnlock[num - 1];
     if (!id) return -1;
-    for (int i = 0; i < EX_SONG_COUNT; i++)
-        if (g_exSongs[i].id == id) return (Eeprom_Get32(0xF38 + i) & 0xFF) != 0 ? -1 : i;   /* desligada no SETUP */
+    for (int i = 0; i < SONG_TABLE_COUNT; i++)
+        if (g_songTable[i].id == id) return (Eeprom_Get32(0xF38 + i) & 0xFF) != 0 ? -1 : i;   /* desligada no SETUP */
     return -1;
 }

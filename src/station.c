@@ -145,7 +145,7 @@ static void Station_Enter(void) {
 }
 
 static bool hit(int bit) {
-    /* bits de hardware na ordem DL, DR, C, UL, UR (ver exceed_select.c) */
+    /* bits de hardware na ordem DL, DR, C, UL, UR (ver select_core.c) */
     static const PadButton map[3] = { PAD_DL, PAD_DR, PAD_C };
     return ((g_joined & 1) && Input_IsPadHit(0, map[bit])) ||
            ((g_joined & 2) && Input_IsPadHit(1, map[bit]));
@@ -265,14 +265,14 @@ void Station_Update(float dt) {
              * 0x41a105: ARCADE -> "SELECT" (canal 0), REMIX -> "SELECT 3",
              * BATTLE -> "HELP 1" -> "SELECT 4" (0x411A63). O tutorial HELP
              * ainda não existe: o BATTLE vai direto para a Select. */
-            if (g_sel == ST_REMIX)       ExSelect_SetStation(1, 3);
-            else if (g_sel == ST_BATTLE) ExSelect_SetStation(2, 4);
-            else                         ExSelect_SetStation(0, 0);
+            if (g_sel == ST_REMIX)       Select_SetStation(1, 3);
+            else if (g_sel == ST_BATTLE) Select_SetStation(2, 4);
+            else                         Select_SetStation(0, 0);
             Movie_Close();
             BGM_Stop();
             Title_SetJoinedMask(g_joined);
             Menu_ResetState();
-            Game_ChangeState(STATE_EXSELECT);
+            Game_ChangeState(STATE_SELECT);
             return;
         }
         g_fade++;

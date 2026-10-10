@@ -79,11 +79,11 @@ def main():
     secs = load_sections(b)
     lines = []
     lines.append("/* GERADO por tools/gen_exceed2_songs.py a partir do PIU32.EXE (Exceed2) - nao editar a mao.")
-    lines.append(" *   g_exSongs     <- 0x004563A0 (138 x 0x48 bytes)")
-    lines.append(" *   g_exChannels  <- 0x00458AB8 (int[5][53]) */")
+    lines.append(" *   g_songTable     <- 0x004563A0 (138 x 0x48 bytes)")
+    lines.append(" *   g_songChannels  <- 0x00458AB8 (int[5][53]) */")
     lines.append('#include "pumpy.h"')
     lines.append("")
-    lines.append("const ExceedSong g_exSongs[EX_SONG_COUNT] = {")
+    lines.append("const TrackEntry g_songTable[SONG_TABLE_COUNT] = {")
     so = va_to_off(secs, SONG_VA)
     for i in range(SONG_COUNT):
         o = so + i * SONG_SIZE
@@ -100,7 +100,7 @@ def main():
             i, seq, sid, bpm, list(lv), hid, off))
     lines.append("};")
     lines.append("")
-    lines.append("const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX] = {")
+    lines.append("const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX] = {")
     co = va_to_off(secs, CHANNEL_VA)
     for ch in range(CHANNEL_COUNT):
         ids = struct.unpack_from("<%dI" % CHANNEL_MAX, b, co + ch * CHANNEL_MAX * 4)

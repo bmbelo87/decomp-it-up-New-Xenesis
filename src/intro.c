@@ -23,7 +23,7 @@ static int      g_titleFade;     /* [CTitle+0x1C] */
 static int g_idleCount;         /* [CIdle+4] */
 static int g_demoCount = -1;    /* [0x455100] */
 static bool g_demoSound = true; /* EEPROM +0x7F0 (0x40265B) */
-bool g_exDemo;
+bool g_demoPlay;
 
 bool Demo_SoundOn(void) { return g_demoSound; }
 
@@ -33,13 +33,13 @@ bool Demo_SoundOn(void) { return g_demoSound; }
 /* NX DemoPlayRunNext (piu 0x8061c00 = NX2 songmanager.cpp:24): percorre a tabela de
  * músicas a partir de um contador que persiste ([0x9e3dd0c]) e roda a próxima com
  * a flag de demo (+0x41): "RUN %03X -n -demo". Dá a volta na tabela.
- * O teste de censura (+0x34 == 0) não está mapeado em g_exSongs e ficou de fora.
+ * O teste de censura (+0x34 == 0) não está mapeado em g_songTable e ficou de fora.
  * Sem NORMAL na música, usa a primeira dificuldade de um painel que existir. */
 static int s_demoNext;          /* [0x9e3dd0c] */
 static bool Demo_StartNX(void) {
-    for (int n = 0; n < EX_SONG_COUNT; n++) {
-        int i = (s_demoNext + n) % EX_SONG_COUNT;
-        const ExceedSong* e = &g_exSongs[i];
+    for (int n = 0; n < SONG_TABLE_COUNT; n++) {
+        int i = (s_demoNext + n) % SONG_TABLE_COUNT;
+        const TrackEntry* e = &g_songTable[i];
         if (!e->demo || (e->channel & 4)) continue;
         int m = -1;
         for (int k = 0; k < 3; k++) if (e->level[k] >= 0) { m = k; break; }
@@ -51,7 +51,7 @@ static bool Demo_StartNX(void) {
             g_game.cmdXMode[p] = g_game.cmdNXMode[p] = g_game.cmdTestBGA[p] = false;
         }
         g_demoSound = (g_game.svcDemoSound == 0);
-        if (!ExSelect_Run((int)e->id, m, 1)) continue;
+        if (!Select_Run((int)e->id, m, 1)) continue;
         s_demoNext = i + 1;
         Log_Print("DEMO: RUN %03X -%c -demo (som %d)\n", (unsigned)e->id, "nhc"[m], g_demoSound);
         return true;
@@ -86,18 +86,18 @@ static bool Demo_Start(void) {
         g_game.cmdRandomVelocity[p] = false;
     }
     /* Opção da EEPROM: som na demo */
-    /* era (Exceed2): g_demoSound = (Eeprom2_Data()[0x7F0] != 0);   EEPROM +0x7F0 (PIUEXCEED2.INI)
+    /* era (Exceed2): g_demoSound = (OldSave_Data()[0x7F0] != 0);   EEPROM +0x7F0 (PIUEXCEED2.INI)
      * NX: DEMO SOUND do Service Menu (EEPROM +0xED1, g_game.svcDemoSound, 0 = ligado) */
     g_demoSound = (g_game.svcDemoSound == 0);
     Log_Print("DEMO: RUN %s -h -demo (som %d)\n", buf, g_demoSound);
-    g_exDemo = true;
+    g_demoPlay = true;
     Loading_Enter(id);
     return true;
 }
 
 /* 0x402B82: com crédito ou 35 s de música ([+0x17C38] >= 35000) -> IDLE */
 void Demo_End(void) {
-    g_exDemo = false;
+    g_demoPlay = false;
     Gameplay_Exit();
     Movie_Close();
     Resource_ClearBGA();
@@ -314,7 +314,7 @@ void Gamestate_UpdateIntro(float dt) {
                 /* Contagem de estágios do projeto (3 + bônus, regra do Prex3).
                  * HIPÓTESE para o Exceed: ainda não conferido no exceed.exe. */
                 Menu_ResetState();
-                Game_ChangeState(STATE_EXSELECT);
+                Game_ChangeState(STATE_SELECT);
                 return;
             }
             g_titleFade++;

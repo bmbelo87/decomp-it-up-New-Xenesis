@@ -116,7 +116,7 @@ typedef enum {
     STATE_INTRO           = 0x90, /* Exceed: CIntro — BGA\INTRO.MOV + AUDIO\001.AUD */
     STATE_CREDIT          = 0x91, /* Exceed: CTitle — CREDIT.MOV */
     STATE_HIGHSCORE       = 0x93, /* Exceed: CHighscore — BGA\HS.DAT + ranking da EEPROM */
-    STATE_EXSELECT        = 0x92, /* Exceed: CSelect — BGA\SELECT.DAT + SELECT2.DAT + 90.DAT */
+    STATE_SELECT        = 0x92, /* Exceed: CSelect — BGA\SELECT.DAT + SELECT2.DAT + 90.DAT */
     STATE_IR              = 0x94, /* Exceed: CInternetRanking — BGA\IR.DAT + AUDIO\IR.AUD (src/ir.c) */
     STATE_NAMEINPUT       = 0x95, /* Exceed: CNameInput — BGA\085.DAT (src/nameinput.c) */
     STATE_STATION         = 0x96, /* Exceed2: CStation — BGA\STATION.DAT (src/station.c) */
@@ -131,37 +131,37 @@ typedef enum {
  * tools/gen_exceed_songs.py) — não é lido de arquivo, então os ponteiros não
  * precisam casar com o layout de 32 bits. */
 /* Exceed (exceed.exe): 105 músicas, canal[3][50] em 0x004568E0 — DESATIVADO
-#define EX_SONG_COUNT     105
-#define EX_CHANNEL_COUNT  3
-#define EX_CHANNEL_MAX    50
+#define SONG_TABLE_COUNT     105
+#define SONG_CHANNEL_COUNT  3
+#define SONG_CHANNEL_MAX    50
 */
 /* Exceed2 (PIU32.EXE) — DESATIVADO
-#define EX_SONG_COUNT     138
-#define EX_CHANNEL_COUNT  5
-#define EX_CHANNEL_MAX    53
+#define SONG_TABLE_COUNT     138
+#define SONG_CHANNEL_COUNT  5
+#define SONG_CHANNEL_MAX    53
 */
 /* Zero (piu Zero) — DESATIVADO
-#define EX_SONG_COUNT     149   // Zero: 0x94 (148) da tabela 0x08119040 + 1 extra (C44, tools/gen_zero_songs.py)
-#define EX_CHANNEL_COUNT  5     // campo +0x24: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER
-#define EX_CHANNEL_MAX    52    // maior canal (K-POP, 51) + 0 final; gerado por gen_zero_songs.py
-#define EX_CH_BANYA   0
-#define EX_CH_KPOP    1
-#define EX_CH_POP     2
-#define EX_CH_REMIX   3
-#define EX_CH_ANOTHER 4
+#define SONG_TABLE_COUNT     149   // Zero: 0x94 (148) da tabela 0x08119040 + 1 extra (C44, tools/gen_zero_songs.py)
+#define SONG_CHANNEL_COUNT  5     // campo +0x24: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER
+#define SONG_CHANNEL_MAX    52    // maior canal (K-POP, 51) + 0 final; gerado por gen_zero_songs.py
+#define SONG_CH_BANYA   0
+#define SONG_CH_KPOP    1
+#define SONG_CH_POP     2
+#define SONG_CH_REMIX   3
+#define SONG_CH_ANOTHER 4
 */
-/* era: EX_SONG_COUNT 193. +3 extras do port no fim da tabela (208, A10, D208), só no GAME STYLE MODDED */
-#define EX_SONG_COUNT     196   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 extras */
+/* era: SONG_TABLE_COUNT 193. +3 extras do port no fim da tabela (208, A10, D208), só no GAME STYLE MODDED */
+#define SONG_TABLE_COUNT     196   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 extras */
 #define NX_SONG_BASE      193   /* índices >= este são extras do port (fora do piu) */
-#define EX_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
-#define EX_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
-#define EX_CH_NX       0
-#define EX_CH_KPOP     1
-#define EX_CH_POP      2
-#define EX_CH_BANYA    3
-#define EX_CH_FULLSONG 4
-#define EX_CH_REMIX    5
-#define EX_CH_ANOTHER  6
+#define SONG_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
+#define SONG_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
+#define SONG_CH_NX       0
+#define SONG_CH_KPOP     1
+#define SONG_CH_POP      2
+#define SONG_CH_BANYA    3
+#define SONG_CH_FULLSONG 4
+#define SONG_CH_REMIX    5
+#define SONG_CH_ANOTHER  6
 #define NX_RESMAP_COUNT 328     /* pares { recurso, chart } em 0x0813f860 (0x8061d10) */
 typedef struct {
     uint32_t    id;         /* +0x00  hex -> "%X" nos nomes de arquivo */
@@ -181,7 +181,7 @@ typedef struct {
     uint8_t     avail;      /* Zero +0x3E estático: disponível (0 nas Another); ver Zero_SongAvail. NX +0x36 */
     const char* bpmText;    /* NX +0x18: BPM em texto ("101~138", "???") */
     uint32_t    length;     /* NX +0x44: hipótese — duração em segundos */
-} ExceedSong;
+} TrackEntry;
 extern const uint32_t g_nxResMap[NX_RESMAP_COUNT][2];
 
 /* NX WORLD TOUR (CSelectWorld): tabelas do piu, geradas por tools/gen_nx_world.py */
@@ -196,7 +196,7 @@ extern const char* const   g_nxWorldDesc[4][NX_WORLD_STAGES * 3];
 extern const uint32_t      g_nxWorldUnlock[NX_WORLD_STAGES];   /* 0x8110340 */
 bool NxSong_Unlocked(int songIdx);                             /* 0x8061ed0(id, 1) aplicado */
 void NxSong_Unlock(uint32_t id);
-int  NxClear_UnlockSong(void);                                 /* índice em g_exSongs ou -1 */
+int  NxClear_UnlockSong(void);                                 /* índice em g_songTable ou -1 */
 void NxMission_Enter(int id);
 void NxMission_Update(float dt);
 void NxMission_Render(void);
@@ -247,9 +247,9 @@ void NxWorld_Render(void);
 /* Modificadores da missão (2º campo da condição, parser 0x806b6ea) */
 typedef struct { unsigned flags; int units; int skin; int icons[4]; int nIcons; } NxMods;
 extern NxMods g_nxMods;
-bool ExSelect_StartMission(int id, int diff, int level, unsigned joined);
-extern const ExceedSong g_exSongs[EX_SONG_COUNT];
-extern const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX];
+bool Select_StartMission(int id, int diff, int level, unsigned joined);
+extern const TrackEntry g_songTable[SONG_TABLE_COUNT];
+extern const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX];
 
 typedef enum {
     PAD_UL    = 0,
@@ -834,17 +834,17 @@ void NxStation_Enter(void);           /* nx_station.c — chamado na troca de es
 /* Exceed: songDB sintético montado das tabelas do exceed.exe quando não há
  * Stage.cfg. Com ele, os IDs são hex e os arquivos saem em "%X"
  * (STEP\%X.STX, AUDIO\%X.AUD, BGA\%X.DAT, TITLE\T%X.PNZ). */
-extern bool g_exceedSongIds;
+extern bool g_hexSongIds;
 const char* Song_IdStr(int id);
 int Song_DataId(int id);            /* Zero: a própria (STX/TITLE); ver Song_FindFile para AUD/MOV/DAT */
-bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2]);
-int  Zero_SkinIndex(void);
-void Zero_SetSkinIndex(int n);
-int  Zero_SkinIndexP(int p);           /* skin do jogador p (NX2 m_CurrentSkin) */
-void Zero_SetSkinIndexP(int p, int n);       /* console /skin */           /* zero_select.c: skin de notas (SKIN00..07) */
-void ZeroSelect_Enter(void);          /* zero_select.c — CSelect do Zero */
-void ZeroSelect_Update(float dt);
-void ZeroSelect_Render(void);
+bool Select_StartSong(int id, int diff, unsigned joined, const int speed[2], const bool rv[2]);
+int  Skin_Index(void);
+void Skin_SetIndex(int n);
+int  Skin_IndexP(int p);           /* skin do jogador p (NX2 m_CurrentSkin) */
+void Skin_SetIndexP(int p, int n);       /* console /skin */           /* select_classic.c: skin de notas (SKIN00..07) */
+void ClassicSelect_Enter(void);          /* select_classic.c — CSelect do Zero */
+void ClassicSelect_Update(float dt);
+void ClassicSelect_Render(void);
 void NxSelect_Enter(void);            /* nx_select.c — CSelect da NX */
 void NxSelect_Update(float dt);
 void NxSelect_Render(void);
@@ -852,22 +852,22 @@ int NX_ResId(int id);               /* NX 0x8061d10: mapa chart -> recurso (0x81
 int Song_BaseId(int id);            /* Zero +0x08 (0x805a460), -1 = sem base */
 bool Song_FindFile(int id, const char* fmt, bool hex3, char* out, size_t outSize); /* id, depois base */
 const char* Song_DataIdStr(int id);
-bool ExSelect_IsXMode(void);
-unsigned ExSelect_GetFlags(void);
+bool Select_IsXMode(void);
+unsigned Select_GetFlags(void);
 void Attract_Idle(void);            /* Exceed CIdle: próxima tela da atração */
 void NxCredit_Draw(void);           /* nx_credit.c: faixa de crédito / FREE PLAY / EVENT / DEMO PLAY (CREDIT.DAT) */
 void Attract_Restart(void);         /* fim de um crédito: recomeça o laço da atração pelo logo */
 bool Attract_HasCredit(void);     /* "tem crédito" das telas da atração (MODDED + FREE PLAY: só após CENTER) */
-extern bool g_exDemo;               /* [0x568FF4] & 0x100000: demo da atração ("-demo") */
+extern bool g_demoPlay;               /* [0x568FF4] & 0x100000: demo da atração ("-demo") */
 bool Demo_SoundOn(void);            /* EEPROM +0x7F0 */
 void Demo_End(void);
-void Gameplay_ExScoreSync(void);    /* Exceed: GOOD +100, BAD -700, MISS -1000, score >= 0 */        /* [0x568FF4] & 0x8000 */     /* "%X" com g_exceedSongIds, senão "%d" */
-void ExSelect_BuildSongDB(SongDB* db);
-void ExSelect_Enter(void);          /* exceed_select.c — CSelect */
-bool ExSelect_Run(int id, int m, int demo); /* RUN/PLAY do console: m = 0..4 (N H C D NM) ou 5 (-bt) */
+void Gameplay_ScoreSync(void);    /* Exceed: GOOD +100, BAD -700, MISS -1000, score >= 0 */        /* [0x568FF4] & 0x8000 */     /* "%X" com g_hexSongIds, senão "%d" */
+void Select_BuildSongDB(SongDB* db);
+void Select_Enter(void);          /* select_core.c — CSelect */
+bool Select_Run(int id, int m, int demo); /* RUN/PLAY do console: m = 0..4 (N H C D NM) ou 5 (-bt) */
 /* Roda de banners da Select, ajustável pelo /set do console (0x456E9C..0x456EC4, 0x563AC8/CC) */
-extern float g_exCamX1, g_exCamX2, g_exCamY1, g_exCamY2, g_exCamZ1, g_exCamR, g_exCamR2,
-             g_exCamR3, g_exCamTx, g_exCamTy, g_exCamP, g_exCamCy, g_exCamCy2;
+extern float g_selCamX1, g_selCamX2, g_selCamY1, g_selCamY2, g_selCamZ1, g_selCamR, g_selCamR2,
+             g_selCamR3, g_selCamTx, g_selCamTy, g_selCamP, g_selCamCy, g_selCamCy2;
 extern bool g_drawJudgeRange;       /* CPlayEngine +0x48D4A: só o /drawjudgerange mexe; o exe nunca lê */
 void Highscore_Update(float dt);
 void Highscore_Render(void);
@@ -878,18 +878,18 @@ void IR_Render(void);
 /* Exceed: entrada de nome do ranking (src/nameinput.c) */
 void NameInput_Update(float dt);
 void NameInput_Render(void);
-void ExSelect_Update(float dt);
-void ExSelect_SetStation(int station, int startChannel);
-/* eeprom_x2.c — save do Exceed2 (PIUEXCEED2.INI, layout do PIU32.EXE) */
-void     Eeprom2_Load(void);
-void     Eeprom2_Save(void);
-uint8_t* Eeprom2_Data(void);
-uint8_t  Eeprom2_Language(void);
-bool     Eeprom2_SongOff(int i);
-void     Eeprom2_CountPlay(int i);
-bool     Eeprom2_CanonUnlocked(void);
-void     Eeprom2_SetCanonUnlocked(void);   /* Exceed2: [0x484FB4] e argumento do "SELECT" */
-void ExSelect_Render(void);
+void Select_Update(float dt);
+void Select_SetStation(int station, int startChannel);
+/* old_save.c — save do Exceed2 (PIUEXCEED2.INI, layout do PIU32.EXE) */
+void     OldSave_Load(void);
+void     OldSave_Save(void);
+uint8_t* OldSave_Data(void);
+uint8_t  OldSave_Language(void);
+bool     OldSave_SongOff(int i);
+void     OldSave_CountPlay(int i);
+bool     OldSave_CanonUnlocked(void);
+void     OldSave_SetCanonUnlocked(void);   /* Exceed2: [0x484FB4] e argumento do "SELECT" */
+void Select_Render(void);
 void Gamestate_UpdateMenu(float dt);
 extern bool g_cdLoaded;
 void Gamestate_UpdateSongSelect(float dt);

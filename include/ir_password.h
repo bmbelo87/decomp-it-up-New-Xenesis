@@ -15,7 +15,7 @@ extern const unsigned char g_irMixTable[IR_MIX_ROWS][IR_MIX_COLS];
 
 typedef struct {
     uint32_t score;
-    uint8_t  course[4];   /* índice em g_exSongs (7 bits) */
+    uint8_t  course[4];   /* índice em g_songTable (7 bits) */
     uint16_t checksum;    /* 12 bits */
 } IrData;
 

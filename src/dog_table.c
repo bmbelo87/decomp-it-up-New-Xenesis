@@ -4,9 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-typedef struct { uint8_t q[16]; uint32_t r; } ZeroDogEntry;
+typedef struct { uint8_t q[16]; uint32_t r; } DogEntry;
 
-static const ZeroDogEntry g_zeroDog[778] = {
+static const DogEntry g_dogTable[778] = {
     {{0x00,0x28,0x39,0x18,0x32,0xEF,0x07,0x81,0xC0,0x32,0xBD,0x28,0xB1,0xE9,0x3F,0xEE}, 0xC5EBEB0Eu},
     {{0x00,0x65,0x2E,0x17,0xFF,0x0D,0x83,0x6D,0x39,0xE9,0x8E,0xB2,0x7F,0x18,0x42,0x15}, 0xC797C23Cu},
     {{0x00,0x78,0xB7,0x3A,0x60,0x8F,0x10,0x95,0x5A,0xBC,0x77,0xD4,0x83,0xD2,0xC5,0x79}, 0x56CE37C2u},
@@ -787,12 +787,12 @@ static const ZeroDogEntry g_zeroDog[778] = {
     {{0xFF,0xB0,0x2E,0x33,0x18,0x3A,0x51,0xC7,0xA4,0x00,0x00,0xF4,0xAD,0x74,0x39,0xD2}, 0xA5C43A9Du},
 };
 
-static int zd_cmp(const void* a, const void* b) { return memcmp(a, ((const ZeroDogEntry*)b)->q, 16); }
+static int zd_cmp(const void* a, const void* b) { return memcmp(a, ((const DogEntry*)b)->q, 16); }
 
 /* Retorna 1 e preenche *resp se a consulta estiver na tabela. */
-int ZeroDog_Convert16(const uint8_t* q, uint32_t* resp) {
-    const ZeroDogEntry* e = (const ZeroDogEntry*)bsearch(q, g_zeroDog, sizeof(g_zeroDog) / sizeof(g_zeroDog[0]),
-                                                       sizeof(g_zeroDog[0]), zd_cmp);
+int Dog_Convert16(const uint8_t* q, uint32_t* resp) {
+    const DogEntry* e = (const DogEntry*)bsearch(q, g_dogTable, sizeof(g_dogTable) / sizeof(g_dogTable[0]),
+                                                       sizeof(g_dogTable[0]), zd_cmp);
     if (!e) return 0;
     *resp = e->r;
     return 1;

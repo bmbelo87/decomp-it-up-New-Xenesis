@@ -401,10 +401,10 @@ static void svcRenderMain(void)
  * Extra do port (o original só tem o título SETUP_RESTRICT_TITLE e a tabela
  * SETUP_RESTRICT, que não existe nos scripts). Uma linha por música com nível,
  * "ON" = aparece no ARCADE STATION / SPECIAL ZONE. Guardado em restrict.dat
- * (1 byte por índice de g_exSongs, 1 = desligada). TEST move, SERVICE troca;
+ * (1 byte por índice de g_songTable, 1 = desligada). TEST move, SERVICE troca;
  * a última linha é EXIT e grava. */
 #define RS_ROWS 16
-static uint8_t g_rsOff[EX_SONG_COUNT];
+static uint8_t g_rsOff[SONG_TABLE_COUNT];
 static int     g_rsLoaded;
 
 static void rsLoad(void)
@@ -426,10 +426,10 @@ static void rsSave(void)
 bool NxRestrict_IsOff(int songIdx)
 {
     rsLoad();
-    return songIdx >= 0 && songIdx < EX_SONG_COUNT && g_rsOff[songIdx] != 0;
+    return songIdx >= 0 && songIdx < SONG_TABLE_COUNT && g_rsOff[songIdx] != 0;
 }
 
-static int rsHasLevel(const ExceedSong* e)
+static int rsHasLevel(const TrackEntry* e)
 {
     int d;
     for (d = 0; d < 5; d++) if (e->level[d] >= 0) return 1;
@@ -438,14 +438,14 @@ static int rsHasLevel(const ExceedSong* e)
 
 static void svcRenderRestrict(void)
 {
-    static int list[EX_SONG_COUNT];
+    static int list[SONG_TABLE_COUNT];
     char buf[96];
     int n = 0, i, top;
     uint32_t hit = svcBitsHit();
 
     rsLoad();
-    for (i = 0; i < EX_SONG_COUNT; i++)
-        if (g_exSongs[i].id && rsHasLevel(&g_exSongs[i])) list[n++] = i;
+    for (i = 0; i < SONG_TABLE_COUNT; i++)
+        if (g_songTable[i].id && rsHasLevel(&g_songTable[i])) list[n++] = i;
 
     svcColor(SVC_NORMAL);
     svcText(276.0f, 428.0f, "RESTRICTION");
@@ -458,7 +458,7 @@ static void svcRenderRestrict(void)
         svcColorFor(i, g_svcCursor);
         if (i == n) { svcText(96.0f, y, "EXIT"); continue; }
         {
-            const ExceedSong* e = &g_exSongs[list[i]];
+            const TrackEntry* e = &g_songTable[list[i]];
             snprintf(buf, sizeof(buf), "%X  %.40s", (unsigned)e->id, e->titleEn ? e->titleEn : "");
             svcText(96.0f, y, buf);
             if (!g_rsOff[list[i]]) svcColor(SVC_SUCCESS);
@@ -1260,8 +1260,8 @@ static void svcRenderSoundTest(void)
     if (g_svcAudioIdx < 0) svcText(372.0f, 352.0f, "#--");
     else { snprintf(buf, sizeof(buf), "#%02d", g_svcAudioIdx); svcText(372.0f, 352.0f, buf); }
 
-    if (g_svcAudioIdx >= 0 && g_svcAudioIdx < EX_SONG_COUNT && BGM_IsPlaying()) {
-        const ExceedSong* e = &g_exSongs[g_svcAudioIdx];
+    if (g_svcAudioIdx >= 0 && g_svcAudioIdx < SONG_TABLE_COUNT && BGM_IsPlaying()) {
+        const TrackEntry* e = &g_songTable[g_svcAudioIdx];
         svcColor(SVC_PALETTE[2]);
         svcText(180.0f, 232.0f, "Now Playing...");
         svcColor(SVC_PALETTE[3]);
@@ -1276,9 +1276,9 @@ static void svcRenderSoundTest(void)
     } else if (hit == SVC_BIT_SERVICE) {
         if (g_svcCursor == 0) {
             g_svcAudioIdx++;
-            if (g_svcAudioIdx >= EX_SONG_COUNT) g_svcAudioIdx = 0;
+            if (g_svcAudioIdx >= SONG_TABLE_COUNT) g_svcAudioIdx = 0;
             BGM_Stop();
-            snprintf(buf, sizeof(buf), "%s/AUDIO/%X.AUD", g_game.currentDirectory, (unsigned)g_exSongs[g_svcAudioIdx].id);
+            snprintf(buf, sizeof(buf), "%s/AUDIO/%X.AUD", g_game.currentDirectory, (unsigned)g_songTable[g_svcAudioIdx].id);
             if (BGM_LoadAUDDirect(buf)) BGM_Play(false);
         } else {
             BGM_Stop();

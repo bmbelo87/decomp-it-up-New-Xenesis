@@ -81,8 +81,8 @@ static void drawRow(int k, float y) {
 
 void Highscore_Enter(void) {
     char path[MAX_PATH];
-    /* era (Exceed2): ranking da imagem do eeprom_x2.c (PIUEXCEED2.INI, +0x74B/+0x79B):
-     *     memcpy(g_eeprom, Eeprom2_Data(), sizeof(g_eeprom));
+    /* era (Exceed2): ranking da imagem do old_save.c (PIUEXCEED2.INI, +0x74B/+0x79B):
+     *     memcpy(g_eeprom, OldSave_Data(), sizeof(g_eeprom));
      * NX: o ranking é o top 20 do SETTINGS/RANK.DAT (nx_rank.c), o mesmo que a
      * NAMEINPUT grava. Antes esta tela mostrava a tabela do Exceed2, que a NX nunca
      * atualizava. Os campos +0x74B/+0x79B continuam sendo o formato lido abaixo. */

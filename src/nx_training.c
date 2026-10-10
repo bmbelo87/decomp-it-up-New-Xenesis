@@ -129,7 +129,7 @@ static void startLesson(void) {
     g_nxMods.skin = -1;
     Log_Print("TRAINING: RUN T%02d%d -%c -> %X (nível %d), corações %d\n", L + 1, P + 1, diff ? 'd' : 'n',
               (unsigned)id, level, g_game.nxHearts);
-    if (!id || !ExSelect_StartMission((int)id, diff, level, s_joined)) {
+    if (!id || !Select_StartMission((int)id, diff, level, s_joined)) {
         Log_Print("TRAINING: chart %X não existe\n", (unsigned)id);
         Game_ChangeState(STATE_GAMEOVER_ENTER);
     } else

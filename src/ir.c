@@ -18,8 +18,8 @@
 #define IR_START_LEN  0x3C
 #define IR_TIME_LIMIT 0x708
 
-uint32_t g_exIrTotal[2];
-uint8_t  g_exIrCourse[4];
+uint32_t g_irTotal[2];
+uint8_t  g_irCourse[4];
 
 static int  g_bfontTex = -1;
 static int  g_t;
@@ -32,13 +32,13 @@ static char g_code[IR_CODE_LEN + 1];
 void IR_RecordStage(int stage, int songIndex, const uint32_t score[2])
 {
     if (stage == 0) {
-        memset(g_exIrTotal, 0, sizeof(g_exIrTotal));
-        memset(g_exIrCourse, 0, sizeof(g_exIrCourse));
+        memset(g_irTotal, 0, sizeof(g_irTotal));
+        memset(g_irCourse, 0, sizeof(g_irCourse));
     }
     if (stage < 0 || stage > 3) return;
-    g_exIrCourse[stage] = (uint8_t)songIndex;   /* (unsigned char)m_PlayOrder[i] */
-    g_exIrTotal[0] += score[0];
-    g_exIrTotal[1] += score[1];
+    g_irCourse[stage] = (uint8_t)songIndex;   /* (unsigned char)m_PlayOrder[i] */
+    g_irTotal[0] += score[0];
+    g_irTotal[1] += score[1];
 }
 
 /* 0x41E63C / 0x41E6EC: mesma fonte do highscore (bfont.tga, grade 8x8) */
@@ -87,10 +87,10 @@ static void IR_Enter(void)
     if (BGM_LoadAUDDirect(path)) BGM_Play(true);
 
     g_player = (g_game.activePlayerMask & 1) ? 0 : 1;
-    IR_Encode(g_code, g_exIrTotal[g_player], g_exIrCourse);
+    IR_Encode(g_code, g_irTotal[g_player], g_irCourse);
     Log_Print("IR: %dP senha %s (total %u, cursos %d %d %d %d)\n", g_player + 1, g_code,
-              (unsigned)g_exIrTotal[g_player], g_exIrCourse[0], g_exIrCourse[1],
-              g_exIrCourse[2], g_exIrCourse[3]);
+              (unsigned)g_irTotal[g_player], g_irCourse[0], g_irCourse[1],
+              g_irCourse[2], g_irCourse[3]);
 
     g_t = 0;
     g_phase = 0;

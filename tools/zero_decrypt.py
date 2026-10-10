@@ -88,7 +88,7 @@ def mov3(path, outdir):  # piu 0x80a30e0 (abre) / 0x80a3380 (le)
     head = open(out, "rb").read(4)
     print(f"{os.path.basename(path)}: MOV3 nome interno {name} -> {head.hex()}")
 
-ENC1_TABLE = os.path.join(os.path.dirname(DOG_KEY), "zero_enc1_table.bin")  # piu 0x8103940
+ENC1_TABLE = os.path.join(os.path.dirname(DOG_KEY), "enc1_table.bin")  # piu 0x8103940
 
 def enc1(buf):  # piu 0x80a42e0 / 0x80a4010
     """hdr[0x86]; tamanho = u32@0x7E ^ 0xCCBB; pula u32@0x82; u32 semente (Adler-32);
