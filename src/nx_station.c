@@ -50,7 +50,16 @@ static BGALayerSrc s_text[4];    /* +0x48..+0x54: COMMON 53, 52, 54, 55 */
 static BGALayerSrc s_bar[4];     /* +0x58/+0x60/+0x68/+0x70: COMMON 9, 1, 8, 7 (channel4/1/3/2, 0x808ac60..0x808ad1d) */
 static BGALayerSrc s_name[4];    /* +0x5c/+0x64/+0x6c/+0x74: COMMON 81, 65, 80, 66 */
 static BGALayerSrc s_digit[10];  /* +0x10..: COMMON 82, 89..97 */
+static BGALayerSrc s_only[2];    /* +0x78 / +0x7c: COMMON 79 (T-only), 78 (W-only) */
 static BGALayerSrc s_arro[4];    /* +0x84..+0x90: ARRO 18..21 */
+
+/* 0x808af2a / 0x808bafc: 2 jogadores ou EVENT -> cards de TRAINING e WORLD viram "only" */
+static bool singleOnly(void) { return (s_joined & 3) == 3 || g_game.svcGameMode == 1; }
+static void onlyCards(void) {
+    if (!singleOnly()) return;
+    s_card[0] = s_only[0];
+    s_card[2] = s_only[1];
+}
 
 static int st(int k) { return ((s_st + k) % 4 + 4) % 4; }
 
@@ -109,6 +118,8 @@ void NxStation_Enter(void) {
         ok &= BGA_GetLayerSrc(NS_COMMON, k_name[i], &s_name[i]);
         ok &= BGA_GetLayerSrc(NS_ARRO, 18 + i, &s_arro[i]);
     }
+    ok &= BGA_GetLayerSrc(NS_COMMON, 79, &s_only[0]);
+    ok &= BGA_GetLayerSrc(NS_COMMON, 78, &s_only[1]);
     ok &= BGA_GetLayerSrc(NS_COMMON, 82, &s_digit[0]);
     for (int i = 1; i < 10; i++) ok &= BGA_GetLayerSrc(NS_COMMON, 88 + i, &s_digit[i]);
     if (!ok) Log_Print("NXSTATION: alguma camada de origem não existe\n");
@@ -142,6 +153,7 @@ void NxStation_Enter(void) {
     for (size_t i = 0; i < sizeof(k_c) / sizeof(k_c[0]); i++) BGA_SceneReset(NS_COMMON, k_c[i]);
     BGA_SceneReset(NS_ARRO, "arro start");
     applyStation();
+    onlyCards();
     cards(0);
     snd(SS_STATION);
     Log_Print("NXSTATION: estação %d, P%s\n", s_st, (s_joined & 3) == 3 ? "1+P2" : (s_joined & 2) ? "2" : "1");
@@ -168,6 +180,8 @@ static void playerInput(int p) {   /* 0x808ba00 */
             Coin_ConsumeCredit();
             s_joined |= 1u << p;
             snd(SS_JOIN);
+            onlyCards();
+            cards(s_anim);
         }
         return;
     }
@@ -178,8 +192,10 @@ static void playerInput(int p) {   /* 0x808ba00 */
     if (Input_IsPadHit(p, PAD_C)) {
         if (s_confirmed) { s_time = 0; snd(SS_SELECT); return; }
         /* 0x808bbe3: TRAINING/WORLD com 2 jogadores -> EFF_WRONG */
-        if ((s_st == 0 || s_st == 2) && (s_joined & 3) == 3) snd(SS_WRONG);
-        else snd(SS_PUSH);
+        /* era: tocava EFF_WRONG mas confirmava e saía como ARCADE.
+         * 0x808bbec..0x808bc37: com 2 jogadores ou EVENT só toca o EFF_WRONG, sem confirmar. */
+        if ((s_st == 0 || s_st == 2) && singleOnly()) { snd(SS_WRONG); return; }
+        snd(SS_PUSH);
         s_confirmed = true;
         if (s_anim != 0) { s_anim = 0; applyStation(); cards(0); }
         BGA_SceneReset(NS_COMMON, "screen click");
