@@ -128,7 +128,7 @@ static int wrap(int i) { if (s_count <= 0) return 0; i %= s_count; return i < 0 
  * ------------------------------------------------------------------------- */
 enum { NC_DL = 7, NC_UL = 8, NC_C = 9, NC_UR = 10, NC_DR = 11 };
 typedef struct { int n; uint8_t b[11]; } NxCode;
-static const NxCode k_nxCodes[23] = {
+static const NxCode k_nxCodes[24] = {   /* era 23 */
     { 9, { 11,11,11,7,11,8,10,7,9 } },    /*  0 skin 2 (OR)   */
     { 9, { 8,10,7,9,7,11,11,10,10 } },    /*  1 skin 6 (CANO) */
     { 9, { 11,11,11,7,11,8,10,7,8 } },    /*  2 skin 7 (CARD) */
@@ -156,6 +156,10 @@ static const NxCode k_nxCodes[23] = {
     { 9, { 8,10,7,9,7,11,11,10,7 } },     /* 20 791513391 skin 3 (EZ) */
     { 9, { 8,10,7,9,7,11,11,10,11 } },    /* 21 791513393 skin 5 (MELODY) */
     { 9, { 8,10,7,9,7,11,11,10,8 } },     /* 22 791513397 skin 4 (SLIME) */
+    /* Extra do port (pedido do usuário): +0.5X somado à velocidade fixa (1.5X, 2.5X...).
+     * A AC (12) termina com estes mesmos cinco passos; como vem antes na tabela,
+     * quem digita a AC inteira continua pegando a AC. */
+    { 5, { 8,8,10,10,9 } },               /* 23 UL UL UR UR C: +0.5X */
 };
 #define NX_HIST 25
 static uint8_t  s_hist[2][NX_HIST];
@@ -227,7 +231,7 @@ static int pushCode(int p, int button) {   /* 0x804d200 + 0x804d240 */
     s_hist[p][s_histLen[p]++] = (uint8_t)button;
     /* GAME STYLE (Service Menu): VANILLA aceita só os códigos do piu (0..18);
      * MODDED aceita também os extras do port (19..22 e o TestBGA abaixo). */
-    int nCodes = g_game.gameStyleModded ? 23 : 19;
+    int nCodes = g_game.gameStyleModded ? 24 : 19;   /* era 23 : 19 */
     for (int k = 0; k < nCodes; k++) {   /* era: k < 23 sempre */
         int n = k_nxCodes[k].n;
         if (s_histLen[p] >= n && memcmp(s_hist[p] + s_histLen[p] - n, k_nxCodes[k].b, (size_t)n) == 0) {
@@ -251,28 +255,81 @@ static int pushCode(int p, int button) {   /* 0x804d200 + 0x804d240 */
 /* Ícone de cada posição a partir do estado. O original guarda subícones por
  * posição (0x808e1d0, capacidades 2,2,1,3,2); aqui mostra o que estiver ligado,
  * por prioridade (hipótese de exibição). */
+/* era: um ícone por posição, escolhido por prioridade (hipótese):
+ *     ic[0] = velocidade, senão DC, senão AC;  ic[1] = V, senão NS, senão FL, senão FD;
+ *     ic[3] = X, senão NX, senão UA;           ic[4] = RS, senão M, senão RG.
+ * O piu guarda vários subícones por posição (objeto de 0x58 bytes: lista em +4,
+ * ativos em +0x1c, atual em +0x20, instante da última troca em +0x14) e, no desenho
+ * (0x808e130), com mais de um ativo troca para o próximo a cada 3000 ms (0xBB8).
+ * É por isso que dois códigos da mesma posição (ex.: FD e V) se alternam na tela.
+ * Agora cada posição tem a lista do que está ligado e alterna como no original. */
+#define POS_MAX 4
+static int      s_posList[2][5][POS_MAX];
+static int      s_posN[2][5], s_posCur[2][5];
+static uint32_t s_posT[2][5];
+static bool     s_nxHalf[2];   /* extra do port (MODDED): +0.5X somado à velocidade fixa */
+
+static void posShow(int p, int k, bool enter) {
+    int ic = s_posList[p][k][s_posCur[p][k]];
+    s_posIcon[p][k] = ic;
+    if (!s_cmdOk) return;
+    BGA_SetLayerSrc(NB_COMMAND, p * 5 + k + 1, &s_cmdIcon[ic]);
+    if (enter) {
+        char sc[24];
+        snprintf(sc, sizeof(sc), "%dp-%dcommand", p + 1, k + 1);
+        BGA_SceneReset(NB_COMMAND, sc);   /* 0x8058b90: entra de novo */
+    }
+}
+
 static void cmdIcons(void) {
     for (int p = 0; p < 2; p++) {
         unsigned f = s_nxFlags[p], v = s_nxSpeed[p];
-        int ic[5] = { -1, -1, -1, -1, -1 };
-        if (v == 8) ic[0] = 11; else if (v == 0xc) ic[0] = 12; else if (v == 0x10) ic[0] = 13;
-        else if (v == 0x20) ic[0] = 14; else if (v == 0x100) ic[0] = 32; else if (v == 0x200) ic[0] = 19;
-        else if (f & 0x200) ic[0] = 18; else if (f & 0x400) ic[0] = 15;
-        if (f & 1) ic[1] = 35; else if (f & 2) ic[1] = 28; else if (f & 4) ic[1] = 21; else if (f & 8) ic[1] = 20;
-        ic[2] = s_nxSkinIcon[p];
-        if (f & 0x1000) ic[3] = 36; else if (f & 0x2000) ic[3] = 29; else if (f & 0x80) ic[3] = 34;
-        if (f & 0x20) ic[4] = 31; else if (f & 0x10) ic[4] = 24; else if (f & 0x100) ic[4] = 22;
+        int L[5][POS_MAX], n[5] = { 0, 0, 0, 0, 0 };
+        #define ADDIC(k, icon) do { int ic_ = (icon); \
+            if (ic_ >= 0 && n[k] < POS_MAX && (ic_ <= 36 || s_cmdIconOk[ic_])) L[k][n[k]++] = ic_; } while (0)
+        /* posição 1: velocidade (2X 3X 4X 5X 6X 8X RV EW), +0.5X, AC/DC */
+        ADDIC(0, v == 8 ? 11 : v == 0xc ? 12 : v == 0x10 ? 13 : v == 0x14 ? 39 : v == 0x18 ? 40 :
+                 v == 0x20 ? 14 : v == 0x100 ? 32 : v == 0x200 ? 19 : -1);
+        if (s_nxHalf[p] && v < 0x100) ADDIC(0, 38);
+        ADDIC(0, (f & 0x200) ? 18 : (f & 0x400) ? 15 : -1);
+        /* posição 2: V / NS / FL (excluem-se) e FD */
+        ADDIC(1, (f & 1) ? 35 : (f & 2) ? 28 : (f & 4) ? 21 : -1);
+        if (f & 8) ADDIC(1, 20);
+        /* posição 3: skin */
+        ADDIC(2, s_nxSkinIcon[p]);
+        /* posição 4: X, NX, UA */
+        if (f & 0x1000) ADDIC(3, 36);
+        if (f & 0x2000) ADDIC(3, 29);
+        if (f & 0x80)   ADDIC(3, 34);
+        /* posição 5: RS / M (excluem-se) e RG */
+        ADDIC(4, (f & 0x20) ? 31 : (f & 0x10) ? 24 : -1);
+        if (f & 0x100) ADDIC(4, 22);
+        #undef ADDIC
         for (int k = 0; k < 5; k++) {
-            if (ic[k] == s_posIcon[p][k]) continue;
-            s_posIcon[p][k] = ic[k];
-            if (ic[k] < 0 || !s_cmdOk) continue;
-            if (ic[k] > 36 && !s_cmdIconOk[ic[k]]) { s_posIcon[p][k] = -1; continue; }
-            BGA_SetLayerSrc(NB_COMMAND, p * 5 + k + 1, &s_cmdIcon[ic[k]]);
-            char sc[24];
-            snprintf(sc, sizeof(sc), "%dp-%dcommand", p + 1, k + 1);
-            BGA_SceneReset(NB_COMMAND, sc);   /* 0x8058b90: entra de novo */
+            bool same = (n[k] == s_posN[p][k]) && !(n[k] > 0 && s_posIcon[p][k] < 0);
+            for (int i = 0; same && i < n[k]; i++) if (L[k][i] != s_posList[p][k][i]) same = false;
+            if (same) continue;
+            s_posN[p][k] = n[k];
+            for (int i = 0; i < n[k]; i++) s_posList[p][k][i] = L[k][i];
+            s_posCur[p][k] = 0;
+            s_posT[p][k] = timeGetTime();
+            if (n[k] == 0) s_posIcon[p][k] = -1;
+            else posShow(p, k, true);
         }
     }
+}
+
+/* todo quadro: com mais de um ícone na posição, passa ao próximo a cada 3 s (0x808e130) */
+static void cmdIconsTick(void) {
+    uint32_t now = timeGetTime();
+    for (int p = 0; p < 2; p++)
+        for (int k = 0; k < 5; k++) {
+            if (s_posN[p][k] < 2 || s_posIcon[p][k] < 0) continue;
+            if (now - s_posT[p][k] <= 3000) continue;
+            s_posCur[p][k] = (s_posCur[p][k] + 1) % s_posN[p][k];
+            s_posT[p][k] = now;
+            posShow(p, k, false);
+        }
 }
 
 static void globalFlag(unsigned bit) {   /* liga/desliga nos dois jogadores */
@@ -302,6 +359,12 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
     case 14: *f = (*f & 0x10) ? (*f & ~0x30u) : ((*f & ~0x30u) | 0x10); break;
     case 15: *f = (*f & 4) ? (*f & ~7u) : ((*f & ~7u) | 4); break;
     case 16: /* 0x807c66b: >0x1f desliga, >0xf 8X, >0xb 4X, >7 3X, senão 2X */
+        /* extra do port (MODDED): 5X e 6X entre o 4X e o 8X (unidades 0x14 e 0x18,
+         * as mesmas do World Tour; ícones wor-5X / wor-6X do COMMAND.DAT) */
+        if (g_game.gameStyleModded && (*v & 0xff) > 0xf && (*v & 0xff) <= 0x1f) {
+            *v = ((*v & 0xff) > 0x17) ? 0x20 : ((*v & 0xff) > 0x13) ? 0x18 : 0x14;
+            break;
+        }
         if ((*v & 0xff) > 0x1f) *v = 4;
         else if ((*v & 0xff) > 0xf) *v = 0x20;
         else if ((*v & 0xff) > 0xb) *v = 0x10;
@@ -317,6 +380,7 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
               * O original volta o NOTESKIN para "0" (SKIN00); aqui volta para a
               * skin padrão do projeto (SKIN08, informado pelo usuário). */
         *f = 0; *v = 4;
+        s_nxHalf[p] = false;
         s_nxFlags[0] &= ~0x3080u; s_nxFlags[1] &= ~0x3080u;
         Skin_SetIndexP(p, 8);   /* era: Skin_SetIndex(8) — o código 18 zera só o jogador */
         s_nxSkinIcon[p] = -1;
@@ -330,6 +394,9 @@ static void applyCode(int p, int code) {   /* 0x807c050 */
         s_nxSkinIcon[p] = k_extraIcon[code - 19];
         break;
     }
+    case 23:   /* extra do port (MODDED): UL UL UR UR C liga/desliga o +0.5X */
+        s_nxHalf[p] = !s_nxHalf[p];
+        break;
     default: return;
     }
     cmdIcons();
@@ -365,6 +432,7 @@ void NxCmd_Begin(void) {
     if (g_game.stageCount == 3) {
         s_nxFlags[0] = s_nxFlags[1] = 0;
         s_nxSpeed[0] = s_nxSpeed[1] = 4;
+        s_nxHalf[0] = s_nxHalf[1] = false;
         s_nxSkinIcon[0] = s_nxSkinIcon[1] = -1;   /* a skin volta à padrão no Menu_ResetState */
     }
     s_histLen[0] = s_histLen[1] = 0;
@@ -373,6 +441,7 @@ void NxCmd_Begin(void) {
     if (!s_cmdOk) Log_Print("TRAINING: ícones do COMMAND.DAT faltando\n");
     s_cmdIconOk[48] = BGA_GetLayerSrc(NB_COMMAND, 48, &s_cmdIcon[48]);
     s_cmdIconOk[51] = BGA_GetLayerSrc(NB_COMMAND, 51, &s_cmdIcon[51]);
+    for (int i = 38; i <= 40; i++) s_cmdIconOk[i] = BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);   /* wor-05X, wor-5X, wor-6X */
     for (int p = 0; p < 2; p++) for (int k = 0; k < 5; k++) s_posIcon[p][k] = -1;
     cmdIcons();
 }
@@ -386,6 +455,7 @@ int NxCmd_Push(int p, int button) {
 
 void NxCmd_Draw(unsigned joined) {   /* 0x807bf40 por jogador */
     if (!s_cmdOk) return;
+    cmdIconsTick();
     for (int p = 0; p < 2; p++) {
         if (!(joined & (1u << p))) continue;
         for (int k = 0; k < 5; k++) {
@@ -398,11 +468,22 @@ void NxCmd_Draw(unsigned joined) {   /* 0x807bf40 por jogador */
 }
 
 /* depois do Select_StartMission: modificadores e velocidade dos códigos */
+/* Extras do port (MODDED): velocidade em quartos para o gameplay (cmdSpeedNx, 4 = 1X)
+ * quando ela não cabe no multiplicador inteiro: 5X, 6X ou qualquer uma com +0.5X.
+ * 0 = usa o cmdSpeedMult de sempre. RV e EW ignoram o +0.5X. */
+static int speedQuarters(int p) {
+    unsigned v = s_nxSpeed[p];
+    if (v >= 0x100) return 0;
+    int u = (int)(v & 0xff);
+    if (s_nxHalf[p]) return u + 2;
+    return (u == 0x14 || u == 0x18) ? u : 0;
+}
+
 void NxCmd_ToGame(void) {
     cmdToGame();
     for (int p = 0; p < 2; p++) {
         unsigned v = s_nxSpeed[p];
-        g_game.cmdSpeedNx[p] = 0;
+        g_game.cmdSpeedNx[p] = speedQuarters(p);   /* era: 0 */
         g_game.cmdSpeedMult[p] = v == 8 ? 2 : v == 0xc ? 3 : v == 0x10 ? 4 : v == 0x20 ? 8 : 1;
         g_game.cmdRandomVelocity[p] = (v == 0x100);
     }
@@ -741,6 +822,7 @@ void NxSelect_Enter(void) {
     if (!s_cmdOk) Log_Print("NXSELECT: ícones do COMMAND.DAT faltando\n");
     s_cmdIconOk[48] = BGA_GetLayerSrc(NB_COMMAND, 48, &s_cmdIcon[48]);
     s_cmdIconOk[51] = BGA_GetLayerSrc(NB_COMMAND, 51, &s_cmdIcon[51]);
+    for (int i = 38; i <= 40; i++) s_cmdIconOk[i] = BGA_GetLayerSrc(NB_COMMAND, i, &s_cmdIcon[i]);   /* wor-05X, wor-5X, wor-6X */
     s_kcalLblOk = BGA_GetLayerSrc(NB_COMMON, 48, &s_kcalLbl);   /* 0x807a3c7: kcal02.spr */
     {   /* 0x8079455: BGA/KFONT.DAT -> kfont.tga (dígitos da kcal) */
         char kp[MAX_PATH];
@@ -805,6 +887,7 @@ void NxSelect_Enter(void) {
         s_diff[0] = s_diff[1] = 0;
         s_nxFlags[0] = s_nxFlags[1] = 0;
         s_nxSpeed[0] = s_nxSpeed[1] = 4;
+        s_nxHalf[0] = s_nxHalf[1] = false;
         s_nxSkinIcon[0] = s_nxSkinIcon[1] = -1;   /* a skin volta à padrão no Menu_ResetState */
     }
     s_histLen[0] = s_histLen[1] = 0;
@@ -923,21 +1006,32 @@ static void startGame(void) {
         s_started = false;
         g_game.nxHearts += heartCost(e);   /* extra do port: não começou, devolve */
     }
-    else
+    else {
         cmdToGame();
+        /* 5X, 6X e +0.5X (extras): o Select_StartSong só passa multiplicador inteiro */
+        for (int p = 0; p < 2; p++) g_game.cmdSpeedNx[p] = speedQuarters(p);
+    }
 }
 
 static void playerInput(int p) {
     bool joined = (s_joined & (1u << p)) != 0;
+    bool codeC = false;   /* o CENTER deste quadro fechou um código */
     if (joined) {   /* cada painel vai para o histórico de códigos (0x804d200) */
         static const PadButton k_pad[5] = { PAD_DL, PAD_UL, PAD_C, PAD_UR, PAD_DR };
         for (int k = 0; k < 5; k++)
             if (Input_IsPadHit(p, k_pad[k])) {
                 int code = pushCode(p, NC_DL + k);
-                if (code >= 0) { s_ready = false; sfx(SFX_HIDDEN); applyCode(p, code); }
+                if (code >= 0) {
+                    s_ready = false; sfx(SFX_HIDDEN); applyCode(p, code);
+                    if (k_pad[k] == PAD_C) codeC = true;
+                }
             }
     }
-    if (Input_IsPadHit(p, PAD_C)) {
+    /* era: if (Input_IsPadHit(p, PAD_C)) — o CENTER que fechava um código também caía
+     * aqui e já deixava a música em "CENTER STEP" (pronta para confirmar). Pedido do
+     * usuário: esse CENTER pertence ao código; o estado de confirmação só vem com um
+     * CENTER dado depois, fora da sequência. */
+    if (Input_IsPadHit(p, PAD_C) && !codeC) {
         if (!joined) {   /* 0x807e420 */
             /* era: ...; buildList(); fixDiff(); carousel(0); levelsAll(); }
              * 0x807e420: com o 2º jogador o painel passa para 1P/2P — barras do canal
@@ -1118,6 +1212,7 @@ void NxSelect_Render(void) {
     }
 
     /* ícones dos códigos (COMMAND.DAT) */
+    if (s_cmdOk) cmdIconsTick();
     if (s_cmdOk)
         for (int p = 0; p < 2; p++) {
             if (!(s_joined & (1u << p))) continue;

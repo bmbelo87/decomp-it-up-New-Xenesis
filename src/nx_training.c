@@ -257,13 +257,17 @@ static void playerInput(int p) {
      * 0x8080198..0x80801fb: código achado -> +0x1bc = 0 e 0x807c050. O som
      * EFF_HIDDEN_SELECTED só existe no bloco do P1 (0x80801ba); o P2 fica mudo. */
     static const PadButton k_pad[5] = { PAD_DL, PAD_UL, PAD_C, PAD_UR, PAD_DR };
+    bool codeC = false;   /* o CENTER deste quadro fechou um código */
     for (int k = 0; k < 5; k++)
         if (Input_IsPadHit(p, k_pad[k]) && NxCmd_Push(p, 7 + k) >= 0) {
             s_confirmed = false;
             /* era: if (p == 0) snd(TS_HIDDEN);  (0x80801ba só no P1) — pedido: toca para P1 e P2 */
             snd(TS_HIDDEN);
+            if (k_pad[k] == PAD_C) codeC = true;
         }
-    if (Input_IsPadHit(p, PAD_C)) {
+    /* era: if (Input_IsPadHit(p, PAD_C)) — ver nx_select.c playerInput: o CENTER que
+     * fecha um código não conta como confirmação */
+    if (Input_IsPadHit(p, PAD_C) && !codeC) {
         if (s_confirmed) { s_time = 0; snd(TS_SELECT); }
         else {
             s_confirmed = true;
