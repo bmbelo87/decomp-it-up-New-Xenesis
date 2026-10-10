@@ -988,6 +988,15 @@ static void playerInput(int p) {
 /* ---------------------------------------------------------------------------
  * Quadro (0x807aee0)
  * ------------------------------------------------------------------------- */
+/* Extra do port (pedido do usuário): os passos só valem depois que a tela terminou
+ * de entrar — animação do carrossel ("screen2 start"), faixa do canal ("channel
+ * start") e o 1 s em que nível, kcal e título ainda não aparecem (lateOk). No
+ * original os botões já valem no 1º quadro; pisar durante a entrada trocava de
+ * música ou confirmava com a tela ainda montando. */
+static bool inputReady(void) {
+    return lateOk() && BGA_SceneDone(NB_ARCADE, "screen2 start") && BGA_SceneDone(NB_COMMON, "channel start");
+}
+
 void NxSelect_Update(float dt) {
     if (g_game.nxGameMode == 2) { NxWorld_Update(dt); return; }
     if (g_game.nxGameMode == 3) { NxTraining_Update(dt); return; }
@@ -1025,13 +1034,16 @@ void NxSelect_Update(float dt) {
         if (!Input_IsPadDown(p, PAD_DL)) s_arroDL = "arroUL click";
         if (!Input_IsPadDown(p, PAD_DR)) s_arroDR = "arroUR click";
     }
+    bool ready = inputReady();   /* era: entradas lidas desde o 1º quadro */
     bool held = false;
     for (int p = 0; p < 2; p++)
-        if ((s_joined & (1u << p)) && (Input_IsPadDown(p, PAD_DL) || Input_IsPadDown(p, PAD_DR))) held = true;
+        if (ready && (s_joined & (1u << p)) && (Input_IsPadDown(p, PAD_DL) || Input_IsPadDown(p, PAD_DR))) held = true;
     if (!held) s_acc = 0x1f4;
 
-    playerInput(0);
-    playerInput(1);
+    if (ready) {
+        playerInput(0);
+        playerInput(1);
+    }
 
     /* 0x807af7f..0x807bc33: com DL/DR segurado (0x807e830), todo quadro refaz o
      * carrossel (0x807d820) e o canal (0x807d5a0) — o canal troca durante a rolagem.
