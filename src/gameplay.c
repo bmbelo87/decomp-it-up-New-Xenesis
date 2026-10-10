@@ -616,6 +616,13 @@ static int arrowAnimFrame(void)
  * Devolve o vão em linhas visuais (unidade de g_visualRow = divisão do bloco 0). */
 static double g_clkAnchor;          /* relógio do gameplay: âncora congelada */
 static bool   g_clkHave, g_clkLocked;
+static bool   g_rcActive = false;   /* relógio de desenho em uso (vsync) */
+static double g_rcSaved  = 0.0;     /* g_songTime da lógica, devolvido no End */
+static double g_rcAnchor;           /* âncora do desenho: segue g_clkAnchor aos poucos */
+static bool   g_rcHave;
+static double g_rcPrevSec;          /* presentSec do desenho anterior */
+static double g_rcShown;            /* tempo de música mostrado no desenho anterior */
+static bool   g_rcSeen;
 
 static double zeroDelayGapRows(int s)
 {
@@ -1211,6 +1218,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     g_chart = &g_playSong.charts[g_chartIdx];
     g_songTime = 0.0;
     g_clkHave = g_clkLocked = false;
+    g_rcHave = g_rcSeen = false;
     g_maxSongTime = 0.0;
     g_stagnantFrames = 0;
     g_lastPosMs = 0;
@@ -2823,12 +2831,67 @@ void Gameplay_Exit(void)
  * qualquer refresh. Só avança (nunca volta) e não mexe na âncora. */
 void Gameplay_RefreshClock(void)
 {
+    if (g_rcActive) return;
     if (g_game.state != STATE_GAMEPLAY || !g_songLoaded || !g_clkLocked) return;
     if (!BGM_IsDSActive() || g_stageBreakFreezeTimer >= 0.0f) return;
     double now;
     if (BGM_ClockAnchorSec(&now) < 0.0) return;
     double t = (now - g_clkAnchor) - (g_game.audioOffsetMs / 1000.0);
     if (t > g_songTime) g_songTime = t;
+}
+
+/* Com vsync: desenha com o relógio no instante do último swap (presentSec, no
+ * domínio do SDL_GetPerformanceCounter, em s) em vez do instante em que o
+ * desenho começou. O swap retorna alinhado ao vblank, então o intervalo entre
+ * leituras é sempre o período do monitor; lendo depois do Game_Update, o custo
+ * do update (0/1/2 passos, vídeo, log) entrava na posição das setas e elas
+ * trepidavam em máquina lenta mesmo a 60 fps. O g_songTime da lógica (usado no
+ * julgamento) é devolvido intacto pelo Gameplay_EndRenderClock. */
+bool Gameplay_BeginRenderClock(double presentSec)
+{
+    /* era: exigia g_clkLocked e usava g_clkAnchor direto. No 1º segundo a
+     * âncora da lógica ainda desce a cada callback (salto de alguns ms por vez)
+     * e o desenho só entrava neste relógio depois de travar: as setas davam uma
+     * travada no começo. Agora o desenho tem âncora própria, que parte do que
+     * já estava na tela e segue a da lógica a no máx. 2% da velocidade. */
+    if (g_game.state != STATE_GAMEPLAY || !g_songLoaded) return false;
+    double off = g_game.audioOffsetMs / 1000.0;
+    if (!g_clkHave || !BGM_IsDSActive() || g_stageBreakFreezeTimer >= 0.0f ||
+        BGM_ClockAnchorSec(NULL) < 0.0) {
+        /* Ainda no relógio da lógica: guarda o que vai para a tela. */
+        g_rcShown = g_songTime;
+        g_rcPrevSec = presentSec;
+        g_rcSeen = true;
+        g_rcHave = false;
+        return false;
+    }
+    double dtp = presentSec - g_rcPrevSec;
+    if (dtp < 0.0) dtp = 0.0; else if (dtp > 0.1) dtp = 0.1;
+    if (!g_rcHave) {
+        /* Continua de onde o desenho anterior parou. */
+        g_rcAnchor = g_rcSeen ? presentSec - off - (g_rcShown + dtp) : g_clkAnchor;
+        g_rcHave = true;
+    }
+    double d = g_clkAnchor - g_rcAnchor;
+    double maxStep = dtp * 0.02;
+    if (d > 0.1 || d < -0.1) g_rcAnchor = g_clkAnchor;   /* desvio real: reancora */
+    else if (d > maxStep)    g_rcAnchor += maxStep;
+    else if (d < -maxStep)   g_rcAnchor -= maxStep;
+    else                     g_rcAnchor = g_clkAnchor;
+    g_rcSaved = g_songTime;
+    g_songTime = (presentSec - g_rcAnchor) - off;
+    g_rcShown = g_songTime;
+    g_rcPrevSec = presentSec;
+    g_rcSeen = true;
+    g_rcActive = true;
+    return true;
+}
+
+void Gameplay_EndRenderClock(void)
+{
+    if (!g_rcActive) return;
+    g_songTime = g_rcSaved;
+    g_rcActive = false;
 }
 
 void Gameplay_Update(float dt)

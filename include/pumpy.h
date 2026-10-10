@@ -721,6 +721,8 @@ bool BGM_IsPlaying(void);
 uint32_t BGM_GetPositionMs(void);
 double BGM_ClockAnchorSec(double* nowSec);
 void Gameplay_RefreshClock(void);
+bool Gameplay_BeginRenderClock(double presentSec);
+void Gameplay_EndRenderClock(void);
 extern float g_drawAlphaMul;         /* texture.c: multiplica o alpha do Texture_DrawUV (FL) */
 extern bool g_renderTick;           /* bga.c: false no desenho extra entre passos de 60 Hz */   /* gameplay.c: relógio das setas no instante do desenho */
 double BGM_GetPositionMsF(void);

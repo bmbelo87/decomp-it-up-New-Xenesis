@@ -1028,6 +1028,8 @@ void Game_MainLoop(void) {
     double qpcHz = (double)SDL_GetPerformanceFrequency();
     uint64_t prevQpc = SDL_GetPerformanceCounter();
     uint64_t lastRenderQpc = prevQpc;
+    double presentSec = 0.0;      /* instante (s) do último swap, filtrado */
+    bool   presentValid = false;
 
     while (running) {
         if (!Window_ProcessMessages()) {
@@ -1089,9 +1091,32 @@ void Game_MainLoop(void) {
             g_renderTick = (steps > 0);
             uint64_t hz1 = SDL_GetPerformanceCounter();
             double movUpd = g_movieMs, logUpd = g_logMs;
+            /* era: Game_Render() direto; o relógio das setas era lido no começo
+             * do desenho, depois do Game_Update, e o custo do update virava
+             * tremor. Com vsync usa o instante do último swap (presentSec). */
+            bool rc = false;
+            if (g_game.vsync && presentValid && g_game.state == STATE_GAMEPLAY)
+                rc = Gameplay_BeginRenderClock(presentSec);
             Game_Render();       /* o swap com vsync bloqueia até o refresh */
+            if (rc) Gameplay_EndRenderClock();
             g_renderTick = true;
             uint64_t hz2 = SDL_GetPerformanceCounter();
+            /* Instante do swap, filtrado: perto do previsto (anterior + período)
+             * só corrige 10% do erro, para o intervalo ficar regular mesmo se o
+             * retorno do swap oscilar; longe (quadro perdido, vsync que não
+             * pegou) assume o valor medido. */
+            {
+                double tSwap = (double)hz2 / hzF;
+                double rr = (double)Window_GetRefreshRate();
+                double period = 1.0 / (rr > 0.0 ? rr : 60.0);
+                double pred = presentSec + period;
+                double err = tSwap - pred;
+                if (!presentValid || err > period * 0.5 || err < -period * 0.5)
+                    presentSec = tSwap;
+                else
+                    presentSec = pred + err * 0.1;
+                presentValid = true;
+            }
             double updMs = (double)(hz1 - hz0) * 1000.0 / hzF;
             double rndMs = (double)(hz2 - hz1) * 1000.0 / hzF;
             if (updMs + rndMs > 50.0 || elapsed > 50.0) {
