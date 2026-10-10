@@ -484,6 +484,8 @@ static void zDanceGradeEnter(void)
 }
 
 static void zPlay(int k) { if (g_zSnd[k] >= 0) Audio_Play(g_zSnd[k], false); }
+/* fim do Dance Grade: aplausos/vaias (EFF_RANK_x / _B) e os demais efeitos param junto */
+static void zStopAll(void) { if (!g_zSndInit) return; for (int k = 0; k < 14; k++) if (g_zSnd[k] >= 0) Audio_Stop(g_zSnd[k]); }
 
 /* devolve true quando a tela terminou */
 static bool zDanceGradeUpdate(int t, float dt)
@@ -793,6 +795,7 @@ void Result_Update(float dt) {
             Movie_Close();
             GameState ns = g_wgActive ? wgNext() : Result_GetNextState();
             BGM_Stop();
+            zStopAll();
             Resource_ClearBGA();
             Game_ChangeState(ns);
             return;

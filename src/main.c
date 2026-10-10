@@ -280,6 +280,22 @@ void Game_Init(HINSTANCE hInstance) {
         const char* as = getenv("PUMPY_AUTOSTATE");
         if (as && _stricmp(as, "SELECT") == 0) { Menu_ResetState(); Game_ChangeState(STATE_EXSELECT); }
         if (as && _stricmp(as, "STATION") == 0) Game_ChangeState(STATE_STATION);
+        /* PUMPY_AUTOSTATE=NXTEST: D02 NORMAL em autoplay (demo) com NX Mode, para testes */
+        if (as && _stricmp(as, "NXTEST") == 0) {
+            Menu_ResetState();
+            if (ExSelect_Run(0xD02, 3, 0)) { g_game.cmdNXMode[0] = g_game.cmdNXMode[1] = true; }
+        }
+        /* PUMPY_AUTOSTATE=NXTEST2: 2 jogadores, P1 NORMAL e P2 HARD (teste do chart por jogador) */
+        if (as && _stricmp(as, "NXTEST2") == 0) {
+            static const int sp[2] = { 1, 1 };
+            static const bool rv[2] = { false, false };
+            Menu_ResetState();
+            for (int i = 0; i < EX_SONG_COUNT; i++)
+                if (g_exSongs[i].id && g_exSongs[i].level[0] >= 0 && g_exSongs[i].level[1] >= 0 && !(g_exSongs[i].channel & 4)) {
+                    g_nxDiffIdx[0] = 0; g_nxDiffIdx[1] = 1;
+                    if (ExSelect_StartZero((int)g_exSongs[i].id, 0, 3, sp, rv)) break;
+                }
+        }
     }
     g_game.lastTime = timeGetTime();
 }

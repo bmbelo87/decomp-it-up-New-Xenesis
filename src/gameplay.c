@@ -1040,8 +1040,143 @@ static int sprTileCount(int startIdx) {
     return c;
 }
 
+/* NX2 (nx2src playengine.cpp:1330): cada CPlayer é um CStep e carrega o próprio
+ * STEP/<id>/<modo>.NX (m_StepMode[a]); só o relógio da música é comum. Aqui o
+ * chart e o que deriva dele ficam num contexto por jogador, trocado (ctxUse)
+ * antes de julgar/desenhar cada um. Com um chart só (g_ctxN == 1) nada muda. */
+typedef struct {
+    StepChart* chart;
+    int        chartIdx;
+    double     secondsPerRow, totalSongSeconds, chartDelay, baseBpm;
+    int        baseBeatSplit;
+    double*    visualRow;
+    int        visualRowCount;
+    int        lastNoteRow;
+    int        zRows;
+} GpChartCtx;
+static GpChartCtx g_ctx[2];
+static int g_ctxN = 1, g_ctxCur = 0;
+static int g_zRows;
+
+static void ctxSave(int i)
+{
+    g_ctx[i].chart = g_chart;               g_ctx[i].chartIdx = g_chartIdx;
+    g_ctx[i].secondsPerRow = g_secondsPerRow; g_ctx[i].totalSongSeconds = g_totalSongSeconds;
+    g_ctx[i].chartDelay = g_chartDelay;     g_ctx[i].baseBpm = g_baseBpm;
+    g_ctx[i].baseBeatSplit = g_baseBeatSplit;
+    g_ctx[i].visualRow = g_visualRow;       g_ctx[i].visualRowCount = g_visualRowCount;
+    g_ctx[i].lastNoteRow = g_lastNoteRow;   g_ctx[i].zRows = g_zRows;
+}
+
+static void ctxLoad(int i)
+{
+    g_chart = g_ctx[i].chart;               g_chartIdx = g_ctx[i].chartIdx;
+    g_secondsPerRow = g_ctx[i].secondsPerRow; g_totalSongSeconds = g_ctx[i].totalSongSeconds;
+    g_chartDelay = g_ctx[i].chartDelay;     g_baseBpm = g_ctx[i].baseBpm;
+    g_baseBeatSplit = g_ctx[i].baseBeatSplit;
+    g_visualRow = g_ctx[i].visualRow;       g_visualRowCount = g_ctx[i].visualRowCount;
+    g_lastNoteRow = g_ctx[i].lastNoteRow;   g_zRows = g_ctx[i].zRows;
+}
+
+static void ctxUse(int p)
+{
+    int i = (g_ctxN > 1 && p == 1) ? 1 : 0;
+    if (g_ctxN < 2 || i == g_ctxCur) return;
+    ctxSave(g_ctxCur);
+    ctxLoad(i);
+    g_ctxCur = i;
+}
+
+static double zeroDelayGapRows(int s);
+
+/* Mesmas contas do loadChartForSong para o chart corrente (g_chart). */
+static void ctxDerive(void)
+{
+    g_lastNoteRow = -1;
+    for (int ri = (int)g_chart->rowCount - 1; ri >= 0; ri--) {
+        StepRow* r = &g_chart->rows[ri];
+        if (r->half1.dl || r->half1.ul || r->half1.cn || r->half1.ur || r->half1.dr ||
+            r->half2.dl || r->half2.ul || r->half2.cn || r->half2.ur || r->half2.dr) { g_lastNoteRow = ri; break; }
+    }
+    g_chartDelay = g_chart->delay / (double)g_chart->delayDiv;
+    float bpm = g_chart->bpm;
+    if (bpm <= 0) bpm = 120.0f;
+    uint32_t subdiv = g_chart->beatSplit;
+    if (subdiv == 0) subdiv = 4;
+    g_secondsPerRow = 60.0 / ((double)bpm * (double)subdiv);
+    {
+        double total = 0;
+        for (int s = 0; s < (int)g_chart->segmentCount; s++) {
+            double segSpr = 60.0 / ((double)g_chart->segments[s].bpm * (double)g_chart->segments[s].beatSplit);
+            total += g_chart->segments[s].rowCount * segSpr + (g_chart->segments[s].delay / (double)g_chart->delayDiv);
+        }
+        g_totalSongSeconds = total;
+    }
+    g_baseBeatSplit = g_chart->segments[0].beatSplit;
+    g_baseBpm = g_chart->segments[0].bpm;
+    g_visualRowCount = (int)g_chart->rowCount;
+    g_visualRow = (double*)malloc((size_t)(g_visualRowCount > 0 ? g_visualRowCount : 1) * sizeof(double));
+    if (g_visualRow) {
+        double vRow = 0;
+        for (int s = 0; s < (int)g_chart->segmentCount; s++) {
+            double beatRatio = (double)g_baseBeatSplit / (double)g_chart->segments[s].beatSplit;
+            vRow += zeroDelayGapRows(s);
+            for (uint32_t r = g_chart->segments[s].rowStart; r < g_chart->segments[s].rowStart + g_chart->segments[s].rowCount; r++) {
+                if ((int)r < g_visualRowCount) g_visualRow[r] = vRow;
+                vRow += beatRatio;
+            }
+        }
+    }
+    g_zRows = (int)g_chart->rowCount;
+}
+
+static void ctxFree(void)
+{
+    if (g_ctxN > 1) {
+        ctxUse(0);
+        free(g_ctx[1].visualRow);
+        g_ctx[1].visualRow = NULL;
+    }
+    g_ctxN = 1;
+    g_ctxCur = 0;
+}
+
+/* 2 jogadores em single com dificuldades diferentes: o P2 recebe o próprio chart
+ * do mesmo .SEE (half1 dele copiado para o half2, lido pelo P2). */
+static void nxBuildP2Ctx(void)
+{
+    static const char* const k_name[5] = { "NORMAL", "HARD", "CRAZY", "DOUBLE", "NIGHTMARE" };
+    int d0 = g_nxDiffIdx[0], d1 = g_nxDiffIdx[1];
+    ctxFree();
+    if (!g_exceedSongIds || d0 == d1 || d1 < 0 || d1 > 2) return;
+    int ci = Step_SelectChart(k_name[d1], -1);
+    if (ci < 0 || ci >= g_playSong.chartCount || ci == g_chartIdx) return;
+    StepChart* c2 = &g_playSong.charts[ci];
+    if (!c2->rows || c2->rowCount == 0 || c2->segmentCount == 0) {
+        Log_Print("GP: chart %s do P2 vazio — P2 usa o chart do P1\n", k_name[d1]);
+        return;
+    }
+    for (uint32_t ri = 0; ri < c2->rowCount; ri++) c2->rows[ri].half2 = c2->rows[ri].half1;
+    g_zRows = (int)g_chart->rowCount;
+    ctxSave(0);
+    g_chart = c2;
+    g_chartIdx = ci;
+    ctxDerive();
+    ctxSave(1);
+    /* o fim do chart espera o mais longo dos dois */
+    {
+        double t = g_ctx[0].totalSongSeconds > g_ctx[1].totalSongSeconds ? g_ctx[0].totalSongSeconds : g_ctx[1].totalSongSeconds;
+        g_ctx[0].totalSongSeconds = g_ctx[1].totalSongSeconds = t;
+    }
+    ctxLoad(0);
+    g_ctxN = 2;
+    g_ctxCur = 0;
+    Log_Print("GP: P1 chart %d, P2 chart %d (%s, %u linhas)\n", g_ctx[0].chartIdx, ci, k_name[d1], c2->rowCount);
+}
+
 static bool loadChartForSong(int songId, int diffTier, const char* modeName)
 {
+    ctxFree();
     g_songLoaded = false;
     g_chart = NULL;
 
@@ -1631,7 +1766,7 @@ static int8_t*   g_zRowJ[2];    /* pior julgamento da linha até agora */
 static float*    g_zSum[2];     /* soma das distâncias (s) */
 static uint8_t*  g_zCnt[2];     /* taps somados */
 static int       g_zFirst[2];
-static int       g_zRows;
+/* g_zRows: declarado com o contexto de chart (por jogador) */
 
 static void zeroJudgeReset(void)
 {
@@ -1643,12 +1778,14 @@ static void zeroJudgeReset(void)
     }
     g_zRows = (g_songLoaded && g_chart) ? (int)g_chart->rowCount : 0;
     if (g_zRows <= 0) return;
+    int zAlloc = g_zRows;
+    if (g_ctxN > 1 && g_ctx[1].zRows > zAlloc) zAlloc = g_ctx[1].zRows;   /* chart do P2 */
     for (int p = 0; p < 2; p++) {
-        g_zHit[p]  = (uint16_t*)calloc((size_t)g_zRows, sizeof(uint16_t));
-        g_zDone[p] = (uint8_t*)calloc((size_t)g_zRows, 1);
-        g_zRowJ[p] = (int8_t*)calloc((size_t)g_zRows, 1);
-        g_zSum[p]  = (float*)calloc((size_t)g_zRows, sizeof(float));
-        g_zCnt[p]  = (uint8_t*)calloc((size_t)g_zRows, 1);
+        g_zHit[p]  = (uint16_t*)calloc((size_t)zAlloc, sizeof(uint16_t));
+        g_zDone[p] = (uint8_t*)calloc((size_t)zAlloc, 1);
+        g_zRowJ[p] = (int8_t*)calloc((size_t)zAlloc, 1);
+        g_zSum[p]  = (float*)calloc((size_t)zAlloc, sizeof(float));
+        g_zCnt[p]  = (uint8_t*)calloc((size_t)zAlloc, 1);
     }
 }
 
@@ -2151,6 +2288,7 @@ static void processAutoplay(void)
     int _ap1 = (isHD || dnAP) ? 1 : ((g_game.activePlayerMask == 0x3) ? 2 : _ap0 + 1);
     for (int p = _ap0; p < _ap1; p++)
     {
+        ctxUse(p);   /* chart do jogador */
         int hitRows[10], hitCount = 0;
         for (int panel = 0; panel < panCount; panel++)
         {
@@ -2278,6 +2416,7 @@ static void processHolds(void)
     int _hp1 = (isHD || dnAP) ? 1 : ((g_game.activePlayerMask == 0x3) ? 2 : _hp0 + 1);
     for (int p = _hp0; p < _hp1; p++)
     {
+        ctxUse(p);   /* chart do jogador */
         for (int panel = 0; panel < panCount; panel++)
         {
             int holdPly;
@@ -2433,6 +2572,7 @@ static void processMisses(void)
     int _mp1 = (isHD || dnAP) ? 1 : ((g_game.activePlayerMask == 0x3) ? 2 : _mp0 + 1);
     for (int p = _mp0; p < _mp1; p++)
     {
+        ctxUse(p);   /* chart do jogador */
         int missedRows[256], missCount = 0;
         for (int panel = 0; panel < panCount; panel++)
         {
@@ -2503,6 +2643,7 @@ static void processMisses(void)
 void Gameplay_Start(int songId)
 {
     g_stageBreakFreezeTimer = -1.0f;
+    if (getenv("PUMPY_AUTOPLAY")) for (int a_ = 0; a_ < MAX_PANELS; a_++) g_autoPanel[a_] = true;   /* teste */
     memset(&g_game.stats, 0, sizeof(g_game.stats));
     memset(s_exPrev, 0, sizeof(s_exPrev));
     g_game.stats.life[0]      = LIFE_INITIAL; /* source oficial: m_Gauge = 500 (era 224, ajuste visual) */
@@ -2604,6 +2745,9 @@ void Gameplay_Start(int songId)
         Log_Print("GP: 2P single — duplicated half1 -> half2 (%d rows)\n", g_chart->rowCount);
     }
 
+    if (g_game.activePlayerMask == 0x3 && g_songLoaded && g_chart && !isDNMode() && !isHDMode())
+        nxBuildP2Ctx();   /* NX: chart do P2 com outra dificuldade (CPlayer : CStep) */
+
     /* Modificadores de chart aplicados no load time (apos duplicacao 2P).
      * Ordem: Mirror primeiro, depois Random Step (RS sobre mirror se ambos ativos). */
     if (g_songLoaded && g_chart) {
@@ -2612,13 +2756,19 @@ void Gameplay_Start(int songId)
         /* Mirror: permutacao fixa por modo (Z<->E etc) */
         bool mP1 = (g_game.activePlayerMask & 0x1) && g_game.cmdMirror[0];
         bool mP2 = (g_game.activePlayerMask & 0x2) && g_game.cmdMirror[1];
-        if (mP1 || mP2)
+        if (g_ctxN > 1) {
+            if (mP1) Step_ApplyMirror(g_ctx[0].chart, chartMode, true, false);
+            if (mP2) Step_ApplyMirror(g_ctx[1].chart, chartMode, false, true);
+        } else if (mP1 || mP2)
             Step_ApplyMirror(g_chart, chartMode, mP1, mP2);
 
         /* Random Step: permutacao aleatoria por row */
         bool rsP1 = (g_game.activePlayerMask & 0x1) && g_game.cmdRandomStep[0];
         bool rsP2 = (g_game.activePlayerMask & 0x2) && g_game.cmdRandomStep[1];
-        if (rsP1 || rsP2)
+        if (g_ctxN > 1) {
+            if (rsP1) Step_ApplyRandomShuffle(g_ctx[0].chart, chartMode, true, false);
+            if (rsP2) Step_ApplyRandomShuffle(g_ctx[1].chart, chartMode, false, true);
+        } else if (rsP1 || rsP2)
             Step_ApplyRandomShuffle(g_chart, chartMode, rsP1, rsP2);
     }
 
@@ -2661,6 +2811,7 @@ void Gameplay_Exit(void)
         Step_FreeSong(&g_playSong);
         g_songLoaded = false;
     }
+    ctxFree();
     free(g_visualRow);
     g_visualRow = NULL;
     g_visualRowCount = 0;
@@ -2892,16 +3043,17 @@ void Gameplay_Update(float dt)
         if (isDNMode()) zeroJudge(0);
         else {
             if (g_game.activePlayerMask & 0x1) zeroJudge(0);
-            if (g_game.activePlayerMask & 0x2) zeroJudge(1);
+            if (g_game.activePlayerMask & 0x2) { ctxUse(1); zeroJudge(1); ctxUse(0); }
         }
     } else {
     processInput(0);
-    if (g_game.activePlayerMask & 0x2) processInput(1);
+    if (g_game.activePlayerMask & 0x2) { ctxUse(1); processInput(1); ctxUse(0); }
     processPendingRows(0);
-    if (g_game.activePlayerMask & 0x2) processPendingRows(1);
+    if (g_game.activePlayerMask & 0x2) { ctxUse(1); processPendingRows(1); ctxUse(0); }
     processAutoplay();
     processHolds();
     processMisses();
+    ctxUse(0);
     }
 
     /* Stage Break: 51 miss consecutivos OU lifebar == 0 (se opção ativa) */
@@ -3467,29 +3619,17 @@ static void nxPushArrowDraw(int p, int panelCount, bool isDoubleOrNightmare)
     }
 }
 
-void Gameplay_Render(void)
+/* Bloco de rolagem do Gameplay_Render (sem mudança nas contas), separado para
+ * poder ser refeito com o chart de cada jogador (ctxUse). */
+typedef struct {
+    int currentSeg;
+    double currentSpr, actualScrollRow, visualScrollRow;
+    float baseRowSpacing, pixelsPerRow, currentPixelsPerSec, jZoneHalf[4];
+    int startRow, endRow;
+} GpScroll;
+
+static void gpScroll(GpScroll* S, int receptorY, int scrollBottom)
 {
-    if (g_game.state != STATE_GAMEPLAY) return;
-
-    if (!g_songLoaded)
-    {
-        Font_DrawStringCentered(g_game.screenWidth/2, g_game.screenHeight/2,
-            "Loading...", 1,1,1,1);
-        return;
-    }
-
-    int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */
-    bool isHalfDouble = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount &&
-                         strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "HALFDOUBLE") == 0);
-    bool isDoubleOrNightmare = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount &&
-                               (strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "DOUBLE") == 0 ||
-                                strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "NIGHTMARE") == 0));
-    int sprReceptor = isHalfDouble ? g_fontSprHD01 : (isDoubleOrNightmare ? g_fontSprW01 : g_fontSpr01);
-    int sprBrilho   = isHalfDouble ? g_fontSprHD02 : (isDoubleOrNightmare ? g_fontSprW02 : g_fontSpr02); /* 02.SPR — receptor com brilho (BPM) */
-    int sprLifeBord = isHalfDouble ? g_fontSprHD03 : (isDoubleOrNightmare ? g_fontSprW03 : g_fontSpr03);
-    int sprLifeGlow = isHalfDouble ? g_fontSprHD05 : (isDoubleOrNightmare ? g_fontSprW05 : g_fontSpr05);
-    int scrollBottom = 480;
-
     // Current segment and actual scrollRow for timing-dependent calculations
     int currentSeg = 0;
     double currentSpr = g_secondsPerRow;
@@ -3567,6 +3707,53 @@ void Gameplay_Render(void)
             jZoneHalf[j] = jWindows[j] * currentPixelsPerSec;
     }
 
+    S->currentSeg = currentSeg; S->currentSpr = currentSpr;
+    S->actualScrollRow = actualScrollRow; S->visualScrollRow = visualScrollRow;
+    S->baseRowSpacing = g_baseRowSpacing; S->pixelsPerRow = pixelsPerRow;
+    S->currentPixelsPerSec = currentPixelsPerSec;
+    memcpy(S->jZoneHalf, jZoneHalf, sizeof(S->jZoneHalf));
+    S->startRow = startRow; S->endRow = endRow;
+}
+
+void Gameplay_Render(void)
+{
+    if (g_game.state != STATE_GAMEPLAY) return;
+
+    if (!g_songLoaded)
+    {
+        Font_DrawStringCentered(g_game.screenWidth/2, g_game.screenHeight/2,
+            "Loading...", 1,1,1,1);
+        return;
+    }
+
+    int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */
+    bool isHalfDouble = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount &&
+                         strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "HALFDOUBLE") == 0);
+    bool isDoubleOrNightmare = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount &&
+                               (strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "DOUBLE") == 0 ||
+                                strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "NIGHTMARE") == 0));
+    int sprReceptor = isHalfDouble ? g_fontSprHD01 : (isDoubleOrNightmare ? g_fontSprW01 : g_fontSpr01);
+    int sprBrilho   = isHalfDouble ? g_fontSprHD02 : (isDoubleOrNightmare ? g_fontSprW02 : g_fontSpr02); /* 02.SPR — receptor com brilho (BPM) */
+    int sprLifeBord = isHalfDouble ? g_fontSprHD03 : (isDoubleOrNightmare ? g_fontSprW03 : g_fontSpr03);
+    int sprLifeGlow = isHalfDouble ? g_fontSprHD05 : (isDoubleOrNightmare ? g_fontSprW05 : g_fontSpr05);
+    int scrollBottom = 480;
+
+    /* rolagem/linhas visíveis do chart corrente (gpScroll, recalculado por jogador) */
+    GpScroll _sc;
+    gpScroll(&_sc, receptorY, scrollBottom);
+    int currentSeg = _sc.currentSeg;
+    double currentSpr = _sc.currentSpr;
+    double actualScrollRow = _sc.actualScrollRow;
+    float g_baseRowSpacing = _sc.baseRowSpacing;
+    float pixelsPerRow = _sc.pixelsPerRow;
+    double visualScrollRow = _sc.visualScrollRow;
+    float currentPixelsPerSec = _sc.currentPixelsPerSec;
+    int startRow = _sc.startRow;
+    int endRow = _sc.endRow;
+    float jZoneHalf[4];
+    memcpy(jZoneHalf, _sc.jZoneHalf, sizeof(jZoneHalf));
+    (void)currentSeg; (void)currentPixelsPerSec;
+
     /* Para HD/DN: sempre p=0, layout especial.
      * Para modos single (Normal/Hard/Crazy/Battle com 2P): loop pelos players ativos.
      *   P1 sozinho  (0x1): p=0
@@ -3582,6 +3769,16 @@ void Gameplay_Render(void)
     for (int p = pRend0; p < pRend1; p++)
     {
         nxSkinUse(p);   /* NX2: m_Skin do jogador */
+        if (g_ctxN > 1) {   /* NX2: chart do jogador (CPlayer : CStep) */
+            ctxUse(p);
+            gpScroll(&_sc, receptorY, scrollBottom);
+            currentSeg = _sc.currentSeg; currentSpr = _sc.currentSpr;
+            actualScrollRow = _sc.actualScrollRow; g_baseRowSpacing = _sc.baseRowSpacing;
+            pixelsPerRow = _sc.pixelsPerRow; visualScrollRow = _sc.visualScrollRow;
+            currentPixelsPerSec = _sc.currentPixelsPerSec;
+            startRow = _sc.startRow; endRow = _sc.endRow;
+            memcpy(jZoneHalf, _sc.jZoneHalf, sizeof(jZoneHalf));
+        }
         /* Velocidade de scroll deste player (para posição Y das notas) */
         float pPixelsPerRow = g_baseRowSpacing * g_scrollSpeedX[p];
 
@@ -4608,6 +4805,7 @@ void Gameplay_Render(void)
             }
         }
         bool both = (pRend1 - pRend0) >= 2;
+        ctxUse(0);
         for (int p = pRend0; p < pRend1; p++)
             nxLifebarDraw(p, 1.0f - beat, both);
         /* NX 0x8069b00 (depois da lifebar, 0x806ce65): m00 1st, m01 2nd, m02 Final,
@@ -4938,6 +5136,7 @@ void Gameplay_Render(void)
     // Explosao: seta congelada + ARROWF (depois de tudo, sobrepoe tudo)
     for (int pe = pRend0; pe < pRend1; pe++) {
         nxSkinUse(pe);   /* NX2: m_Skin do jogador */
+        ctxUse(pe);
         /* NX/UA: explosão e spark saem da mesma função dos receptores (piu 0x8069d20,
          * spark em play+0x1134, 0x806a0cc), dentro da câmera da pista */
         nxFieldBegin();
@@ -5007,6 +5206,8 @@ void Gameplay_Render(void)
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             }
             #undef Y_UP
+            nxFieldEnd();   /* este continue pulava o nxFieldEnd do fim do laço: a pilha de
+                             * matrizes enchia a cada quadro e o combo do NX Mode perdia o deslocamento */
             continue;
         }
         for (int pan = 0; pan < expPanels; pan++) {
@@ -5109,6 +5310,7 @@ void Gameplay_Render(void)
         }
         nxFieldEnd();
     }
+    ctxUse(0);
 
     /* Timer regressivo - desativado
     {

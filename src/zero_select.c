@@ -822,6 +822,7 @@ static void startGame(void) {
               twoPlayers() ? k_arg[s_diff[1]] : " ");
     Movie_Close();
     BGM_Stop();
+    g_nxDiffIdx[0] = g_nxDiffIdx[1] = s_diff[0];   /* chart do P2 diferente é só do NX */
     if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv))
         s_started = false;
 }
