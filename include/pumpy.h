@@ -39,7 +39,7 @@ typedef void* LPDIRECTSOUNDBUFFER;
 
 #define GAME_VERSION "0.9.5"
 /* era: #define RECOMP_VERSION "0.2.4" (à mão). Agora vem de recomp_version.h, gerado a cada build
- * por cmake/recomp_version.cmake (cada commit soma 1 no último número). Inclua esse cabeçalho só
+ * por tools/recomp_version.cmake (cada commit soma 1 no último número). Inclua esse cabeçalho só
  * onde a versão é usada, para um commit novo não recompilar o projeto inteiro. */
 #define GAME_BUILD_DATE "Jul 27 2026"
 #define GAME_BUILD_TIME "15:44"

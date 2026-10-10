@@ -203,21 +203,21 @@ add_executable(Pumpy
 target_include_directories(Pumpy PRIVATE include)
 
 # Versão do projeto (RECOMP_VERSION): cada commit soma 1 no último número.
-# Série atual: 0.3.x. O commit da renomeação (o primeiro depois de 7fa854d) é a 0.3.0.
+# Série atual: 0.3.x. A 0.3.0 é o primeiro commit depois da renomeação (0fd498a).
 # era: série 0.2.x, RECOMP_PATCH_BASE 4, base no commit da release v0.2.4 (f525b0d).
 # Para abrir a próxima série (ex.: 0.4): RECOMP_MAJOR_MINOR "0.4", RECOMP_PATCH_BASE -1 e
 # RECOMP_BASE_COMMIT = último commit da série anterior; o commit dessa troca vira o .0
-# (ver cmake/recomp_version.cmake).
+# (ver tools/recomp_version.cmake).
 set(RECOMP_MAJOR_MINOR "0.3")
 set(RECOMP_PATCH_BASE -1)   # o 1º commit depois da base é o .0
-set(RECOMP_BASE_COMMIT "7fa854d")
+set(RECOMP_BASE_COMMIT "0fd498a")
 set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(recomp_version ALL
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${RECOMP_GEN_DIR}
         -DMAJOR_MINOR=${RECOMP_MAJOR_MINOR} -DPATCH_BASE=${RECOMP_PATCH_BASE}
         -DBASE_COMMIT=${RECOMP_BASE_COMMIT}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/recomp_version.cmake
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/recomp_version.cmake
     BYPRODUCTS ${RECOMP_GEN_DIR}/recomp_version.h
     COMMENT "Versao do projeto (RECOMP_VERSION)"
     VERBATIM)
