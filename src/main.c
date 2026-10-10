@@ -52,7 +52,7 @@ static void LoadBGAForState(GameState state) {
     case STATE_NAMEINPUT:    bgaName = "085"; break;    /* CNameInput 0x414012: BGA\085.DAT */
     case STATE_IR:           bgaName = "IR"; break;     /* CInternetRanking 0x41371B: BGA\IR.DAT */
     case STATE_STATION:      bgaName = NULL; break;     /* NX: usa o COMMON/ARRO que a CTitle deixou (era: "" + STATION.DAT) */
-    case STATE_HIGHSCORE:    bgaName = "HS"; break;     /* CHighscore 0x4126E7: BGA\HS.DAT */     /* CTitle::Begin 0x41C04A: BGA\82.DAT sobre o CREDIT.MOV */
+    case STATE_HIGHSCORE:    bgaName = "HIGHSCORE"; break;   /* era "HS" (Exceed); NX: BGA/HIGHSCORE.DAT */     /* CHighscore 0x4126E7: BGA\HS.DAT */     /* CTitle::Begin 0x41C04A: BGA\82.DAT sobre o CREDIT.MOV */
     case STATE_LOGO_ENTER:   bgaName = "81"; break;
     case STATE_MENU_ENTER:
     case STATE_MENU_INPUT:
@@ -280,13 +280,15 @@ void Game_Init(HINSTANCE hInstance) {
         const char* as = getenv("PUMPY_AUTOSTATE");
         if (as && _stricmp(as, "SELECT") == 0) { Menu_ResetState(); Game_ChangeState(STATE_EXSELECT); }
         if (as && _stricmp(as, "STATION") == 0) Game_ChangeState(STATE_STATION);
+        if (as && _stricmp(as, "HIGHSCORE") == 0) Game_ChangeState(STATE_HIGHSCORE);   /* teste da tela de ranking */
         /* PUMPY_AUTOSTATE=NXTEST: D02 NORMAL em autoplay (demo) com NX Mode, para testes */
         /* PUMPY_AUTOSTATE=RUN + PUMPY_TEST_ID=<hex> [+ PUMPY_TEST_MODE=0..4]: abre direto
          * uma música/dificuldade (teste; combine com PUMPY_AUTOPLAY) */
         if (as && _stricmp(as, "RUN") == 0 && getenv("PUMPY_TEST_ID")) {
             const char* tm = getenv("PUMPY_TEST_MODE");
             Menu_ResetState();
-            ExSelect_Run((int)strtol(getenv("PUMPY_TEST_ID"), NULL, 16), tm ? atoi(tm) : 0, 0);
+            ExSelect_Run((int)strtol(getenv("PUMPY_TEST_ID"), NULL, 16), tm ? atoi(tm) : 0,
+                         getenv("PUMPY_TEST_DEMO") ? 1 : 0);   /* PUMPY_TEST_DEMO: como DEMO PLAY */
         }
         if (as && _stricmp(as, "NXTEST") == 0) {
             Menu_ResetState();
@@ -597,7 +599,7 @@ void Game_Update(float dt) {
                 if (!Movie_Open(path, false)) {
                     Log_Print("SB: '%s' não abriu\n", path);
                     /* Game_ChangeState(STATE_GAMEOVER_ENTER); */
-                    Attract_Idle();     /* 0x4152E0: "IDLE" */
+                    Attract_Restart();  /* 0x4152E0: "IDLE" (era: Attract_Idle; fim de crédito recomeça o laço) */
                     break;
                 }
                 /* NX "PLAYMOVIE STAGEBREAK" (0x80fceea): o PLAYMOVIE toca AUDIO/%s.AUD
@@ -669,7 +671,7 @@ void Game_Update(float dt) {
                 Resource_ClearBGA();
                 Menu_ResetState();
                 /* Game_ChangeState(STATE_MENU_ENTER); */
-                Attract_Idle();     /* 0x41527C: "IDLE" */
+                Attract_Restart();  /* 0x41527C: "IDLE" (era: Attract_Idle; fim de crédito recomeça o laço) */
             }
             break;
         }
@@ -1007,6 +1009,7 @@ void Game_Render(void) {
         Log_Print("RENDER: state=%d isVSL=%d globalA=%.2f frame=%d\n", g_game.state, g_game.isVSL, g_game.globalColorA, g_game.bgaFrame);
         renderLogCount++;
     }
+    NxCredit_Draw();   /* NX2 main.cpp:604: g_CreditManager.Draw() por cima de toda tela, menos o SETUP */
     Render_EndScene();
 }
 

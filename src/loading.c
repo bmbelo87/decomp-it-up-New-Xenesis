@@ -197,7 +197,9 @@ void Loading_Render(void) {
         float dy = (480.0f - dh) / 2.0f;
 
         Texture_Draw(g_pnzTexId, dx, dy, scale, scale, 1.0f);
-    } else {
+    } else if (!g_exDemo) {
+        /* era: sempre. No DEMO PLAY o PNZ não é carregado de propósito, então este
+         * texto de reserva ("Loading 3329...") aparecia; a demo carrega em tela preta. */
         char buf[64];
         snprintf(buf, sizeof(buf), "Loading %d...", g_loadingSongId);
         Font_DrawStringCentered(320, 240, buf, 0.5f, 0.5f, 0.5f, 1.0f);

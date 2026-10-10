@@ -96,6 +96,16 @@ void Rank_Insert(uint32_t score, const char* name) {
     rkSet(pos, score, name);
 }
 
+/* top 20 do ARCADE (entradas 0..19), para a tela HIGHSCORE da atração */
+uint32_t Rank_TopScore(int k) { rkEnsure(); return (k >= 0 && k < 20) ? rd32(ent(k)) : 0; }
+const char* Rank_TopName(int k) {
+    static char n[5];
+    rkEnsure();
+    if (k < 0 || k >= 20) return "    ";
+    memcpy(n, ent(k) + 4, 4); n[4] = 0;
+    return n;
+}
+
 /* recorde do local do WORLD TOUR (número 1..64) */
 uint32_t Rank_LocScore(int number) { rkEnsure(); int i = number + 0x13; return (i >= 20 && i < RK_COUNT) ? rd32(ent(i)) : 0; }
 void Rank_SetLoc(int number, uint32_t score, const char* name) { rkEnsure(); rkSet(number + 0x13, score, name); }

@@ -30,6 +30,37 @@ bool Demo_SoundOn(void) { return g_demoSound; }
 /* 0x41315A + 0x41926C: n = contador % 25 + 1, pulando a 3 (A03 é oculta);
  * "RUN A%02d -h -demo". O -demo (0x401CE0) entra com os dois jogadores em
  * autoplay e [0x568FF4] = 0x100533. */
+/* NX DemoPlayRunNext (piu 0x8061c00 = NX2 songmanager.cpp:24): percorre a tabela de
+ * músicas a partir de um contador que persiste ([0x9e3dd0c]) e roda a próxima com
+ * a flag de demo (+0x41): "RUN %03X -n -demo". Dá a volta na tabela.
+ * O teste de censura (+0x34 == 0) não está mapeado em g_exSongs e ficou de fora.
+ * Sem NORMAL na música, usa a primeira dificuldade de um painel que existir. */
+static int s_demoNext;          /* [0x9e3dd0c] */
+static bool Demo_StartNX(void) {
+    for (int n = 0; n < EX_SONG_COUNT; n++) {
+        int i = (s_demoNext + n) % EX_SONG_COUNT;
+        const ExceedSong* e = &g_exSongs[i];
+        if (!e->demo || (e->channel & 4)) continue;
+        int m = -1;
+        for (int k = 0; k < 3; k++) if (e->level[k] >= 0) { m = k; break; }
+        if (m < 0) continue;
+        for (int p = 0; p < 2; p++) {   /* a demo não herda os comandos do último crédito */
+            g_game.cmdVanish[p] = g_game.cmdNonStep[p] = g_game.cmdMirror[p] = g_game.cmdRandomStep[p] = false;
+            g_game.cmdEarthworm[p] = g_game.cmdFlash[p] = g_game.cmdFreedom[p] = g_game.cmdGradeRev[p] = false;
+            g_game.cmdDecel[p] = g_game.cmdAccel[p] = g_game.cmdUnderAttack[p] = false;
+            g_game.cmdXMode[p] = g_game.cmdNXMode[p] = g_game.cmdTestBGA[p] = false;
+        }
+        g_demoSound = (g_game.svcDemoSound == 0);
+        if (!ExSelect_Run((int)e->id, m, 1)) continue;
+        s_demoNext = i + 1;
+        Log_Print("DEMO: RUN %03X -%c -demo (som %d)\n", (unsigned)e->id, "nhc"[m], g_demoSound);
+        return true;
+    }
+    Log_Print("DEMO: nenhuma música com a flag de demo\n");
+    return false;
+}
+
+/* era (Exceed, "RUN A%02d -h -demo"): mantida, não é mais chamada na NX */
 static bool Demo_Start(void) {
     g_demoCount++;
     int n = g_demoCount % 25 + 1;
@@ -55,7 +86,9 @@ static bool Demo_Start(void) {
         g_game.cmdRandomVelocity[p] = false;
     }
     /* Opção da EEPROM: som na demo */
-    g_demoSound = (Eeprom2_Data()[0x7F0] != 0);   /* EEPROM +0x7F0 (PIUEXCEED2.INI, eeprom_x2.c) */
+    /* era (Exceed2): g_demoSound = (Eeprom2_Data()[0x7F0] != 0);   EEPROM +0x7F0 (PIUEXCEED2.INI)
+     * NX: DEMO SOUND do Service Menu (EEPROM +0xED1, g_game.svcDemoSound, 0 = ligado) */
+    g_demoSound = (g_game.svcDemoSound == 0);
     Log_Print("DEMO: RUN %s -h -demo (som %d)\n", buf, g_demoSound);
     g_exDemo = true;
     Loading_Enter(id);
@@ -71,16 +104,62 @@ void Demo_End(void) {
     Attract_Idle();
 }
 
+/* Extra do port (GAME STYLE = MODDED): atração em FREE PLAY / EVENT.
+ * No original as telas da atração (LOGO, INTRO, HIGHSCORE, demo) pulam para o TITLE
+ * sempre que há crédito, e em FREE PLAY / EVENT "há crédito" o tempo todo: o jogo
+ * fica preso no "CENTER STEP" e a atração nunca roda. No MODDED, com FREE PLAY, a
+ * atração roda normalmente e só vai para o TITLE quando alguém pisa no CENTER; o
+ * TITLE volta para a atração depois de ATTRACT_TITLE_FRAMES sem ninguém entrar.
+ * Fora disso (VANILLA, ou máquina com moeda) vale o teste de crédito do original. */
+/* era: #define ATTRACT_TITLE_FRAMES 1200 (20 s, valor meu). Agora o TITLE usa o tempo
+ * do original: 3150 quadros sem moeda e 60 de fade (NX2 title.cpp Run/End). */
+#define TITLE_IDLE_FRAMES 3150
+#define TITLE_FADE_FRAMES 60
+static bool s_attractWantTitle;
+static int  s_attractStep;      /* 0 LOGO 81, 1 NEXCADE, 2 OP, 3 TITLE, 4 demo, 5 HIGHSCORE */
+static const char* s_movieName = "OP";   /* PLAYMOVIE <nome>: BGA/<nome>.MOV + AUDIO/<nome>.AUD */
+static int  s_titleFadeOut;     /* CTitle::End: 0..60 */
+static bool attractFree(void) { return g_game.gameStyleModded && Coin_IsFreePlay(); }
+
+bool Attract_HasCredit(void) {
+    if (!attractFree()) return Coin_HasCredit();
+    if (Input_IsPadHit(0, PAD_C) || Input_IsPadHit(1, PAD_C)) s_attractWantTitle = true;
+    return s_attractWantTitle;
+}
+
 void Attract_Idle(void) {
     Audio_StopAll();            /* 0x4130F9..0x41310F */
-    for (int guard = 0; guard < 4; guard++) {
-        switch (g_idleCount++ & 3) {
+    if (s_attractWantTitle) {   /* CENTER durante a demo: Demo_End cai aqui */
+        s_attractStep = 3;
+        Game_ChangeState(STATE_CREDIT);
+        return;
+    }
+    /* era (Exceed CIdle 0x41311C): contador % 4 -> LOGO, INTRO, HIGHSCORE, demo:
+     *     switch (g_idleCount++ & 3) { case 0: LOGO_ENTER; case 1: INTRO; case 2: HIGHSCORE; case 3: Demo_Start(); }
+     * NX CFlowControl::Next (piu 0x805fbc0 = NX2 flowcontrol.cpp): laço da atração
+     *   PublisherLogo "PLAYMOVIE 81" -> DeveloperLogo "PLAYMOVIE NEXCADE" ->
+     *   Opening "PLAYMOVIE OP" -> Title -> Demo -> HighScore -> volta ao começo.
+     * (A propaganda "PLAYMOVIE WPF2007", chamada por botão, não foi portada.) */
+    (void)g_idleCount; (void)Demo_Start;
+    for (int guard = 0; guard < 6; guard++) {
+        s_attractStep = (s_attractStep + 1) % 6;
+        switch (s_attractStep) {
         case 0: Game_ChangeState(STATE_LOGO_ENTER); return;
-        case 1: Game_ChangeState(STATE_INTRO);      return;
-        case 2: Game_ChangeState(STATE_HIGHSCORE);  return;
-        case 3: if (Demo_Start()) return; break;
+        case 1: s_movieName = "NEXCADE"; Game_ChangeState(STATE_INTRO); return;
+        case 2: s_movieName = "OP";      Game_ChangeState(STATE_INTRO); return;
+        case 3: Game_ChangeState(STATE_CREDIT);     return;
+        case 4: if (Demo_StartNX()) return; break;
+        case 5: Game_ChangeState(STATE_HIGHSCORE);  return;
         }
     }
+}
+
+/* Fim de um crédito (NX2 flowcontrol.cpp, Process::GameOver): com crédito vai para
+ * o TITLE, senão recomeça o laço pelo logo. O logo já pula para o TITLE quando há
+ * crédito (Attract_HasCredit), então basta recomeçar o laço. */
+void Attract_Restart(void) {
+    s_attractStep = -1;
+    Attract_Idle();
 }
 
 /* [0x568FF4] bits 0/1: quem entrou no CREDIT (lido pela Select) */
@@ -102,15 +181,22 @@ void Gamestate_UpdateIntro(float dt) {
     switch (g_game.state) {
     case STATE_INTRO:
         if (g_game.stateFrame == 1) {
-            char aud[MAX_PATH];
-            snprintf(aud, sizeof(aud), "%s/AUDIO/001.AUD", g_game.currentDirectory);
-            intro_open("BGA/INTRO.MOV", false);
+            /* era (Exceed): BGA/INTRO.MOV + AUDIO/001.AUD (não existem na NX).
+             * NX CPlayMovie::Begin (NX2 playmovie.cpp): BGA/<nome>.MOV e, com DEMO
+             * SOUND ligado, AUDIO/<nome>.AUD se existir. NEXCADE não tem áudio. */
+            char rel[64], aud[MAX_PATH];
+            snprintf(rel, sizeof(rel), "BGA/%s.MOV", s_movieName);
+            snprintf(aud, sizeof(aud), "%s/AUDIO/%s.AUD", g_game.currentDirectory, s_movieName);
+            intro_open(rel, false);
             BGM_Stop();
-            if (BGM_LoadAUDDirect(aud)) BGM_Play(false);
+            if (g_game.svcDemoSound == 0) {
+                FILE* af = fopen(aud, "rb");
+                if (af) { fclose(af); if (BGM_LoadAUDDirect(aud)) BGM_Play(false); }
+            }
         }
         Movie_Update(dt);
-        /* 0x4132F0: com crédito vai para TITLE */
-        if (Coin_HasCredit()) {
+        /* 0x4132F0: com crédito vai para TITLE (era: Coin_HasCredit()) */
+        if (Attract_HasCredit()) {
             Movie_Close();
             Game_ChangeState(STATE_CREDIT);
             break;
@@ -141,12 +227,37 @@ void Gamestate_UpdateIntro(float dt) {
              * WAVE/TITLE.WAV (SFX_TITLE.LUA) em loop; segue tocando na Station */
             BGM_Stop();
             if (g_titleMusic < 0) g_titleMusic = Audio_LoadWaveFile("TITLE.WAV");
-            if (g_titleMusic >= 0) { Audio_Stop(g_titleMusic); Audio_Play(g_titleMusic, true); }
+            /* era: tocava sempre. NX2 CTitle::Begin: só com DEMO SOUND ligado ou com moeda */
+            if (g_titleMusic >= 0) {
+                Audio_Stop(g_titleMusic);
+                if (g_game.svcDemoSound == 0 || Coin_HasCredit()) Audio_Play(g_titleMusic, true);
+            }
+            s_titleFadeOut = 0;
+            s_attractStep = 3;
             /* Zero CTitle::Begin (piu 0x80670fc): BGA/CREDIT.MOV em loop */
             intro_open("BGA/CREDIT.MOV", true);
             /* era (Exceed2): intro_open("CREDIT.MOV", true); */
             g_titleJoined = 0;
             g_titleFade = 0;
+            s_attractWantTitle = false;   /* chegou ao TITLE */
+        }
+        /* NX2 CTitle::Run/End: sem moeda, depois de 3150 quadros a tela escurece em 60
+         * e a atração segue (demo). Com moeda o TITLE fica; em FREE PLAY / EVENT o
+         * original considera "com moeda" (fica para sempre) — no MODDED também sai. */
+        {
+            bool semMoeda = attractFree() || (!Coin_IsFreePlay() && g_game.svcCoinTotal == 0);
+            if (!(g_titleJoined & 3) && semMoeda && g_game.stateFrame >= TITLE_IDLE_FRAMES) {
+                Render_SetGlobalColor(0.0f, 0.0f, 0.0f, (float)s_titleFadeOut / (float)TITLE_FADE_FRAMES);
+                if (s_titleFadeOut >= TITLE_FADE_FRAMES) {
+                    Movie_Close();
+                    Attract_Idle();   /* Game_ChangeState zera o escurecimento */
+                    break;
+                }
+                s_titleFadeOut++;
+            } else if (s_titleFadeOut) {   /* entrou moeda durante o fade: volta */
+                s_titleFadeOut = 0;
+                Render_SetGlobalColor(0.0f, 0.0f, 0.0f, 0.0f);
+            }
         }
         /* NX CTitle::Begin (0x808c661 / 0x808c67c): já carrega BGA/COMMON.DAT e
          * BGA/ARRO.DAT, que a CStation usa sem recarregar. Extra deste projeto:

@@ -83,12 +83,16 @@ static void x2eDefaults(void) {
 void Eeprom2_Save(void) {                                /* 0x422190 */
     put32(X2E_IDENT, X2E_IDENT_VAL);
     put32(X2E_CHKSUM, adler32(&g_x2e[X2E_SETTINGS], 8));
+    /* DESATIVADO (pedido do usuário): a NX guarda tudo em SETTINGS/ (PIUNX.INI,
+     * RANK.DAT); o PIUEXCEED2.INI não é mais gravado. A imagem fica só na memória. */
+#if 0
     char path[MAX_PATH];
     x2ePath(path, sizeof(path));
     FILE* f = fopen(path, "wb");
     if (!f) { Log_Print("EEPROM2: não foi possível gravar '%s'\n", path); return; }
     fwrite(g_x2e, 1, X2E_SIZE, f);
     fclose(f);
+#endif
 }
 
 /* 0x422060 */
@@ -96,6 +100,9 @@ void Eeprom2_Load(void) {
     if (g_x2eLoaded) return;
     g_x2eLoaded = true;
     bool dirty = false;
+    /* DESATIVADO (pedido do usuário): o PIUEXCEED2.INI não é mais lido; a imagem
+     * começa sempre nos valores padrão e vive só na memória. */
+#if 0
     char path[MAX_PATH];
     x2ePath(path, sizeof(path));
     FILE* f = fopen(path, "rb");
@@ -106,6 +113,8 @@ void Eeprom2_Load(void) {
         x2eDefaults();
         dirty = true;
     }
+#endif
+    x2eDefaults();
     if (get32(X2E_IDENT) != X2E_IDENT_VAL) {             /* 0x4220AF */
         Log_Print("EEPROM2: Warning - SAVE DATA VERSION IS NOT MATCH\n");
         x2eDefaults();
@@ -128,7 +137,8 @@ void Eeprom2_Load(void) {
         g_x2e[0x520] = 0; g_x2e[0x521] = 0;
         put32(0x522, 0); put32(0x526, 0);
     }
-    Log_Print("EEPROM2: '%s' carregado\n", path);
+    /* era: Log_Print("EEPROM2: '%s' carregado\n", path); */
+    Log_Print("EEPROM2: imagem padrão em memória (PIUEXCEED2.INI desativado)\n");
 }
 
 uint8_t* Eeprom2_Data(void) { Eeprom2_Load(); return g_x2e; }

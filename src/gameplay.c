@@ -3015,7 +3015,7 @@ void Gameplay_Update(float dt)
     Gameplay_ExScoreSync();
 
     /* Demo: 0x402B82 — crédito ou 35 s -> IDLE */
-    if (g_exDemo && (Coin_HasCredit() || g_songTime >= 35.0)) {
+    if (g_exDemo && (Attract_HasCredit() || g_songTime >= 35.0)) {   /* era: Coin_HasCredit() */
         Demo_End();
         return;
     }
@@ -3904,8 +3904,11 @@ void Gameplay_Render(void)
 
     if (!g_songLoaded)
     {
-        Font_DrawStringCentered(g_game.screenWidth/2, g_game.screenHeight/2,
-            "Loading...", 1,1,1,1);
+        /* era: "Loading..." sempre. Pedido do usuário: no DEMO PLAY a carga fica em
+         * tela preta, sem texto (o PNZ já não é carregado na demo, loading.c). */
+        if (!g_exDemo)
+            Font_DrawStringCentered(g_game.screenWidth/2, g_game.screenHeight/2,
+                "Loading...", 1,1,1,1);
         return;
     }
 
@@ -5539,7 +5542,7 @@ void Gameplay_Render(void)
         Font_DrawStringCenteredScaled(ax, ay, "AUTOPLAY", 1.0f, 1.0f, 1.0f, 1.0f, 2.0f);
     }
 
-    if (anyAutoPanel()) {
+    if (anyAutoPanel() && !g_exDemo) {   /* era: sem o teste da demo; a lista "0 1 2 3 4" aparecia no DEMO PLAY */
         char buf[64] = {0}; int pos = 0;
         int apAn = isDoubleOrNightmare ? 10 : (isHalfDouble ? 6 : 5);
         for (int a = 0; a < apAn; a++)
@@ -5600,7 +5603,10 @@ void Gameplay_Render(void)
 
     /* Demo: 0x40CA41 — Color3f(1, 1, 0.2), tile 0x15 do arrow542.sp2 em
      * Translate(120, 20) e +400. Coordenadas do SP2 em Y-UP local. */
-    if (g_exDemo && g_fontArrow542 >= 0 && g_fontArrow542 + 0x15 < g_game.sprTileCount) {
+    /* DESATIVADO na NX: este é o rótulo de demo do Exceed (tile 0x15 do arrow542). Na NX
+     * esse tile é outro sprite (aparecia um bloco verde ao lado do DEMO PLAY); o rótulo
+     * da NX vem do CREDIT.DAT (nx_credit.c, cenas DEMOPLAY_1P/2P). */
+    if (0 && g_exDemo && g_fontArrow542 >= 0 && g_fontArrow542 + 0x15 < g_game.sprTileCount) {
         SPRTileDef* dt2 = &g_game.sprTiles[g_fontArrow542 + 0x15];
         if (dt2->texId >= 0) {
             int tw = Texture_GetWidth(dt2->texId);  if (tw <= 0) tw = 256;

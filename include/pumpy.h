@@ -218,7 +218,9 @@ int  Rank_Find(uint32_t score);
 void Rank_Insert(uint32_t score, const char* name);
 uint32_t Rank_LocScore(int number);
 void Rank_SetLoc(int number, uint32_t score, const char* name);
-const char* Rank_LocName(int number);                 /* condição da missão atual (sem modo e mods) */
+uint32_t    Rank_TopScore(int k);                     /* top 20 do ARCADE (RANK.DAT), k = 0..19 */
+const char* Rank_TopName(int k);
+const char* Rank_LocName(int number);               /* condição da missão atual (sem modo e mods) */
 bool NxCond_Eval(const char* cond, int p, int rank);   /* 0x8055a80 */
 void NxClear_Enter(void);
 void NxClear_Update(float dt);
@@ -849,6 +851,9 @@ const char* Song_DataIdStr(int id);
 bool ExSelect_IsXMode(void);
 unsigned ExSelect_GetFlags(void);
 void Attract_Idle(void);            /* Exceed CIdle: próxima tela da atração */
+void NxCredit_Draw(void);           /* nx_credit.c: faixa de crédito / FREE PLAY / EVENT / DEMO PLAY (CREDIT.DAT) */
+void Attract_Restart(void);         /* fim de um crédito: recomeça o laço da atração pelo logo */
+bool Attract_HasCredit(void);     /* "tem crédito" das telas da atração (MODDED + FREE PLAY: só após CENTER) */
 extern bool g_exDemo;               /* [0x568FF4] & 0x100000: demo da atração ("-demo") */
 bool Demo_SoundOn(void);            /* EEPROM +0x7F0 */
 void Demo_End(void);

@@ -969,8 +969,11 @@ void Texture_Draw(int id, float x, float y, float scaleX, float scaleY, float al
     glEnd();
 }
 
+unsigned g_texGeneration = 0;   /* +1 a cada limpeza geral: quem guarda textura fora do BGA recarrega (nx_credit.c) */
+
 void Texture_Shutdown(void) {
     int i;
+    g_texGeneration++;
     for (i = 0; i < MAX_TEXTURES; i++) {
         if (g_game.textures[i].inUse) {
             glDeleteTextures(1, &g_game.textures[i].id);
