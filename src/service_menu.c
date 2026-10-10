@@ -92,6 +92,7 @@ static const float SVC_PALETTE[7][3] = {
 #define SVC_MAIN_COUNT 11
 #define SVC_PAGE_GRAPHICS 11
 #define SVC_PAGE_BUTTON_CONFIG 12
+#define SVC_PAGE_RESTRICT 14   /* extra do port: RESTRICTION */
 static int  g_svcPage;
 static int  g_svcOption;
 static int  g_svcCursor;
@@ -323,7 +324,9 @@ static const struct { const char* name; int page; } SVC_TOP[] = {
     { "SOUND TEST",        6 },
     { "BOOKKEEPING",       7 },
     { "STATISTICS",        8 },
-    /* { "RESTRICTION", ? },  comentado no SETUP_COMMON.LUA */
+    /* era: { "RESTRICTION", ? },  comentado no SETUP_COMMON.LUA (SETUP_RESTRICT não existe nos .LUA)
+     * Pedido do usuário: lista de músicas com ON/OFF nas listas do ARCADE e do SPECIAL ZONE. */
+    { "RESTRICTION",       SVC_PAGE_RESTRICT },
     { "LANGUAGE (\xBE\xF0\xBE\xEE)", SVC_TOP_LANG },   /* SETUP_EN.LUA: "LANGUAGE (언어)" em CP949 */
     { "GRAPHICS SETTINGS", SVC_PAGE_GRAPHICS },       /* extra do port */
     { "BUTTON CONFIG",     SVC_PAGE_BUTTON_CONFIG },  /* extra do port */
@@ -363,7 +366,7 @@ static void svcRenderMain(void)
         svcColor(SVC_NORMAL);
         /* era: svcText(276.0f, 132.0f, lb); + aviso do dispensador em (196,112)/(356,112)
          * Pedido do usuário: sem o aviso do Ticket Dispenser; o Lock OK vai para a posição dele */
-        svcText(196.0f, 112.0f, lb);
+        svcText(196.0f, 92.0f, lb);   /* era: 112 — desceu uma linha (o EXIT foi para 112 com o RESTRICTION) */
         /* svcText(196.0f, 112.0f, "Ticket Dispenser is NOT CONNECTED.");
         svcColor(SVC_HIGHLIGHT);
         svcText(356.0f, 112.0f, "NOT CONNECTED"); */
@@ -388,6 +391,132 @@ static void svcRenderMain(void)
     }
 }
 /* era (Prex3): itens SVC_MAIN_ITEMS com EEPROM TEST e "Lock OK = 0 Err = 0" */
+
+/* ------------------------------------------------------------ RESTRICTION
+ * Extra do port (o original só tem o título SETUP_RESTRICT_TITLE e a tabela
+ * SETUP_RESTRICT, que não existe nos scripts). Uma linha por música com nível,
+ * "ON" = aparece no ARCADE STATION / SPECIAL ZONE. Guardado em restrict.dat
+ * (1 byte por índice de g_exSongs, 1 = desligada). TEST move, SERVICE troca;
+ * a última linha é EXIT e grava. */
+#define RS_ROWS 16
+static uint8_t g_rsOff[EX_SONG_COUNT];
+static int     g_rsLoaded;
+
+static void rsLoad(void)
+{
+    FILE* f;
+    if (g_rsLoaded) return;
+    g_rsLoaded = 1;
+    memset(g_rsOff, 0, sizeof(g_rsOff));
+    f = fopen("restrict.dat", "rb");
+    if (f) { fread(g_rsOff, 1, sizeof(g_rsOff), f); fclose(f); }
+}
+
+static void rsSave(void)
+{
+    FILE* f = fopen("restrict.dat", "wb");
+    if (f) { fwrite(g_rsOff, 1, sizeof(g_rsOff), f); fclose(f); }
+}
+
+bool NxRestrict_IsOff(int songIdx)
+{
+    rsLoad();
+    return songIdx >= 0 && songIdx < EX_SONG_COUNT && g_rsOff[songIdx] != 0;
+}
+
+static int rsHasLevel(const ExceedSong* e)
+{
+    int d;
+    for (d = 0; d < 5; d++) if (e->level[d] >= 0) return 1;
+    return 0;
+}
+
+static void svcRenderRestrict(void)
+{
+    static int list[EX_SONG_COUNT];
+    char buf[96];
+    int n = 0, i, top;
+    uint32_t hit = svcBitsHit();
+
+    rsLoad();
+    for (i = 0; i < EX_SONG_COUNT; i++)
+        if (g_exSongs[i].id && rsHasLevel(&g_exSongs[i])) list[n++] = i;
+
+    svcColor(SVC_NORMAL);
+    svcText(276.0f, 428.0f, "RESTRICTION");
+
+    /* n músicas + EXIT; página de RS_ROWS linhas em volta do cursor */
+    if (g_svcCursor > n) g_svcCursor = 0;
+    top = (g_svcCursor / RS_ROWS) * RS_ROWS;
+    for (i = top; i < top + RS_ROWS && i <= n; i++) {
+        float y = (float)(392 - (i - top) * 18);
+        svcColorFor(i, g_svcCursor);
+        if (i == n) { svcText(96.0f, y, "EXIT"); continue; }
+        {
+            const ExceedSong* e = &g_exSongs[list[i]];
+            snprintf(buf, sizeof(buf), "%X  %.40s", (unsigned)e->id, e->titleEn ? e->titleEn : "");
+            svcText(96.0f, y, buf);
+            if (!g_rsOff[list[i]]) svcColor(SVC_SUCCESS);
+            svcText(520.0f, y, g_rsOff[list[i]] ? "OFF" : "ON");
+        }
+    }
+    snprintf(buf, sizeof(buf), "%d / %d", top / RS_ROWS + 1, n / RS_ROWS + 1);
+    svcColor(SVC_NORMAL);
+    svcText(520.0f, 428.0f, buf);
+
+    if (hit & SVC_BIT_TEST) g_svcCursor = (g_svcCursor + 1) % (n + 1);
+    if (hit & SVC_BIT_SERVICE) {
+        if (g_svcCursor == n) { rsSave(); g_svcPage = 0; g_svcCursor = 0; }
+        else g_rsOff[list[g_svcCursor]] ^= 1;
+    }
+}
+
+/* NX 0x808d600(x, y, w, h): quad sólido sem textura */
+static void svcQuad(float x, float y, float w, float h)
+{
+    glBegin(GL_QUADS);
+    glVertex2f(x, y); glVertex2f(x, y + h); glVertex2f(x + w, y + h); glVertex2f(x + w, y);
+    glEnd();
+}
+
+/* NX 0x8089160(x, y, sensores): painel 80x80 com 4 barras, amarela (0x8144f10)
+ * com o sensor ligado e preta (0x8144f70) desligado. */
+static void svcPanel(float x, float y, int bits)
+{
+    static const float k_on[4] = { 1, 1, 0, 1 }, k_off[4] = { 0, 0, 0, 1 };
+    glPushMatrix();
+    glTranslatef(x, y, 0);
+    glColor4fv(bits & 1 ? k_on : k_off); svcQuad(10, 70, 60, 10);
+    glColor4fv(bits & 2 ? k_on : k_off); svcQuad(70, 10, 10, 60);
+    glColor4fv(bits & 4 ? k_on : k_off); svcQuad(0, 10, 10, 60);
+    glColor4fv(bits & 8 ? k_on : k_off); svcQuad(10, 0, 60, 10);
+    glPopMatrix();
+}
+
+/* NX 0x8089410: botoeiras P1 em (60,80) e P2 em (340,80), escala 0.4, moldura
+ * (0.4,0.4,0.5) de -10..250. Os nibbles da placa de I/O são 4 sensores por painel;
+ * no PC cada botão liga os 4 sensores do painel. O ciclo de lâmpadas (contador
+ * % 250, 0x8087433) não tem equivalente e ficou de fora. */
+static void svcPanelTest(void)
+{
+    int p;
+    glDisable(GL_TEXTURE_2D);
+    for (p = 0; p < 2; p++) {
+        glPushMatrix();
+        glTranslatef(p ? 340.0f : 60.0f, 80.0f, 0);
+        glScalef(0.4f, 0.4f, 0.5f);
+        glColor3f(0.4f, 0.4f, 0.5f);
+        svcQuad(-10, -10, 260, 260);
+        svcPanel(0,   0,   Input_IsPadDown(p, PAD_DL) ? 15 : 0);
+        svcPanel(160, 0,   Input_IsPadDown(p, PAD_DR) ? 15 : 0);
+        svcPanel(80,  80,  Input_IsPadDown(p, PAD_C)  ? 15 : 0);
+        svcPanel(0,   160, Input_IsPadDown(p, PAD_UL) ? 15 : 0);
+        svcPanel(160, 160, Input_IsPadDown(p, PAD_UR) ? 15 : 0);
+        glPopMatrix();
+    }
+    glEnable(GL_TEXTURE_2D);
+    glColor4f(1, 1, 1, 1);
+}
 
 /* -------------------------------------- ServiceMenu_RenderIOTest 0x004054c0 */
 static void svcRenderIOTest(void)
@@ -414,6 +543,8 @@ static void svcRenderIOTest(void)
         sprintf(buf, "%s %s", lines[i].label, on ? "ON" : "OFF");
         svcText(260.0f, lines[i].y, buf);
     }
+
+    svcPanelTest();   /* NX 0x8087483 -> 0x8089410 */
 
     if (hit & SVC_BIT_SERVICE) g_svcPage = 0;
 }
@@ -1503,6 +1634,7 @@ void ServiceMenu_UpdateRender(void)
     case 13: svcRenderClearRanking();     svcRenderFooter(); break;   /* NX: CLEAR HIGHSCORE RANKING */
     case SVC_PAGE_GRAPHICS:      svcRenderGraphics();      svcRenderFooter(); break;
     case SVC_PAGE_BUTTON_CONFIG: svcRenderButtonConfig();  svcRenderFooter(); break;
+    case SVC_PAGE_RESTRICT:      svcRenderRestrict();      svcRenderFooter(); break;
     default: svcRenderFooter(); break;
     }
 }

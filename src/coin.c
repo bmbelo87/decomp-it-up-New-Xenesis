@@ -31,7 +31,10 @@
 
 #include "pumpy.h"
 
-#define COIN_MAX_CREDITS 9   /* o original satura em 9 créditos */
+/* era: #define COIN_MAX_CREDITS 9   (Prex3: o original satura em 9 créditos)
+ * NX: teto de 99 (pedido do usuário); CREDIT LIMIT da COIN SETTING (+0xED5, 1..10) se ligado. */
+static int coinMax(void) { int l = Eeprom_Get8(0xED5); return (l >= 1 && l <= 10) ? l : 99; }
+#define COIN_MAX_CREDITS coinMax()
 
 /* ------------------------------------------- Arcade_ProcessCoin 0x00402340
  * type: 1 = COIN1, 2 = COIN2, 3 = SERVICE
