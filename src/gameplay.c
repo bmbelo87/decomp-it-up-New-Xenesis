@@ -3955,6 +3955,12 @@ void Gameplay_Render(void)
     for (int p = pRend0; p < pRend1; p++)
     {
         nxSkinUse(p);   /* NX2: m_Skin do jogador */
+        /* Os receptores (step zone) vêm da skin do jogador, mas eram escolhidos uma
+         * vez só, antes deste laço, com a skin que tinha ficado ativa no quadro
+         * anterior (a do último jogador desenhado): com skins diferentes o P1 saía
+         * com a step zone do P2. Agora são escolhidos de novo depois do nxSkinUse. */
+        sprReceptor = isHalfDouble ? g_fontSprHD01 : (isDoubleOrNightmare ? g_fontSprW01 : g_fontSpr01);
+        sprBrilho   = isHalfDouble ? g_fontSprHD02 : (isDoubleOrNightmare ? g_fontSprW02 : g_fontSpr02);
         if (g_ctxN > 1) {   /* NX2: chart do jogador (CPlayer : CStep) */
             ctxUse(p);
             gpScroll(&_sc, receptorY, scrollBottom);
