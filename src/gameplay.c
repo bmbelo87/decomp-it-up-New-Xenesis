@@ -70,11 +70,25 @@ static void judgeWindows(int lvl, double bpm, double early[4], double late[4])
 {
     const double f = (double)0.00833333f; /* mesma constante float32 do original */
     if (g_exceedSongIds) {
-        const float scale = (float)exJudgeBpm0() / 120.0f;
-        (void)lvl;
+        /* era (Exceed): zonas em unidades de Y escaladas pelo BPM (k_exUnitEarly/Late *
+         * BPM0/120 / BPM): no NX a janela crescia nos blocos lentos.
+         * const float scale = (float)exJudgeBpm0() / 120.0f;
+         * for (int j = 0; j < 4; j++) {
+         *     early[j] = (double)((float)k_exUnitEarly[j] * scale) / bpm;
+         *     late[j]  = (double)((float)k_exUnitLate [j] * scale) / bpm;
+         * } */
+        /* NX GetJudgeZone (piu 0x8070fd0 = NX2 player.cpp:194), em ms, fixo:
+         *   perfect = 7 - nível*2 px (EASY 7, NORMAL 5, HARD 3), px -> ms = p/120*1000;
+         *   Interval = Delay = 5 px = 41.667 ms (0x4226aaab), 4 regiões.
+         * Julgamento (NX2 step.cpp:965): cedo usa |dt|, tarde usa dt - Delay;
+         * região = (v - Perfect)/Interval + 1 -> PERFECT < P, GREAT < P+I, GOOD < P+2I,
+         * BAD até MaxJudge = P+3I; o MISS vem depois de Delay + MaxJudge. */
+        (void)bpm;
+        const float P = (float)(7 - lvl * 2) / 120.0f * 1000.0f;
+        const float I = 41.6666679f, D = 41.6666679f;
         for (int j = 0; j < 4; j++) {
-            early[j] = (double)((float)k_exUnitEarly[j] * scale) / bpm;
-            late[j]  = (double)((float)k_exUnitLate [j] * scale) / bpm;
+            early[j] = (double)(P + I * (float)j) / 1000.0;
+            late[j]  = (double)(P + I * (float)j + D) / 1000.0;
         }
         return;
     }
@@ -1612,6 +1626,10 @@ static void applyRowJudgment(int p, JudgeType jt)
 static uint16_t* g_zHit[2];     /* painéis pisados (marcados) por linha */
 static uint8_t*  g_zDone[2];    /* linha resolvida */
 static int8_t*   g_zRowJ[2];    /* pior julgamento da linha até agora */
+/* NX (piu 0x806fb9d / NX2 step.cpp:1052): a linha é julgada pela MÉDIA das distâncias
+ * dos taps pisados (cedo |dt|, tarde dt - Delay, mínimo 0); partes de long não somam */
+static float*    g_zSum[2];     /* soma das distâncias (s) */
+static uint8_t*  g_zCnt[2];     /* taps somados */
 static int       g_zFirst[2];
 static int       g_zRows;
 
@@ -1620,6 +1638,7 @@ static void zeroJudgeReset(void)
     for (int p = 0; p < 2; p++) {
         free(g_zHit[p]); free(g_zDone[p]); free(g_zRowJ[p]);
         g_zHit[p] = NULL; g_zDone[p] = NULL; g_zRowJ[p] = NULL;
+        free(g_zSum[p]); free(g_zCnt[p]); g_zSum[p] = NULL; g_zCnt[p] = NULL;
         g_zFirst[p] = 0;
     }
     g_zRows = (g_songLoaded && g_chart) ? (int)g_chart->rowCount : 0;
@@ -1628,6 +1647,8 @@ static void zeroJudgeReset(void)
         g_zHit[p]  = (uint16_t*)calloc((size_t)g_zRows, sizeof(uint16_t));
         g_zDone[p] = (uint8_t*)calloc((size_t)g_zRows, 1);
         g_zRowJ[p] = (int8_t*)calloc((size_t)g_zRows, 1);
+        g_zSum[p]  = (float*)calloc((size_t)g_zRows, sizeof(float));
+        g_zCnt[p]  = (uint8_t*)calloc((size_t)g_zRows, 1);
     }
 }
 
@@ -1637,6 +1658,20 @@ static void zeroExplode(int p, int pan, int ri)
     g_noteExplodeRow[p][pan] = ri;
     g_noteExplodeFrame[p][pan] = 0;
     g_glowTimer[p][pan] = 24;
+}
+
+/* resultado da linha: média dos taps (NX); sem tap (só long) fica o PERFECT do long */
+static JudgeType zeroRowResult(int p, int ri)
+{
+    if (!g_zCnt[p] || !g_zCnt[p][ri]) return (JudgeType)g_zRowJ[p][ri];
+    if (!g_exceedSongIds) return (JudgeType)g_zRowJ[p][ri];   /* outras versões: pior resultado */
+    int lvl = g_game.optionDifficulty < 0 ? 0 : (g_game.optionDifficulty > 2 ? 2 : g_game.optionDifficulty);
+    float P = (float)(7 - lvl * 2) / 120.0f * 1000.0f, I = 41.6666679f;   /* 0x8070fd0 */
+    float v = g_zSum[p][ri] / (float)g_zCnt[p][ri] * 1000.0f;
+    int r = (int)((v - P) / I + 1.0f);                                    /* 0x806fbbb */
+    if (r < 0) r = 0;
+    if (r > 3) r = 3;
+    return (JudgeType)(JT_PERFECT + r);
 }
 
 static void zeroJudge(int p)
@@ -1668,17 +1703,44 @@ static void zeroJudge(int p)
         if (diff < -badE) break;
         if (g_zDone[p][ri]) continue;
         bool any = false, hitNow = false;
+        /* era: qualquer acerto (inclusive o long segurado) encerrava a busca; com um
+         * long sendo segurado, o aperto de outra seta no mesmo quadro nunca chegava à
+         * linha dele, virava MISS e o MISS soltava o long (que sumia). Só um aperto
+         * de verdade (botão apertado neste quadro) conta para o "um aperto, uma linha". */
         for (int pan = 0; pan < panCount; pan++) {
             uint8_t v = ZJ_V(ri, pan);
             if (!v || (g_zHit[p][ri] & (1u << pan))) continue;
             any = true;
             bool autoHit = g_autoPanel[pan] && diff >= 0.0;
-            bool holdHit = downB[pan] && evaluateTiming(diff) == JT_PERFECT &&
+            /* era: corpo/cauda contavam em toda a janela de PERFECT, inclusive antes do
+             * receptor. A janela do NX é em batidas: em bloco de BPM baixo (D02: 13.59 /
+             * 4.53) ela alcança a cauda ainda no alto da tela, o hold terminava e o long
+             * sumia. Como no NX2 (DrawLongNote: CurY > 0 && y >= STEP_Y), cada parte
+             * segurada só conta quando a linha chega ao receptor. */
+            /* era: bool holdHit = downB[pan] && evaluateTiming(diff) == JT_PERFECT && diff >= 0.0 && ...
+             * NX2 step.cpp:997..1010 (long, Attr & 4): conta com -(Delay+Interval+Perfect)
+             * < (linha - agora) < Perfect, ou seja diff em (-P, D+I+P); a cabeça (4) só
+             * com a linha já passada. A janela é em ms (judgeWindows), fixa em qualquer BPM. */
+            double hwE[4], hwL[4];
+            judgeWindows(g_game.optionDifficulty < 0 ? 0 : (g_game.optionDifficulty > 2 ? 2 : g_game.optionDifficulty),
+                         currentJudgeBpm(), hwE, hwL);
+            bool holdHit = downB[pan] && diff > -hwE[0] && diff < hwL[1] &&
                            (v == NT_HOLD_B || v == NT_HOLD_T || (v == NT_HOLD_H && diff >= 0.0));
+            /* O long é consumido em ordem: corpo/cauda só depois da parte anterior do
+             * mesmo painel (pega = apagada, ou perdida = marcada). Sem isso, com longs
+             * curtos o corpo e a cauda entravam na janela de PERFECT antes da cabeça
+             * (que só vale com diff >= 0); a cabeça vinha depois e g_holdRows apontava
+             * para um long já sem cauda, que sumia (D02 CRAZY, linhas 567..570). */
+            if ((v == NT_HOLD_B || v == NT_HOLD_T) && ri > 0) {
+                uint8_t pv = ZJ_V(ri - 1, pan);
+                if ((pv == NT_HOLD_H || pv == NT_HOLD_B) && !(g_zHit[p][ri - 1] & (1u << pan)))
+                    continue;   /* parte anterior ainda pendente: nem segurar nem apertar consome esta */
+            }
             if (!hitB[pan] && !autoHit && !holdHit) continue;
             JudgeType jt = (autoHit || holdHit) ? JT_PERFECT : evaluateTiming(diff);
             if (jt == JT_MISS || jt == JT_NONE) continue;      /* fora da janela */
-            hitNow = true;
+            /* era: hitNow = true; */
+            if (hitB[pan] && !holdHit && !autoHit) hitNow = true;
             if (ZJ_ISHOLD(v)) {
                 zeroExplode(p, pan, ri);
                 ZJ_CLR(ri, pan);
@@ -1688,6 +1750,12 @@ static void zeroJudge(int p)
             } else {
                 g_zHit[p][ri] |= (uint16_t)(1u << pan);
                 if (g_zRowJ[p][ri] < (int8_t)jt) g_zRowJ[p][ri] = (int8_t)jt;
+                if (!autoHit) {   /* distância NX: cedo |dt|, tarde dt - Delay (0x80701a1) */
+                    double dv = diff <= 0.0 ? -diff : diff - 0.0416666679;
+                    if (dv < 0.0) dv = 0.0;
+                    g_zSum[p][ri] += (float)dv;
+                    if (g_zCnt[p][ri] < 255) g_zCnt[p][ri]++;
+                }
             }
         }
         /* sobrou nota sem pisar? */
@@ -1697,7 +1765,8 @@ static void zeroJudge(int p)
             if (v && !(g_zHit[p][ri] & (1u << pan))) { left = true; break; }
         }
         if (!left) {
-            JudgeType jt = (JudgeType)g_zRowJ[p][ri];
+            /* era: JudgeType jt = (JudgeType)g_zRowJ[p][ri];  (pior resultado) */
+            JudgeType jt = g_zRowJ[p][ri] ? zeroRowResult(p, ri) : JT_NONE;
             if (jt != JT_NONE) {
                 if (jt == JT_PERFECT || jt == JT_GREAT) {
                     for (int pan = 0; pan < panCount; pan++)
@@ -1735,7 +1804,7 @@ static void zeroJudge(int p)
         }
         if (missed) applyRowJudgment(p, JT_MISS);
         else if (g_zRowJ[p][ri]) {
-            applyRowJudgment(p, (JudgeType)g_zRowJ[p][ri]);
+            applyRowJudgment(p, zeroRowResult(p, ri));   /* era: (JudgeType)g_zRowJ[p][ri] */
             if (g_misHiddenRow(ri)) g_nxMis[p].hidden++;
         }
         g_zDone[p][ri] = 1;
@@ -3780,9 +3849,14 @@ void Gameplay_Render(void)
                 }
                 /* 2) cabeça acima da tela (não segurada): só se a linha inicial for
                  * corpo/ponta de um hold que ainda tem a cabeça no gráfico */
+                /* era: só procurava depois da cauda do long segurado (lastTail); um long
+                 * do mesmo painel perdido ANTES dele (MISS, segue subindo) não era
+                 * desenhado e sumia quando o próximo long já estava seguro (D02 CRAZY,
+                 * longs curtos colados). Agora a busca cobre a tela toda e só pula o
+                 * trecho do long segurado (held+1 .. lastTail). */
                 int from = startRow;
-                if (lastTail < startRow) {
-                    for (int k = startRow; k >= 0 && k > lastTail; k--) {
+                {
+                    for (int k = startRow; k >= 0; k--) {
                         uint8_t v = Z_PV(k, panel);
                         if (v == NT_HOLD_H) { from = k; break; }
                         /* long solto no meio: a cabeça e o trecho segurado foram
@@ -3791,8 +3865,10 @@ void Gameplay_Render(void)
                         if (v != NT_HOLD_B && !(k == startRow && v == NT_HOLD_T)) break;
                     }
                 }
-                /* 3) cabeças visíveis */
-                for (int h = (from > lastTail ? from : lastTail + 1); h <= endRow && h < rows; h++) {
+                /* 3) cabeças visíveis
+                 * era: for (int h = (from > lastTail ? from : lastTail + 1); ...) */
+                for (int h = from; h <= endRow && h < rows; h++) {
+                    if (held >= 0 && h > held && h <= lastTail) { h = lastTail; continue; }   /* long segurado */
                     uint8_t hv = Z_PV(h, panel);
                     /* era: só HOLD_H. Também o corpo órfão (linha anterior apagada):
                      * é o que sobra de um long solto no meio, que segue subindo. */
