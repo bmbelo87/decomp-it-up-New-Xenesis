@@ -116,7 +116,7 @@ void Demo_End(void) {
 #define TITLE_IDLE_FRAMES 3150
 #define TITLE_FADE_FRAMES 60
 static bool s_attractWantTitle;
-static int  s_attractStep;      /* 0 LOGO 81, 1 NEXCADE, 2 OP, 3 TITLE, 4 demo, 5 HIGHSCORE */
+static int  s_attractStep;      /* 0 LOGO 81, 1 NEXCADE, 2 OP, 3 TITLE, 4 demo, 5 HIGHSCORE, 6 WPF2007 */
 static const char* s_movieName = "OP";   /* PLAYMOVIE <nome>: BGA/<nome>.MOV + AUDIO/<nome>.AUD */
 static int  s_titleFadeOut;     /* CTitle::End: 0..60 */
 static bool attractFree(void) { return g_game.gameStyleModded && Coin_IsFreePlay(); }
@@ -139,10 +139,18 @@ void Attract_Idle(void) {
      * NX CFlowControl::Next (piu 0x805fbc0 = NX2 flowcontrol.cpp): laço da atração
      *   PublisherLogo "PLAYMOVIE 81" -> DeveloperLogo "PLAYMOVIE NEXCADE" ->
      *   Opening "PLAYMOVIE OP" -> Title -> Demo -> HighScore -> volta ao começo.
-     * (A propaganda "PLAYMOVIE WPF2007", chamada por botão, não foi portada.) */
+     * No piu do NX a tabela de saltos (0x80fcf70) segue com "PLAYMOVIE WPF2007" depois do
+     * HIGHSCORE: o vídeo WPF2007 fecha o laço antes de voltar ao logo (confirmado pelo
+     * usuário no arcade). No NX2 ele virou propaganda chamada por botão.
+     * era: laço de 6 passos, sem o WPF2007. */
     (void)g_idleCount; (void)Demo_Start;
-    for (int guard = 0; guard < 6; guard++) {
-        s_attractStep = (s_attractStep + 1) % 6;
+    /* O passo atual vem da tela em que se está, quando ela é do laço: quem entra no
+     * ranking ou no logo por outro caminho (gancho de teste, console) saía do passo
+     * errado — do ranking ia direto para o NEXCADE, pulando o WPF2007 e o logo. */
+    if (g_game.state == STATE_HIGHSCORE) s_attractStep = 5;
+    else if (g_game.state == STATE_LOGO_ENTER) s_attractStep = 0;
+    for (int guard = 0; guard < 7; guard++) {
+        s_attractStep = (s_attractStep + 1) % 7;
         switch (s_attractStep) {
         case 0: Game_ChangeState(STATE_LOGO_ENTER); return;
         case 1: s_movieName = "NEXCADE"; Game_ChangeState(STATE_INTRO); return;
@@ -150,6 +158,7 @@ void Attract_Idle(void) {
         case 3: Game_ChangeState(STATE_CREDIT);     return;
         case 4: if (Demo_StartNX()) return; break;
         case 5: Game_ChangeState(STATE_HIGHSCORE);  return;
+        case 6: s_movieName = "WPF2007"; Game_ChangeState(STATE_INTRO); return;
         }
     }
 }
