@@ -488,9 +488,23 @@ static void zPlay(int k) { if (g_zSnd[k] >= 0) Audio_Play(g_zSnd[k], false); }
 static void zStopAll(void) { if (!g_zSndInit) return; for (int k = 0; k < 14; k++) if (g_zSnd[k] >= 0) Audio_Stop(g_zSnd[k]); }
 
 /* devolve true quando a tela terminou */
-static bool zDanceGradeUpdate(int t, float dt)
+/* CENTER no Dance Grade (pedido do usuário):
+ *   VANILLA: como no World Grade (0x808ee3e) — um CENTER depois de 30 quadros pula para
+ *            o fade de saída (600..630);
+ *   MODDED:  só no terceiro CENTER, para não pular a tela com um passo dado sem querer.
+ * Vale o CENTER de qualquer jogador que esteja no crédito. era: sem atalho, a tela só
+ * saía sozinha em 630 quadros. */
+static int s_dgCenter;   /* CENTER contados nesta tela */
+
+static bool zDanceGradeUpdate(int* tp, float dt)   /* era: (int t, float dt) */
 {
     if (Movie_IsOpen()) Movie_Update(dt);
+    if (*tp > 30 && *tp < 600) {
+        for (int p = 0; p < 2; p++)
+            if ((g_game.activePlayerMask & (1 << p)) && Input_IsPadHit(p, PAD_C)) s_dgCenter++;
+        if (s_dgCenter >= (g_game.gameStyleModded ? 3 : 1)) *tp = 599;
+    }
+    int t = *tp;
     int maxD = 3;
     for (int p = 0; p < 2; p++)
         if (g_game.activePlayerMask & (1 << p))
@@ -737,6 +751,7 @@ static GameState wgNext(void)
 void Result_Enter(void) {
     g_resultFrame = 0;
     g_resT = 0;
+    s_dgCenter = 0;
     g_lastDigitSoundCount = 0;
     g_lastSoundFrame = -100;
     g_gradeSoundPlayed = false;
@@ -791,7 +806,7 @@ void Result_Update(float dt) {
         }
         if (g_game.state != STATE_DANCE_GRADE_DISPLAY) return;
         /* resGradeSounds(g_resT);  Exceed */
-        if (g_wgActive ? wgUpdate(&g_resT, dt) : zDanceGradeUpdate(g_resT, dt)) {      /* Zero 0x806f770; Exceed: g_resT > 0x168 */
+        if (g_wgActive ? wgUpdate(&g_resT, dt) : zDanceGradeUpdate(&g_resT, dt)) {      /* Zero 0x806f770; Exceed: g_resT > 0x168 */
             Movie_Close();
             GameState ns = g_wgActive ? wgNext() : Result_GetNextState();
             BGM_Stop();
