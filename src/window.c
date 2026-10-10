@@ -379,8 +379,11 @@ void Window_ToggleFullscreen(void) {
     g_game.isFullscreen = !g_game.isFullscreen;
     /* Uint32 fsflag = g_game.isFullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
     SDL_SetWindowFullscreen(g_win, fsflag); */
-    Window_SetFullscreen(g_game.isFullscreen);
-    Window_UpdateViewport();
+    /* era: Window_SetFullscreen(g_game.isFullscreen); Window_UpdateViewport();
+     * Agora pelo mesmo caminho do GRAPHICS SETTINGS: além do modo exclusivo, volta o
+     * tamanho da janela ao sair e reaplica o vsync (o intervalo de swap pode se perder
+     * na troca de modo de vídeo). */
+    Window_ApplyGraphics();
     Log_Print("Window: %s\n", g_game.isFullscreen ? "fullscreen" : "windowed");
 }
 

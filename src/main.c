@@ -340,6 +340,13 @@ void Game_Update(float dt) {
     if (Input_IsKeyHit(VK_F4) && Input_IsKeyDown(VK_MENU))
         Window_RequestQuit();
 
+    /* Alt+Enter: alterna janela / tela cheia exclusiva de qualquer tela. A função
+     * Window_ToggleFullscreen existia, mas nada a chamava: o atalho não fazia nada. */
+    /* era: if (Input_IsKeyHit(VK_RETURN) && Input_IsKeyDown(VK_MENU)) — o Enter também
+     * chegava à tela atual. Agora o input.c retém o Enter enquanto o Alt está segurado. */
+    if (Input_AltEnterHit())
+        Window_ToggleFullscreen();
+
     /* F1 abre o SETUP MENU de qualquer tela. Dentro do menu o F1 passa a ser o
      * TEST BUTTON (percorre a lista) e o F2 o SERVICE BUTTON (confirma) —
      * tratados em service_menu.c. */

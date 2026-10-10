@@ -644,6 +644,7 @@ void Window_Destroy(void);
 void Window_SwapBuffers(void);
 bool Window_ProcessMessages(void);
 void Window_ToggleFullscreen(void);
+bool Input_AltEnterHit(void);      /* input.c: Alt+Enter apertado neste quadro (o Enter fica retido) */
 void Window_ApplyGraphics(void);
 bool Window_VsyncActive(void);     /* window.c: vsync aplicado de fato */
 void Window_VsyncFailed(void);     /* o swap não bloqueia: cai no limitador */

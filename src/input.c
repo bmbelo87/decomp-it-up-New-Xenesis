@@ -345,6 +345,9 @@ void Input_CancelListen(void) {
 }
 
 static uint32_t g_padEdge[2];
+static bool s_altEnterLatch;   /* Alt+Enter em curso: Enter retido até ser solto */
+static bool s_altEnterHit;     /* Alt+Enter apertado neste update */
+bool Input_AltEnterHit(void) { return s_altEnterHit; }
 
 static int Input_VKFromEvent(const SDL_Event* ev);
 
@@ -398,13 +401,19 @@ bool Input_ProcessEvent(void* evp) {
         if (!ev->key.repeat) {
             if (!g_keysLoaded) Input_LoadKeyConfig();
             SDL_Scancode sc = ev->key.keysym.scancode;
+            /* Alt+Enter: o Enter não gera aperto de painel (ver Input_Update) */
+            bool altEnterEv = (ev->key.keysym.mod & KMOD_ALT) &&
+                              (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER);
+            if (!altEnterEv)
             for (int p = 0; p < 2; p++)
                 for (int b = 0; b < PAD_BUTTONS_PER_PLAYER; b++)
                     for (int i = 0; i < g_padKeys[p][b].n; i++)
                         if (g_padKeys[p][b].sc[i] == sc)
                             g_padEdge[p] |= (1u << b);
         }
-        if (Debug_ConsoleIsActive()) {
+        if (Debug_ConsoleIsActive() &&
+            !((ev->key.keysym.mod & KMOD_ALT) && (ev->key.keysym.scancode == SDL_SCANCODE_RETURN ||
+                                                   ev->key.keysym.scancode == SDL_SCANCODE_KP_ENTER))) {
             int vk = Input_VKFromEvent(ev);
             Debug_ConsoleKeyHandler(0, vk);
         }
@@ -584,6 +593,18 @@ void Input_Update(void) {
      * layouts onde a crase é tecla morta (ABNT2), e o console não abre. */
     if (kbd[SDL_SCANCODE_GRAVE]) g_game.input.keys[VK_OEM_3] = true;
 
+    /* Alt+Enter é só do atalho de tela cheia (pedido do usuário): com Alt segurado o
+     * Enter não vale como tecla do jogo nem como painel mapeado nele. Fica preso até
+     * o Enter ser solto, senão soltar o Alt primeiro faria o mesmo aperto valer. */
+    {
+        bool enterDown = kbd[SDL_SCANCODE_RETURN] || kbd[SDL_SCANCODE_KP_ENTER];
+        bool combo = enterDown && g_game.input.keys[VK_MENU];
+        if (!enterDown) s_altEnterLatch = false;
+        s_altEnterHit = combo && !s_altEnterLatch;
+        if (combo) s_altEnterLatch = true;
+        if (s_altEnterLatch) g_game.input.keys[VK_RETURN] = false;
+    }
+
     g_focused = false;
     SDL_Window* kb = SDL_GetKeyboardFocus();
     if (kb && (SDL_GetWindowFlags(kb) & SDL_WINDOW_INPUT_FOCUS))
@@ -594,7 +615,9 @@ void Input_Update(void) {
         for (p = 0; p < 2; p++) {
             for (int b = 0; b < PAD_BUTTONS_PER_PLAYER; b++) {
                 for (int i = 0; i < g_padKeys[p][b].n; i++) {
-                    if (kbd[g_padKeys[p][b].sc[i]]) {
+                    SDL_Scancode psc = g_padKeys[p][b].sc[i];
+                    if (s_altEnterLatch && (psc == SDL_SCANCODE_RETURN || psc == SDL_SCANCODE_KP_ENTER)) continue;
+                    if (kbd[psc]) {   /* era: kbd[g_padKeys[p][b].sc[i]] */
                         g_game.input.padState[p] |= (1u << b);
                         break;
                     }
