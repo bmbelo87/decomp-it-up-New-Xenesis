@@ -48,6 +48,7 @@
  */
 
 #include "pumpy.h"
+#include "recomp_version.h"   /* RECOMP_VERSION (gerado) */
 #include "movie.h"
 #include <stdio.h>
 #include <string.h>

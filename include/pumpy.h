@@ -38,7 +38,9 @@ typedef void* LPDIRECTSOUNDBUFFER;
 #include "step.h"
 
 #define GAME_VERSION "0.9.5"
-#define RECOMP_VERSION "0.2.4"   /* versão do projeto (tag do release); aparece no Service Menu como RECOMP-<versão> */
+/* era: #define RECOMP_VERSION "0.2.4" (à mão). Agora vem de recomp_version.h, gerado a cada build
+ * por cmake/recomp_version.cmake (cada commit soma 1 no último número). Inclua esse cabeçalho só
+ * onde a versão é usada, para um commit novo não recompilar o projeto inteiro. */
 #define GAME_BUILD_DATE "Jul 27 2026"
 #define GAME_BUILD_TIME "15:44"
 #define TARGET_FPS 60
@@ -643,6 +645,8 @@ void Window_SwapBuffers(void);
 bool Window_ProcessMessages(void);
 void Window_ToggleFullscreen(void);
 void Window_ApplyGraphics(void);
+bool Window_VsyncActive(void);     /* window.c: vsync aplicado de fato */
+void Window_VsyncFailed(void);     /* o swap não bloqueia: cai no limitador */
 int  Window_GetRefreshRate(void);   /* window.c: Hz do monitor (limite sem vsync) */
 void Window_GetResolution(int idx, int* w, int* h);
 void Window_RequestQuit(void);   /* SDL port: asks the message pump to exit   */

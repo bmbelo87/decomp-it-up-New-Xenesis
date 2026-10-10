@@ -202,6 +202,26 @@ add_executable(Pumpy
 
 target_include_directories(Pumpy PRIVATE include)
 
+# Versão do projeto (RECOMP_VERSION): cada commit soma 1 no último número.
+# Série atual: 0.2.x, contada a partir do commit da release v0.2.4.
+# Para abrir a 0.3: RECOMP_MAJOR_MINOR "0.3", RECOMP_PATCH_BASE 0 e
+# RECOMP_BASE_COMMIT = commit que fecha a 0.2 (ver cmake/recomp_version.cmake).
+set(RECOMP_MAJOR_MINOR "0.2")
+set(RECOMP_PATCH_BASE 4)
+set(RECOMP_BASE_COMMIT "f525b0d")
+set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_custom_target(recomp_version ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${RECOMP_GEN_DIR}
+        -DMAJOR_MINOR=${RECOMP_MAJOR_MINOR} -DPATCH_BASE=${RECOMP_PATCH_BASE}
+        -DBASE_COMMIT=${RECOMP_BASE_COMMIT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/recomp_version.cmake
+    BYPRODUCTS ${RECOMP_GEN_DIR}/recomp_version.h
+    COMMENT "Versao do projeto (RECOMP_VERSION)"
+    VERBATIM)
+add_dependencies(Pumpy recomp_version)
+target_include_directories(Pumpy PRIVATE ${RECOMP_GEN_DIR})
+
 target_compile_definitions(Pumpy PRIVATE
     _CRT_SECURE_NO_WARNINGS
     SDL_MAIN_HANDLED          # main() próprio, sem SDL2main (ver window.c: SDL_SetMainReady)

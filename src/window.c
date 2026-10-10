@@ -93,6 +93,28 @@ static void Window_SetFullscreen(bool fs) {
     SDL_SetWindowFullscreen(g_win, SDL_WINDOW_FULLSCREEN_DESKTOP);
 }
 
+/* vsync realmente em uso. O INI pede (g_game.vsync), mas o driver pode recusar ou
+ * ignorar: o laço principal precisa saber o que valeu, senão desenha sem limite.
+ * era: SDL_GL_SetSwapInterval(g_game.vsync ? 1 : 0) sem olhar o retorno. */
+static bool s_vsyncOn = false;
+static void window_applyVsync(void) {
+    int want = g_game.vsync ? 1 : 0;
+    int rc = SDL_GL_SetSwapInterval(want);
+    int got = SDL_GL_GetSwapInterval();
+    s_vsyncOn = (want == 1 && rc == 0 && got != 0);
+    if (want && !s_vsyncOn)
+        Log_Print("Window: vsync pedido mas nao aplicado (rc=%d intervalo=%d: %s); usando o limitador\n",
+                  rc, got, SDL_GetError());
+    else
+        Log_Print("Window: vsync %s (intervalo=%d)\n", s_vsyncOn ? "ativo" : "desligado", got);
+}
+bool Window_VsyncActive(void) { return s_vsyncOn; }
+/* chamado pelo laço principal quando o swap não bloqueia apesar do vsync "ativo" */
+void Window_VsyncFailed(void) {
+    if (!s_vsyncOn) return;
+    s_vsyncOn = false;
+    Log_Print("Window: vsync ativo mas o swap nao bloqueia (driver forcando desligado?); usando o limitador\n");
+}
 bool Window_Create(HINSTANCE hInstance, int width, int height, bool fullscreen) {
     (void)hInstance;
 
@@ -142,7 +164,7 @@ bool Window_Create(HINSTANCE hInstance, int width, int height, bool fullscreen) 
         return false;
     }
     SDL_GL_MakeCurrent(g_win, g_glc);
-    SDL_GL_SetSwapInterval(g_game.vsync ? 1 : 0);
+    window_applyVsync();   /* era: SDL_GL_SetSwapInterval(g_game.vsync ? 1 : 0); */
 
     if (fullscreen)
         Window_SetFullscreen(true);
@@ -344,7 +366,7 @@ void Window_ApplyGraphics(void) {
         SDL_SetWindowPosition(g_win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         g_winW = w; g_winH = h;
     }
-    SDL_GL_SetSwapInterval(g_game.vsync ? 1 : 0);
+    window_applyVsync();   /* era: SDL_GL_SetSwapInterval(g_game.vsync ? 1 : 0); */
     Window_UpdateViewport();
     Texture_ApplyFilterAll();
     Log_Print("Window: graficos fs=%d res=%d vsync=%d filtro=%d aspect=%d\n",

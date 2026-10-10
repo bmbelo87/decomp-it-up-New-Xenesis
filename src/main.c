@@ -1,4 +1,5 @@
 #include "pumpy.h"
+#include "recomp_version.h"   /* RECOMP_VERSION (gerado) */
 #include "testbga.h"
 #include "movie.h"
 #include "vsl.h"
@@ -12,6 +13,7 @@ extern bool Window_ProcessMessages(void);
 static void InitSystems(void) {
     Log_Print("=== PUMP IT UP v%s (%s %s) ===\n",
               GAME_VERSION, GAME_BUILD_DATE, GAME_BUILD_TIME);
+    Log_Print("Build: RECOMP-%s\n", RECOMP_VERSION);   /* versão do projeto, para conferir em logs de usuário */
 
     timeBeginPeriod(1);
 
@@ -1038,6 +1040,12 @@ void Game_MainLoop(void) {
     double qpcHz = (double)SDL_GetPerformanceFrequency();
     uint64_t prevQpc = SDL_GetPerformanceCounter();
     uint64_t lastRenderQpc = prevQpc;
+    uint64_t startQpc = prevQpc;      /* origem dos tempos em ms da agenda de desenho */
+    uint64_t lastSwapQpc = prevQpc;
+    double nextRenderMs = 0.0;        /* próximo desenho do gameplay sem vsync */
+    bool   pendingTick = false;       /* houve passo de lógica desde o último desenho */
+    int    fastFrames = 0;            /* quadros seguidos rápidos demais com "vsync" */
+    (void)lastRenderQpc;
     double presentSec = 0.0;      /* instante (s) do último swap, filtrado */
     bool   presentValid = false;
 
@@ -1087,30 +1095,69 @@ void Game_MainLoop(void) {
          * Sem vsync o gameplay só desenhava a 60 Hz fora de fase com o monitor
          * (tremor em 75/120/144 Hz). Agora desenha também sem vsync, limitado à
          * taxa do monitor; com vsync o próprio swap limita. */
-        bool extra = false;
-        if (g_game.state == STATE_GAMEPLAY) {
-            if (g_game.vsync) extra = true;
-            else {
-                double hz = (double)Window_GetRefreshRate();
-                double minMs = 1000.0 / (hz > 0.0 ? hz : 60.0);
-                extra = (double)(nowQpc - lastRenderQpc) * 1000.0 / qpcHz >= minMs;
+        /* era:
+         *     bool extra = false;
+         *     if (g_game.state == STATE_GAMEPLAY) {
+         *         if (g_game.vsync) extra = true;
+         *         else extra = (nowQpc - lastRenderQpc) em ms >= período do monitor;
+         *     }
+         *     if (steps > 0 || extra) { lastRenderQpc = nowQpc; g_renderTick = (steps > 0); ...
+         * Dois defeitos sem vsync no gameplay:
+         *  1. o teste era "já passou um período desde o ÚLTIMO desenho" com Sleep(1)
+         *     entre os giros: o intervalo saía sempre um pouco maior que o período
+         *     (~17 ms em 60 Hz) e o erro não era compensado -> o jogo ficava abaixo
+         *     da taxa do monitor e repetia um quadro de tempos em tempos;
+         *  2. além desses desenhos, todo passo de lógica também desenhava -> dois
+         *     desenhos por período, fora de fase.
+         * Agora o gameplay sem vsync desenha numa agenda fixa (próximo += período,
+         * sem acumular atraso) e só nela; e "vsync" vale o que foi aplicado de fato
+         * (Window_VsyncActive), não o que o INI pede. */
+        bool vsOn = Window_VsyncActive();
+        bool inGp = (g_game.state == STATE_GAMEPLAY);
+        double monHz = (double)Window_GetRefreshRate();
+        double periodMs = 1000.0 / (monHz > 0.0 ? monHz : 60.0);
+        double nowMs = (double)(nowQpc - startQpc) * 1000.0 / qpcHz;
+        if (steps > 0) pendingTick = true;
+        bool doRender;
+        if (!inGp) {
+            doRender = (steps > 0);
+            nextRenderMs = nowMs;            /* a agenda recomeça ao entrar no gameplay */
+        } else if (vsOn) {
+            doRender = true;                 /* o swap bloqueia e dá o ritmo */
+        } else {
+            doRender = (nowMs >= nextRenderMs);
+            if (doRender) {
+                nextRenderMs += periodMs;
+                if (nextRenderMs < nowMs) nextRenderMs = nowMs + periodMs;   /* atrasou mais de um período */
             }
         }
-        if (steps > 0 || extra) {
+        if (doRender) {
             lastRenderQpc = nowQpc;
-            g_renderTick = (steps > 0);
+            g_renderTick = pendingTick;      /* era: (steps > 0) */
+            pendingTick = false;
             uint64_t hz1 = SDL_GetPerformanceCounter();
             double movUpd = g_movieMs, logUpd = g_logMs;
             /* era: Game_Render() direto; o relógio das setas era lido no começo
              * do desenho, depois do Game_Update, e o custo do update virava
              * tremor. Com vsync usa o instante do último swap (presentSec). */
             bool rc = false;
-            if (g_game.vsync && presentValid && g_game.state == STATE_GAMEPLAY)
+            if (vsOn && presentValid && inGp)   /* era: g_game.vsync && ... */
                 rc = Gameplay_BeginRenderClock(presentSec);
             Game_Render();       /* o swap com vsync bloqueia até o refresh */
             if (rc) Gameplay_EndRenderClock();
             g_renderTick = true;
             uint64_t hz2 = SDL_GetPerformanceCounter();
+            /* vsync "ligado" mas o swap não bloqueia (driver forçando desligado): os
+             * quadros saem muito mais rápido que o monitor. 120 seguidos abaixo de
+             * 35% do período -> passa para o limitador. */
+            if (vsOn && inGp) {
+                double dMs = (double)(hz2 - lastSwapQpc) * 1000.0 / qpcHz;
+                fastFrames = (dMs < periodMs * 0.35) ? fastFrames + 1 : 0;
+                if (fastFrames >= 120) { Window_VsyncFailed(); fastFrames = 0; nextRenderMs = nowMs; }
+            } else {
+                fastFrames = 0;
+            }
+            lastSwapQpc = hz2;
             /* Instante do swap, filtrado: perto do previsto (anterior + período)
              * só corrige 10% do erro, para o intervalo ficar regular mesmo se o
              * retorno do swap oscilar; longe (quadro perdido, vsync que não
@@ -1135,7 +1182,11 @@ void Game_MainLoop(void) {
                           elapsed, updMs, steps, movUpd, logUpd, rndMs, logTot - logUpd, (int)g_game.state);
             }
         } else {
-            Sleep(1);            /* nada a fazer neste giro */
+            /* era: Sleep(1) sempre. Perto do próximo passo ou do próximo desenho da
+             * agenda, só cede a vez (Sleep(0)) para não passar do ponto em 1 ms. */
+            double waitMs = STEP_MS - accumulator;
+            if (inGp && !vsOn && nextRenderMs - nowMs < waitMs) waitMs = nextRenderMs - nowMs;
+            Sleep(waitMs > 2.0 ? 1 : 0);
         }
     }
 }
