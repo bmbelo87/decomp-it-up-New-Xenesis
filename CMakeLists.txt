@@ -206,12 +206,13 @@ target_include_directories(Pumpy PRIVATE include)
 # Versão do projeto (RECOMP_VERSION): cada commit soma 1 no último número.
 # Série atual: 0.3.x. A 0.3.0 é o primeiro commit depois da renomeação (0fd498a).
 # era: série 0.2.x, RECOMP_PATCH_BASE 4, base no commit da release v0.2.4 (f525b0d).
+# era: série 0.3.x, RECOMP_MAJOR_MINOR "0.3", base 0fd498a. A 0.4 abre com o USE OLD DATA SONGS (base fcfa521).
 # Para abrir a próxima série (ex.: 0.4): RECOMP_MAJOR_MINOR "0.4", RECOMP_PATCH_BASE -1 e
 # RECOMP_BASE_COMMIT = último commit da série anterior; o commit dessa troca vira o .0
 # (ver tools/recomp_version.cmake).
-set(RECOMP_MAJOR_MINOR "0.3")
+set(RECOMP_MAJOR_MINOR "0.4")
 set(RECOMP_PATCH_BASE -1)   # o 1º commit depois da base é o .0
-set(RECOMP_BASE_COMMIT "0fd498a")
+set(RECOMP_BASE_COMMIT "fcfa521")
 set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(recomp_version ALL
     COMMAND ${CMAKE_COMMAND}
