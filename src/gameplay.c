@@ -287,6 +287,8 @@ static void applyLife(int player, JudgeType jt)
  * coisa muito fora disso é o hold que aparece do nada.
  * Remover quando o bug estiver fechado. */
 static double getRowTime(int ri);
+static bool isHDMode(void);   /* definidas mais abaixo; usadas na cópia dos comandos do P2 */
+static bool isDNMode(void);
 static void holdOpenDbg(const char* tag, int p, int panel, int ri)
 {
     double rt = (g_chart && ri >= 0 && ri < (int)g_chart->rowCount) ? getRowTime(ri) : -999.0;
@@ -1320,8 +1322,10 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
      * lado do P2 saía em 1X). Copia para o índice 0, como nxSkinUse já faz com a
      * skin. O índice 1 fica intacto (Mirror/RS e o resultado leem dele). */
     {
-        static bool isHDMode(void);
-        static bool isDNMode(void);
+        /* era: "static bool isHDMode(void); static bool isDNMode(void);" declarados aqui
+         * dentro do bloco. O MSVC aceita, o GCC não ("invalid storage class"): o build
+         * Linux quebrava. As declarações foram para o escopo do arquivo (antes de
+         * Gameplay_Init). */
         if ((isDNMode() || isHDMode()) && g_game.activePlayerMask == 0x2) {
             g_game.cmdSpeedNx[0]        = g_game.cmdSpeedNx[1];
             g_game.cmdSpeedMult[0]      = g_game.cmdSpeedMult[1];
