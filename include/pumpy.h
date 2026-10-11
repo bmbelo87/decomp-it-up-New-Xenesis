@@ -157,7 +157,8 @@ typedef enum {
  * vêm de uma versão anterior */
 /* era: 209. +1: DB52 (Novasonic Remix) */
 /* era: 210. +40 que no NX só têm o step (áudio, BGA, capa e disco do Exceed 2 / Exceed) */
-#define SONG_TABLE_COUNT     250   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 + 9 + 4 extras */
+/* era: 250. +13 da varredura dos .SEE sem dono */
+#define SONG_TABLE_COUNT     263   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 + 9 + 4 extras */
 #define NX_SONG_BASE      193   /* índices >= este são extras do port (fora do piu) */
 #define NX_SONG_OLD_BASE  196   /* índices >= este só entram com USE OLD DATA SONGS ligado */
 #define SONG_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
@@ -858,6 +859,7 @@ int  Skin_Index(void);
 void Skin_SetIndex(int n);
 int  Skin_IndexP(int p);           /* skin do jogador p (NX2 m_CurrentSkin) */
 void Skin_SetIndexP(int p, int n);       /* console /skin */           /* select_classic.c: skin de notas (SKIN00..07) */
+int  Skin_Default(void);   /* 0 no VANILLA, 8 no MODDED */
 void ClassicSelect_Enter(void);          /* select_classic.c — CSelect do Zero */
 void ClassicSelect_Update(float dt);
 void ClassicSelect_Render(void);

@@ -75,7 +75,7 @@ Estes ligam e desligam nos dois lados ao mesmo tempo, não importa quem digitou.
 
 | Código | Sequência | Efeito |
 |---|---|---|
-| **Limpar**<br><sub>DL DR DL DR DL DR</sub> | <img src="img/arrows/dl.png" width="26" alt="DL"> <img src="img/arrows/dr.png" width="26" alt="DR"> <img src="img/arrows/dl.png" width="26" alt="DL"> <img src="img/arrows/dr.png" width="26" alt="DR"> <img src="img/arrows/dl.png" width="26" alt="DL"> <img src="img/arrows/dr.png" width="26" alt="DR"> | Zera velocidade e modificadores do jogador, volta a skin padrão (`SKIN08`) e desliga UA, X e NX dos dois jogadores. |
+| **Limpar**<br><sub>DL DR DL DR DL DR</sub> | <img src="img/arrows/dl.png" width="26" alt="DL"> <img src="img/arrows/dr.png" width="26" alt="DR"> <img src="img/arrows/dl.png" width="26" alt="DL"> <img src="img/arrows/dr.png" width="26" alt="DR"> <img src="img/arrows/dl.png" width="26" alt="DL"> <img src="img/arrows/dr.png" width="26" alt="DR"> | Zera velocidade e modificadores do jogador, volta a skin padrão (`SKIN00` no VANILLA, `SKIN08` no MODDED) e desliga UA, X e NX dos dois jogadores. |
 
 ## Extras do port (GAME STYLE = MODDED)
 
@@ -105,6 +105,7 @@ arcade. Em `MODDED`:
 | O que | Como fica |
 |---|---|
 | Modos escondidos | 22 dificuldades que têm notas nos steps do NX e não aparecem no arcade passam a aparecer com nível "??" (LOVELY full Crazy/Nightmare, Canon D full Nightmare, Kiss me Another Normal/Hard/Crazy e outras, quase todas na SPECIAL ZONE). |
+| Skin padrão | `SKIN08` (no VANILLA é a `SKIN00`, como no arcade). |
 | Códigos extras | Valem os da seção acima (skins REbirth, EZ, SLIME e MELODY, 5X, 6X, +0.5X, BGA Off). |
 | Músicas extras | Aparecem **Fighting Spirit** (H.O.T) e **Valenti** (BoA) no canal K-POP, e **Fighting Spirit Another** na SPECIAL ZONE. Os arquivos já estão no disco do NX; só não constam na lista do arcade. |
 | Atração em FREE PLAY / EVENT | A atração roda (logo, NEXCADE, abertura, título, demo, ranking, WPF2007) em vez de ficar presa no título. O CENTER leva ao título, e o título volta à atração sozinho. |
@@ -118,7 +119,7 @@ Opções que só existem, e só valem, com o estilo em `MODDED`:
 | UNLOCK SPECIAL ZONE | OFF | Libera todas as músicas e dificuldades da SPECIAL ZONE. |
 | AUTOPLAY KEY (F8) | OFF | Permite ligar e desligar o autoplay com o F8 durante a música. |
 | DG TEST KEY (F12) | OFF | Permite encerrar a música com o F12 e ir ao Dance Grade com valores fixos. |
-| USE OLD DATA SONGS | OFF | Mostra mais 54 músicas que têm o step no disco do NX, buscando o que falta (capa, prévia, disco e, em algumas, BGA ou áudio) numa versão anterior instalada ao lado (ver abaixo). |
+| USE OLD DATA SONGS | OFF | Mostra mais 67 músicas que têm o step no disco do NX, buscando o que falta (capa, prévia, disco e, em algumas, BGA ou áudio) numa versão anterior instalada ao lado (ver abaixo). |
 
 As quatro são gravadas no `PUMPY.INI` ao sair pelo EXIT. O DEFAULT SETTING desliga todas e volta o
 estilo para `VANILLA`.
@@ -146,6 +147,11 @@ Outras 40 músicas só têm o step no NX; áudio, BGA, capa e disco vêm do Exce
   You don't wanna run up! (819), Get The Party Started (823), Ba Be Loo Be Ra (A16), Born to be
   Alive (A24), Xibom Bombom (A25).
 
+Mais 13 vieram da varredura dos steps sem dono: Come on Please (108), Hatred (111), Empire of the
+sun (821) e U (B07) no K-POP; Street Show Down (709), J Bong (B16), Free Style (308), All I want
+for X-Mas (504) e Ignition Starts! (101) no BANYA; Fiesta Macarena Pt. 1 (810) no POP; LEXY & 1TYM
+REMIX (DB27) e THE WORLD REMIX (DB50) no canal REMIX; e o Freestyle avulso da Eres Para Mi (D809)
+no canal ANOTHER. As sete primeiras do NX têm tudo no próprio disco, menos a prévia.
 As prévias que faltam podem ser criadas com `tools/import_old_data.py` (Import Old Data): ele acha
 em que ponto da música a intro se encaixa e recorta esse trecho do vídeo do BGA, ou captura o BGA
 `.DAT` pelo próprio jogo, gravando `BGA/PREVIEW/<ID>.MOV` no formato do NX. A intro tocada na
@@ -181,8 +187,8 @@ E:\14_px3\game
 Sem a pasta da versão anterior as músicas continuam aparecendo e dá para jogar, só que sem capa,
 com a prévia padrão e sem disco. O `pumpy.log` mostra o que foi achado (procure por `OLDDATA:`).
 
-A linha da opção no GAME OPTION mostra a situação, ligada ou não: `DATA OK (54/54)` quando todas
-as músicas têm capa, disco e áudio; `MISSING DATA (n/54)` quando falta algo em alguma; `NO OLD GAMES
+A linha da opção no GAME OPTION mostra a situação, ligada ou não: `DATA OK (67/67)` quando todas
+as músicas têm capa, disco e áudio; `MISSING DATA (n/67)` quando falta algo em alguma; `NO OLD GAMES
 FOUND` quando não há nenhuma pasta de versão anterior. As músicas incompletas saem no `pumpy.log`.
 
 ## Teclas de operador

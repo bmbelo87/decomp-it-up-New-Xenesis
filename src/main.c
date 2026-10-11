@@ -284,6 +284,7 @@ void Game_Init(HINSTANCE hInstance) {
     GetCurrentDirectoryA(MAX_PATH, g_game.currentDirectory);
     GameOption_Load(); /* lê PUMPY.INI — antes de qualquer sistema, para que o restante já veja os valores corretos */
     if (getenv("PUMPY_BGACAP")) g_game.isFullscreen = false;   /* captura de BGA (bgaCaptureRun): sempre em janela */
+    Skin_SetIndex(Skin_Default());   /* skin padrão conforme o GAME STYLE lido do PUMPY.INI */
     InitSystems();
     Audio_Init();
     Font_Init();
