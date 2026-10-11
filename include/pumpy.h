@@ -156,7 +156,8 @@ typedef enum {
 /* era: 205. +4 "parciais" (508, A07, C44, B58): além de capa, prévia e disco, o BGA ou o áudio também
  * vêm de uma versão anterior */
 /* era: 209. +1: DB52 (Novasonic Remix) */
-#define SONG_TABLE_COUNT     210   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 + 9 + 4 extras */
+/* era: 210. +40 que no NX só têm o step (áudio, BGA, capa e disco do Exceed 2 / Exceed) */
+#define SONG_TABLE_COUNT     250   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 + 9 + 4 extras */
 #define NX_SONG_BASE      193   /* índices >= este são extras do port (fora do piu) */
 #define NX_SONG_OLD_BASE  196   /* índices >= este só entram com USE OLD DATA SONGS ligado */
 #define SONG_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */

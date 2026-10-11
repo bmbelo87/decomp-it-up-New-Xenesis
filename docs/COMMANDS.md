@@ -117,7 +117,7 @@ Opções que só existem, e só valem, com o estilo em `MODDED`:
 | UNLOCK SPECIAL ZONE | OFF | Libera todas as músicas e dificuldades da SPECIAL ZONE. |
 | AUTOPLAY KEY (F8) | OFF | Permite ligar e desligar o autoplay com o F8 durante a música. |
 | DG TEST KEY (F12) | OFF | Permite encerrar a música com o F12 e ir ao Dance Grade com valores fixos. |
-| USE OLD DATA SONGS | OFF | Mostra mais catorze músicas que têm o step no disco do NX, buscando o que falta (capa, prévia, disco e, em algumas, BGA ou áudio) numa versão anterior instalada ao lado (ver abaixo). |
+| USE OLD DATA SONGS | OFF | Mostra mais 54 músicas que têm o step no disco do NX, buscando o que falta (capa, prévia, disco e, em algumas, BGA ou áudio) numa versão anterior instalada ao lado (ver abaixo). |
 
 As quatro são gravadas no `PUMPY.INI` ao sair pelo EXIT. O DEFAULT SETTING desliga todas e volta o
 estilo para `VANILLA`.
@@ -131,6 +131,22 @@ Cinco músicas precisam de mais coisas da versão anterior: As I Told You (508, 
 (A07, BANYA) usam o BGA do Exceed 2; BANYA HARD REMIX (C44, canal REMIX da SPECIAL ZONE) usa o áudio
 do Zero; Tream Vook of the war Another (B58, canal REMIX, ao lado da Tream Vook REMIX) usa capa, prévia e disco do Zero; NOVASONIC REMIX (DB52, canal REMIX) usa o BGA `326.DAT` do próprio NX e capa, prévia e disco do Zero. A 508
 e a A07 não têm intro nem prévia em nenhuma versão: a seleção toca a própria música.
+
+Outras 40 músicas só têm o step no NX; áudio, BGA, capa e disco vêm do Exceed 2 ou do Exceed:
+
+- BANYA: Hypnosis (102), Koul (203), Nightmare (306), Oh! Rosa! (401), First Love (402), Betrayer
+  (403), Pump Jump (501), Get Your Groove On (703), Maria (705), Oy Oy Oy (714), D Gang (807),
+  Hello (811), Chicken Wing (911), Radezky CanCan (913), Oh! Rosa! Spanish (A26), First Love
+  Spanish (A27).
+- K-POP: Passion (104), To The Top (315), A TRAP (411), Run to you (414), Space Fantasy (517),
+  Go Away (719), Gotta be Kidding! (721), Monkey Magic (916), Pierrot (921), Flamenco (A13).
+- POP: Bambole (801), Burning Krypt (803), Can you feel dis or dat (804), DJ Nightmare (808), On
+  your side (812), Everybody (813), Lay it down (815), Let The Sunshine (816), Lovething (817),
+  You don't wanna run up! (819), Get The Party Started (823), Ba Be Loo Be Ra (A16), Born to be
+  Alive (A24), Xibom Bombom (A25).
+
+Nenhuma versão tem intro ou prévia dessas 40: a seleção toca a própria música e mostra o vídeo
+padrão `BGA/001.MOV` no card.
 
 O jogo sobe duas pastas a partir da pasta do jogo e procura versões anteriores pelo número no
 começo do nome da pasta. Vale a mais próxima que tiver o arquivo.
@@ -154,8 +170,8 @@ E:\14_px3\game
 Sem a pasta da versão anterior as músicas continuam aparecendo e dá para jogar, só que sem capa,
 com a prévia padrão e sem disco. O `pumpy.log` mostra o que foi achado (procure por `OLDDATA:`).
 
-A linha da opção no GAME OPTION mostra a situação, ligada ou não: `DATA OK (14/14)` quando todas
-as músicas têm capa, disco e áudio; `MISSING DATA (n/14)` quando falta algo em alguma; `NO OLD GAMES
+A linha da opção no GAME OPTION mostra a situação, ligada ou não: `DATA OK (54/54)` quando todas
+as músicas têm capa, disco e áudio; `MISSING DATA (n/54)` quando falta algo em alguma; `NO OLD GAMES
 FOUND` quando não há nenhuma pasta de versão anterior. As músicas incompletas saem no `pumpy.log`.
 
 ## Teclas de operador

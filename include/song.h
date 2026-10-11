@@ -13,9 +13,11 @@
 #endif
 #endif
 
-#define MAX_SONGS 256          /* NX: 193 músicas + missões do WORLD TOUR (era 160; truncava a lista da NX) */
+/* era: 256. A tabela foi a 250 com o USE OLD DATA SONGS e as missões do WORLD TOUR / TRAINING
+ * entram no songDB em tempo de jogo (Select_StartMission): sobravam só 6 vagas. */
+#define MAX_SONGS 512          /* NX: 193 músicas + missões do WORLD TOUR (era 160; truncava a lista da NX) */
 #define MAX_MODES 16
-#define MAX_SONGS_PER_MODE 256 /* era 160 */
+#define MAX_SONGS_PER_MODE 512 /* era 160 */
 
 typedef struct {
     int id;

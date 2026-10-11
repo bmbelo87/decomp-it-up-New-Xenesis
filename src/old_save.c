@@ -32,6 +32,11 @@
 #define OSV_SETTINGS    0x7EC
 #define OSV_IDENT_VAL   0x32305845u   /* "EX02" */
 #define OSV_SONG_VER    105           /* [0x456398] */
+/* Contagem de jogos: 2 bytes por música a partir de OSV_PLAYCNT. A imagem é a do Exceed 2
+ * (0x800 bytes, tabela de 138 músicas); a tabela da NX cresceu (250 com o USE OLD DATA
+ * SONGS) e o laço passava do fim da imagem (falha 0xc0000409 ao entrar no Enter Your Name).
+ * Só as músicas que cabem antes do ranking (OSV_RANK_SCORE) têm contagem. */
+#define OSV_PLAYCNT_MAX ((OSV_RANK_SCORE - OSV_PLAYCNT) / 2)   /* 140 */
 
 static uint8_t g_oldSave[OSV_SIZE];
 static bool    g_oldSaveLoaded = false;
@@ -70,7 +75,8 @@ static void oldSaveDefaults(void) {
         put32(OSV_RANK_SCORE + 4 * k, (uint32_t)(10000 - 500 * k));
         memcpy(&g_oldSave[OSV_RANK_NAME + 4 * k], "EXC2", 4);
     }
-    for (int i = 0; i <= SONG_TABLE_COUNT; i++) {          /* 0x421F94: contagem 0 */
+    /* era: i <= SONG_TABLE_COUNT, sem limite (estourava g_oldSave com a tabela da NX) */
+    for (int i = 0; i <= SONG_TABLE_COUNT && i < OSV_PLAYCNT_MAX; i++) {          /* 0x421F94: contagem 0 */
         g_oldSave[OSV_PLAYCNT + 2 * i] = 0;
         g_oldSave[OSV_PLAYCNT + 2 * i + 1] = 0;
     }
@@ -149,7 +155,7 @@ bool    OldSave_SongOff(int i)  { OldSave_Load(); return i >= 0 && i < 256 && g_
 /* 0x4168FA: +1 na contagem de jogos da música (índice da tabela) */
 void OldSave_CountPlay(int i) {
     OldSave_Load();
-    if (i < 0 || i > SONG_TABLE_COUNT) return;
+    if (i < 0 || i > SONG_TABLE_COUNT || i >= OSV_PLAYCNT_MAX) return;   /* era: sem o limite da imagem */
     int off = OSV_PLAYCNT + 2 * i;
     uint16_t v = (uint16_t)(g_oldSave[off] | (g_oldSave[off + 1] << 8));
     v++;

@@ -520,9 +520,25 @@ static void buildList(void) {
     static const uint32_t k_before[][2] = { { 0xA10, 0xA11 }, { 0xD208, 0xD701 }, { 0x208, 0x212 },
         /* parciais: A07 depois da A06 (antes da 202), 508 antes da 516, C44 depois da DC43
          * (antes da DB26); era: a B58 ia para o fim do canal ANOTHER */
-        { 0xA07, 0x204 }, { 0x508, 0x516 }, { 0xC44, 0xDB26 }, { 0xDB52, 0xDB53 }, { 0xB58, 0xDB30 },   /* B58: logo depois da DB28 (pedido do usuário) */
-        { 0x202, 0x204 }, { 0x311, 0x404 }, { 0x707, 0x708 }, { 0xC07, 0xB17 },
-        { 0x730, 0x902 }, { 0x910, 0x915 }, { 0xB04, 0xB05 }, { 0xB10, 0xB11 }, { 0xC13, 0xC14 } };
+        { 0xC44, 0xDB26 }, { 0xDB52, 0xDB53 }, { 0xB58, 0xDB30 },   /* B58: logo depois da DB28 (pedido do usuário) */
+        /* era: { 0xA07, 0x204 }, { 0x508, 0x516 }, { 0x202, 0x204 }, { 0x311, 0x404 }, { 0x707, 0x708 },
+         * { 0xC07, 0xB17 }, { 0x730, 0x902 }, { 0x910, 0x915 }, { 0xB04, 0xB05 }, { 0xB10, 0xB11 },
+         * { 0xC13, 0xC14 }. Com as 40 do "só step" a lista inteira dos canais K-POP, POP e BANYA
+         * passou a ser gerada pela mesma regra (sugestão do port): cada extra entra antes da
+         * primeira música do piu, no mesmo canal e na mesma faixa de id, com id maior; os da
+         * série A fecham o bloco A. Vários extras antes da mesma música ficam em ordem de id. */
+        /* K-POP */
+        { 0xC13, 0xC14 }, { 0xB04, 0xB05 }, { 0xB10, 0xB11 }, { 0xA13, 0x103 }, { 0x104, 0x109 }, { 0x315, 0x318 },
+        { 0x411, 0x413 }, { 0x414, 0x516 }, { 0x508, 0x516 }, { 0x517, 0x902 }, { 0x719, 0x902 }, { 0x721, 0x902 },
+        { 0x730, 0x902 }, { 0x910, 0x915 }, { 0x916, 0x919 }, { 0x921, 0x507 },
+        /* POP (819 e 823 vão para o fim do canal, depois da 818) */
+        { 0xA16, 0xA17 }, { 0xA24, 0x805 }, { 0xA25, 0x805 }, { 0x801, 0x805 }, { 0x803, 0x805 }, { 0x804, 0x805 },
+        { 0x808, 0x809 }, { 0x812, 0x814 }, { 0x813, 0x814 }, { 0x815, 0x818 }, { 0x816, 0x818 }, { 0x817, 0x818 },
+        /* BANYA */
+        { 0xC07, 0xB17 }, { 0xA07, 0x204 }, { 0xA26, 0x204 }, { 0xA27, 0x204 }, { 0x102, 0x204 }, { 0x202, 0x204 },
+        { 0x203, 0x204 }, { 0x306, 0x310 }, { 0x311, 0x404 }, { 0x401, 0x404 }, { 0x402, 0x404 }, { 0x403, 0x404 },
+        { 0x501, 0x502 }, { 0x703, 0x704 }, { 0x705, 0x708 }, { 0x707, 0x708 }, { 0x714, 0x735 }, { 0x807, 0x820 },
+        { 0x811, 0x820 }, { 0x911, 0x922 }, { 0x913, 0x922 } };
     const int nBefore = (int)(sizeof(k_before) / sizeof(k_before[0]));
     /* era: os laços dos extras iam até SONG_TABLE_COUNT; os índices >= NX_SONG_OLD_BASE
      * só entram com USE OLD DATA SONGS ligado */
@@ -769,8 +785,15 @@ static void previewStart(void) {
     /* era: sem a prévia ia direto para a 001.MOV. Extra do port (USE OLD DATA SONGS):
      * antes tenta a prévia de uma versão anterior. */
     if (!nxFind((int)e->id, "%s/BGA/PREVIEW/%03X.MOV", mov, sizeof(mov)) &&
-        !OldData_FindPreview((int)e->id, mov, sizeof(mov)))
+        !OldData_FindPreview((int)e->id, mov, sizeof(mov))) {
         snprintf(mov, sizeof(mov), "%s/BGA/PREVIEW/001.MOV", g_game.currentDirectory);
+        /* era: só o PREVIEW/001.MOV do piu (0x80791f1), que não existe na instalação: o
+         * card ficava sem vídeo. Pedido do usuário: sem prévia em lugar nenhum, o vídeo
+         * padrão BGA/001.MOV. */
+        FILE* pf = fopen(mov, "rb");
+        if (pf) fclose(pf);
+        else snprintf(mov, sizeof(mov), "%s/BGA/001.MOV", g_game.currentDirectory);
+    }
     Movie_Select(1);
     Movie_Open(mov, true);
     Movie_Select(0);
