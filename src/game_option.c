@@ -34,6 +34,8 @@ static bool loadIni(bool all)
         if (sscanf(line, "Aspect=%d",      &v) == 1) g_game.gfxAspect    = (v != 0);
         if (sscanf(line, "UnlockSpecial=%d", &v) == 1) g_game.nxUnlockSpecial = (v != 0);   /* extra do port */
         if (sscanf(line, "GameStyle=%d",   &v) == 1) g_game.gameStyleModded = (v != 0);   /* extra do port: 0 VANILLA, 1 MODDED */
+        if (sscanf(line, "AutoplayKey=%d", &v) == 1) g_game.keyAutoplay = (v != 0);       /* extra do port (MODDED): F8 */
+        if (sscanf(line, "DgTestKey=%d",   &v) == 1) g_game.keyDgTest   = (v != 0);       /* extra do port (MODDED): F12 */
         /* if (sscanf(line, "Upscale=%d",     &v) == 1) g_game.gfxUpscale   = (v >= 2 && v <= 4) ? v : 0;   UPSCALE desativado */
         if (!all) continue;
         if (sscanf(line, "Difficulty=%d",  &v) == 1) g_game.optionDifficulty = v;
@@ -74,6 +76,8 @@ void GameOption_Save(void)
         fprintf(f, "[Extras]\n");
         fprintf(f, "UnlockSpecial=%d\n", (int)g_game.nxUnlockSpecial);
         fprintf(f, "GameStyle=%d\n", (int)g_game.gameStyleModded);
+        fprintf(f, "AutoplayKey=%d\n", (int)g_game.keyAutoplay);
+        fprintf(f, "DgTestKey=%d\n", (int)g_game.keyDgTest);
         Input_WriteJoyConfigToIni(f);
         /* fprintf(f, "Upscale=%d\n", g_game.gfxUpscale);   UPSCALE desativado */
         fclose(f);
@@ -90,6 +94,8 @@ void GameOption_Load(void)
     g_game.gfxShowFps   = false;
     g_game.nxUnlockSpecial = false;
     g_game.gameStyleModded = false;   /* VANILLA */
+    g_game.keyAutoplay = false;
+    g_game.keyDgTest = false;
     g_game.gfxAspect    = 0;
     g_game.gfxUpscale   = 0;      /* xBRZ desligado: texturas como no original */
     g_game.isFullscreen = false;

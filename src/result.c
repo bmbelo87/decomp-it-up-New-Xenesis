@@ -783,11 +783,13 @@ void Result_Enter(void) {
         NxSports_Store(st);   /* NX CDanceGrade 0x80735c9: kcal e VO2 do estágio */
         for (int p = 0; p < 2; p++) {
             float r = resRatio(p);
+            if (g_gradeCheat) r = 1.0f;   /* F12 no modo debug: m_ScoreJudge = 1.0 (NX2) */
             g_stageRatio[p][st] = r;
             if (p == 0) g_gradeP1 = resGradeOf(r, g_game.stats.missCount[0]);
             else        g_gradeP2 = resGradeOf(r, g_game.stats.missCount[1]);
         }
     }
+    g_gradeCheat = false;
     Log_Print("Result: grades P1=%d P2=%d\n", g_gradeP1, g_gradeP2);
     g_wgActive = g_hexSongIds && g_game.nxGameMode == 2;
     g_wgFadeEnd = 580;

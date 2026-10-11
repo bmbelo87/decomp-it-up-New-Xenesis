@@ -178,6 +178,7 @@ static uint32_t g_lastPosMs;
 static int g_lastNoteRow;
 static bool g_hasAudio;
 static bool g_autoplay;
+bool g_gradeCheat = false;   /* F12 no modo debug (clear cheat do NX2) */
 static bool g_autoPanel[10]; // per-panel autoplay: 0-4 P1, 5-9 P2
 static float g_scrollSpeedX[2];      // velocidade atual por player
 static float g_scrollSpeedTarget[2]; // target por player
@@ -3054,8 +3055,41 @@ void Gameplay_Update(float dt)
         }
         */
 
+        /* F12 durante a música: "clear cheat" do NX2 (main.cpp PKS_F12 -> m_bClear,
+         * playengine.cpp:2362, só no build GAME_DEV). Preenche o resultado com valores
+         * fixos e encerra a música no Dance Grade:
+         *   Score 123456; Judge[0..4] = 100, 2000, 30099, 4000, 50; combo 100;
+         *   miss combo 10; m_ScoreJudge = 1.0 (a razão da nota; com MISS > 0 dá A).
+         * A ordem de Judge[] como PERFECT..MISS é a do enum de zonas (hipótese).
+         * s_scorePrev recebe os contadores para o Gameplay_ScoreSync não descontar
+         * os BAD/MISS inventados do score. */
+        /* era: só com o modo debug (g_game.showDebug, F11). Pedido do usuário: vale em
+         * qualquer gameplay, sem precisar ligar o debug antes. */
+        /* era: if (!g_demoPlay && Input_IsKeyHit(VK_F12)). Agora a tecla é uma opção do
+         * Service Menu (GAME OPTION > DG TEST KEY), que só existe com GAME STYLE = MODDED. */
+        if (!g_demoPlay && g_game.gameStyleModded && g_game.keyDgTest && Input_IsKeyHit(VK_F12)) {
+            for (int p = 0; p < 2; p++) {
+                g_game.stats.score[p]        = 123456;
+                g_game.stats.perfectCount[p] = 100;
+                g_game.stats.greatCount[p]   = 2000;
+                g_game.stats.goodCount[p]    = 30099;
+                g_game.stats.badCount[p]     = 4000;
+                g_game.stats.missCount[p]    = 50;
+                g_game.stats.maxCombo[p]     = 100;
+                g_game.stats.missCombo[p]    = 10;
+                s_scorePrev[p][0] = 30099; s_scorePrev[p][1] = 4000; s_scorePrev[p][2] = 50;
+            }
+            g_gradeCheat = true;   /* result.c: razão 1.0 */
+            Log_Print("GP: clear cheat (F12), indo para o Dance Grade\n");
+            BGM_Stop();
+            Game_ChangeState(STATE_DANCE_GRADE_ENTER);
+            return;
+        }
+
         /* F8: alterna o autoplay de todos os painéis do modo atual */
-        if (Input_IsKeyHit(VK_F8))
+        /* era: if (Input_IsKeyHit(VK_F8)) — valia sempre. Agora é uma opção do Service Menu
+         * (GAME OPTION > AUTOPLAY KEY), que só existe com GAME STYLE = MODDED. */
+        if (g_game.gameStyleModded && g_game.keyAutoplay && Input_IsKeyHit(VK_F8))
         {
             bool allOn = true;
             for (int a = 0; a < apCount; a++)

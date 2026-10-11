@@ -748,11 +748,27 @@ static void svcRenderGameOption(void)
 /* era: 11 itens; "UNLOCK SPECIAL ZONE" (índice 8) é extra do port, não existe no NX */
 /* era: 12 itens; "GAME STYLE" (índice 9) é extra do port: VANILLA = só os códigos
  * do piu, MODDED = também os códigos extras do port (skins fora do piu, BGA Off) */
-static const char* SVC_GAMEOPT_ITEMS[13] = {
+/* era: SVC_GAMEOPT_ITEMS[13], com UNLOCK SPECIAL ZONE (8) antes do GAME STYLE (9) e sempre
+ * visível. Pedido do usuário: os extras ficam abaixo do GAME STYLE e só aparecem com ele em
+ * MODDED — UNLOCK SPECIAL ZONE, tecla do autoplay (F8) e tecla do teste do Dance Grade (F12).
+ * O índice aqui é o id do item (usado nos switch); a ordem na tela vem de svcGameOptRows. */
+static const char* SVC_GAMEOPT_ITEMS[15] = {
     "GAME MODE", "LEVEL", "STAGE BREAK", "DEMO SOUND", "SHOW HELP",
     "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "UNLOCK SPECIAL ZONE", "GAME STYLE",
-    "", "DEFAULT SETTING", "EXIT"
+    "", "DEFAULT SETTING", "EXIT", "AUTOPLAY KEY (F8)", "DG TEST KEY (F12)"
 };
+/* linhas visíveis, de cima para baixo; devolve a quantidade */
+static int svcGameOptRows(int rows[15])
+{
+    int n = 0;
+    for (int i = 0; i <= 7; i++) rows[n++] = i;
+    rows[n++] = 9;                       /* GAME STYLE */
+    if (g_game.gameStyleModded) { rows[n++] = 8; rows[n++] = 13; rows[n++] = 14; }
+    rows[n++] = 10;                      /* MENU_BLANK */
+    rows[n++] = 11;                      /* DEFAULT SETTING */
+    rows[n++] = 12;                      /* EXIT */
+    return n;
+}
 static const char* SVC_LEVEL_NAMES[3]  = { "1. EASY", "2. NORMAL", "3. HARD" };
 static const char* SVC_STAGEBRK_NX[5]  = { "OFF", "1ST STAGE", "2ND STAGE", "3RD STAGE", "4TH STAGE" };
 static const char* SVC_STATION_NX[4]   = { "TRAINING STATION", "ARCADE STATION", "WORLD TOUR", "SPECIAL ZONE" };
@@ -772,6 +788,8 @@ static void svcGameOptionReset(void)
     Eeprom_Set8(0xED4, 0);          /* SCORE PER TICKET OFF */
     g_game.nxUnlockSpecial  = false;  /* extra do port */
     g_game.gameStyleModded  = false;  /* extra do port: VANILLA */
+    g_game.keyAutoplay      = false;  /* extra do port */
+    g_game.keyDgTest        = false;  /* extra do port */
 }
 
 static void svcRenderGameOption(void)
@@ -787,10 +805,14 @@ static void svcRenderGameOption(void)
     svcColor(SVC_NORMAL);
     svcText(276.0f, 428.0f, "GAME OPTION");
 
-    for (i = 0; i < 13; i++) {   /* era 12, MENU_BLANK no 9 */
-        float y = (float)(352 - i * 20);
+    int rows[15];
+    int nRows = svcGameOptRows(rows);
+    if (g_svcCursor >= nRows) g_svcCursor = nRows - 1;   /* a lista encolhe ao voltar para VANILLA */
+    for (int row = 0; row < nRows; row++) {   /* era: for (i = 0; i < 13; i++), índice = linha */
+        float y = (float)(352 - row * 20);
+        i = rows[row];
         if (i == 10) continue;   /* MENU_BLANK */
-        svcColorFor(i, g_svcCursor);
+        svcColorFor(row, g_svcCursor);
         svcText(196.0f, y, SVC_GAMEOPT_ITEMS[i]);
 
         switch (i) {   /* verde = valor padrão, como no original */
@@ -834,6 +856,14 @@ static void svcRenderGameOption(void)
             if (!g_game.gameStyleModded) svcColor(SVC_SUCCESS);
             svcText(404.0f, y, g_game.gameStyleModded ? "MODDED" : "VANILLA");
             break;
+        case 13:  /* extra do port: F8 liga/desliga o autoplay na música */
+            if (!g_game.keyAutoplay) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.keyAutoplay ? "ON" : "OFF");
+            break;
+        case 14:  /* extra do port: F12 encerra a música no Dance Grade com valores fixos */
+            if (!g_game.keyDgTest) svcColor(SVC_SUCCESS);
+            svcText(404.0f, y, g_game.keyDgTest ? "ON" : "OFF");
+            break;
         default:
             break;
         }
@@ -842,11 +872,11 @@ static void svcRenderGameOption(void)
     if (hit & SVC_BIT_TEST) {
         do {
             g_svcCursor++;
-            if (g_svcCursor > 12) g_svcCursor = 0;   /* era 11 */
-        } while (g_svcCursor == 10);                 /* era 9 */
+            if (g_svcCursor >= nRows) g_svcCursor = 0;   /* era: > 12 */
+        } while (rows[g_svcCursor] == 10);               /* era: == 10 (MENU_BLANK) */
     }
     if (hit & SVC_BIT_SERVICE) {
-        switch (g_svcCursor) {
+        switch (rows[g_svcCursor]) {   /* era: switch (g_svcCursor) */
         case 0: g_game.svcGameMode = !g_game.svcGameMode; break;
         case 1: g_game.optionDifficulty = (g_game.optionDifficulty + 1) % 3; break;
         case 2: g_game.optionToggle1 = (g_game.optionToggle1 + 1) % 5; break;
@@ -857,6 +887,8 @@ static void svcRenderGameOption(void)
         case 7: Eeprom_Set8(0xED4, (uint8_t)((stkt + 1) % 7)); break;
         case 8: g_game.nxUnlockSpecial = !g_game.nxUnlockSpecial; break;
         case 9: g_game.gameStyleModded = !g_game.gameStyleModded; break;
+        case 13: g_game.keyAutoplay = !g_game.keyAutoplay; break;
+        case 14: g_game.keyDgTest = !g_game.keyDgTest; break;
         case 11: svcGameOptionReset(); break;   /* era 10 */
         case 12:                                /* era 11 */
             GameOption_Save();

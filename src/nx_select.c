@@ -872,7 +872,8 @@ void NxSelect_Enter(void) {
         int n = (int)(Eeprom_Get32(0xF27) / 10000) * 32;   /* [0x9e3dc27] / 10000 * 32 */
         for (int i = 0; i < n && i != 0x40; i++) if (g_nxWorldUnlock[i]) NxSong_Unlock(g_nxWorldUnlock[i]);
         /* extra do port (Service Menu > UNLOCK SPECIAL ZONE): música e todas as dificuldades */
-        if (g_game.nxUnlockSpecial) memset(s_unl, 1, sizeof(s_unl));
+        /* era: if (g_game.nxUnlockSpecial) — agora a opção só existe (e só vale) no MODDED */
+        if (g_game.nxUnlockSpecial && g_game.gameStyleModded) memset(s_unl, 1, sizeof(s_unl));
     }
     buildList();
     s_cursor = 0;
