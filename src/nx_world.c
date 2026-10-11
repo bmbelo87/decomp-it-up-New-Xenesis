@@ -529,17 +529,24 @@ void NxWorld_Update(float dt) {
         for (int k = 0; k < 5; k++) if (Input_IsPadHit(p, k_b[k])) any = true;
     }
     if (s_intro) {   /* 0x80823ca: qualquer painel pula a abertura */
-        if (any || (BGA_SceneDone(NW_W1, "world tour start") && BGA_SceneDone(NW_AR, "arro start"))) s_intro = false;
+        /* era: if (any || (...)) — no original qualquer painel pula a abertura. Extra do port
+         * (pedido do usuário), como o inputReady do nx_select.c: os passos só valem depois que
+         * a tela terminou de entrar, então a abertura roda inteira. */
+        (void)any;
+        if (BGA_SceneDone(NW_W1, "world tour start") && BGA_SceneDone(NW_AR, "arro start")) s_intro = false;
         else return;
     }
+    bool ready = timeGetTime() - s_t0 >= 1000;   /* 1 s mínimo, como o lateOk da seleção */
 
-    playerInput(0);
-    playerInput(1);
+    if (ready) {   /* era: entradas lidas assim que a abertura terminava */
+        playerInput(0);
+        playerInput(1);
+    }
 
     /* 0x8082a11: DL/DR segurado -> carrossel e região todo quadro */
     bool held = false;
     for (int p = 0; p < 2; p++)
-        if ((s_joined & (1u << p)) && (Input_IsPadDown(p, PAD_DL) || Input_IsPadDown(p, PAD_DR) ||
+        if (ready && (s_joined & (1u << p)) && (Input_IsPadDown(p, PAD_DL) || Input_IsPadDown(p, PAD_DR) ||
                                        Input_IsPadDown(p, PAD_UL) || Input_IsPadDown(p, PAD_UR))) held = true;
     if (held) { carousel(s_move); regionUpdate(); }
     else s_acc = 0x1f4;

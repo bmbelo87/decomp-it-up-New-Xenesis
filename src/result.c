@@ -123,6 +123,7 @@ static int calcGrade(int perfect, int great, int good, int bad, int miss, int ma
  *   C >= 0.85, D >= 0.75, senão F.
  * A razão de cada estágio fica em [+0x174 + estágio*4] (0x40CD72). */
 static float g_stageRatio[2][4];
+static bool  s_cheatStage;   /* F12 (clear cheat): este estágio vale razão 1.0 também na progressão */
 
 static float resRatio(int p) {
     unsigned miss = g_game.stats.missCount[p];
@@ -155,6 +156,12 @@ static GameState resNextState(void) {
     float r1 = (g_game.activePlayerMask & 1) ? resRatio(0) : 0.0f;
     float r2 = (g_game.activePlayerMask & 2) ? resRatio(1) : 0.0f;
     int st = resStageIdx();
+    /* F12: os contadores fixos do cheat dão uma razão minúscula e caíam no GAMEOVER abaixo.
+     * No NX2 o m_ScoreJudge = 1.0 do cheat é o mesmo valor usado para seguir de estágio. */
+    if (s_cheatStage) {
+        if (g_game.activePlayerMask & 1) r1 = 1.0f;
+        if (g_game.activePlayerMask & 2) r2 = 1.0f;
+    }
     Log_Print("RESULT(EX): estágio %d razão P1 %.3f P2 %.3f\n", st, r1, r2);
     if (r1 < 0.75f && r2 < 0.75f) return STATE_GAMEOVER_ENTER;   /* 0x40D0F3 */
     if (g_game.nxGameMode >= 1 && g_game.nxGameMode <= 3) {   /* SPECIAL ZONE / WORLD TOUR / TRAINING */
@@ -789,6 +796,7 @@ void Result_Enter(void) {
             else        g_gradeP2 = resGradeOf(r, g_game.stats.missCount[1]);
         }
     }
+    s_cheatStage = g_gradeCheat;
     g_gradeCheat = false;
     Log_Print("Result: grades P1=%d P2=%d\n", g_gradeP1, g_gradeP2);
     g_wgActive = g_hexSongIds && g_game.nxGameMode == 2;

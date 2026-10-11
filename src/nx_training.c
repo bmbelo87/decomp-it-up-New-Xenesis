@@ -251,6 +251,17 @@ static void movePart(int d) {      /* 0x8081030 / 0x8081060 */
     snd(TS_MODE);
 }
 
+/* Extra do port (pedido do usuário), como o inputReady do nx_select.c: os passos só valem
+ * depois que a tela terminou de entrar (1 s + cenas de entrada). No original valem no 1º
+ * quadro. Depois de 6 s libera de qualquer jeito, para uma cena ausente não travar a tela. */
+static bool inputReady(void) {
+    uint32_t el = timeGetTime() - s_t0;
+    if (el < 1000) return false;
+    if (el >= 6000) return true;
+    return BGA_SceneDone(NT_TR, "lesson start") && BGA_SceneDone(NT_AS, "screen2 start") &&
+           BGA_SceneDone(NT_AR, "arro start");
+}
+
 static void playerInput(int p) {
     if (!(s_joined & (1u << p))) return;
     /* 0x8080a29..0x8080aad: cada painel vai para o histórico (0x804d200);
@@ -292,8 +303,10 @@ void NxTraining_Update(float dt) {
     NxText_Update(dt);
     s_time = s_confirmed && s_time == 0 ? 0 : 0x5a - (int)((timeGetTime() - s_t0) / 1000);
     if (s_time < 0) s_time = 0;
-    playerInput(0);
-    playerInput(1);
+    if (inputReady()) {   /* era: entradas lidas desde o 1º quadro */
+        playerInput(0);
+        playerInput(1);
+    }
     if (s_move != 0 && BGA_SceneDone(NT_AS, s_move == 1 ? "screen2 L move" : "screen2 R move")) {
         s_move = 0;
         carousel(0);

@@ -1153,7 +1153,7 @@ static void svcRenderCoinOption(void)
     int i;
     uint32_t hit = svcBitsHit();
     int lim = Eeprom_Get8(0xED5);
-    if (lim > 10) lim = 0;
+    if (lim > 9) lim = 0;   /* era: > 10. No port o CREDIT LIMIT vai de 1 a 9 (pedido do usuário) */
 
     svcColor(SVC_NORMAL);
     svcText(276.0f, 428.0f, "COIN OPTION");
@@ -1192,7 +1192,7 @@ static void svcRenderCoinOption(void)
         switch (g_svcCursor) {
         case 0: g_game.svcCoin1 = (g_game.svcCoin1 + 1) % 11; break;
         case 1: g_game.svcCoin2 = (g_game.svcCoin2 + 1) % 11; break;
-        case 2: Eeprom_Set8(0xED5, (uint8_t)((lim + 1) % 11)); break;
+        case 2: Eeprom_Set8(0xED5, (uint8_t)((lim + 1) % 10)); break;   /* era: % 11 (1..10) */
         case 4:
             g_game.svcCoin1 = 5;
             g_game.svcCoin2 = 1;

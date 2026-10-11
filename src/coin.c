@@ -32,8 +32,11 @@
 #include "pumpy.h"
 
 /* era: #define COIN_MAX_CREDITS 9   (Prex3: o original satura em 9 créditos)
- * NX: teto de 99 (pedido do usuário); CREDIT LIMIT da COIN SETTING (+0xED5, 1..10) se ligado. */
-static int coinMax(void) { int l = Eeprom_Get8(0xED5); return (l >= 1 && l <= 10) ? l : 99; }
+ * NX: teto de 99 (pedido do usuário); CREDIT LIMIT da COIN SETTING (+0xED5, 1..10) se ligado.
+ * era: static int coinMax(void) { int l = Eeprom_Get8(0xED5); return (l >= 1 && l <= 10) ? l : 99; }
+ * Agora (pedido do usuário): CREDIT LIMIT vai de 1 a 9; OFF = sem limite (0). Sem limite o
+ * contador interno passa de 99 e só a faixa de crédito trava em 99 (nx_credit.c). */
+static int coinMax(void) { int l = Eeprom_Get8(0xED5); return (l >= 1 && l <= 9) ? l : 0; }
 #define COIN_MAX_CREDITS coinMax()
 
 /* ------------------------------------------- Arcade_ProcessCoin 0x00402340
@@ -70,7 +73,8 @@ void Arcade_ProcessCoin(int type)
     /* Satura em 9 créditos. O original testa "8 < creditos", ou seja, dispara
      * ao ATINGIR 9 — e ao fixar em svcCoin1*9 descarta a moeda parcial que
      * estivesse sobrando. Escrito literalmente para preservar esse efeito. */
-    if (g_game.svcCoinTotal / g_game.svcCoin1 > COIN_MAX_CREDITS - 1)
+    /* era: sempre saturava (teto 99 com o limite desligado) */
+    if (COIN_MAX_CREDITS > 0 && g_game.svcCoinTotal / g_game.svcCoin1 > COIN_MAX_CREDITS - 1)
         g_game.svcCoinTotal = g_game.svcCoin1 * COIN_MAX_CREDITS;
 
     after = g_game.svcCoinTotal / g_game.svcCoin1;

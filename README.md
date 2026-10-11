@@ -49,7 +49,8 @@ Releases: <https://github.com/bmbelo87/decomp-it-up-New-Xenesis/releases> (Windo
 | GAME STYLE option (VANILLA / MODDED), see below                  | ✅ Port extra |
 | Settings saved in `SETTINGS/PIUNX.INI` (EEPROM image)            | ✅      |
 | Mercy ticket / score per ticket / credit limit                   | ⚙️ Saved, not used by the game yet |
-| Restriction page, Internet Ranking                               | ❌      |
+| RESTRICTION page in the Service Menu (per-song on/off, `restrict.dat`) | ✅ Port extra |
+| Internet Ranking                                                 | ❌ Turned off on purpose (code kept in `ir.c`) |
 
 ## Song Select Controls
 
