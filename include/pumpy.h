@@ -469,6 +469,8 @@ typedef struct {
     int  gfxTexFilter;   /* 0 = SMOOTH (GL_LINEAR), 1 = SHARP (GL_NEAREST) */
     bool gfxShowFps;
     bool nxUnlockSpecial;   /* extra do port: SPECIAL ZONE com tudo liberado (PUMPY.INI UnlockSpecial) */
+    bool keyAutoplay;       /* extra do port (só MODDED): F8 liga/desliga o autoplay (PUMPY.INI AutoplayKey) */
+    bool keyDgTest;         /* extra do port (só MODDED): F12 encerra a música no Dance Grade (PUMPY.INI DgTestKey) */
     bool gameStyleModded;   /* extra do port: GAME STYLE (PUMPY.INI GameStyle). false = VANILLA (só os
                              * códigos do piu); true = MODDED (códigos extras do port: skins, BGA Off) */
     int  gfxAspect;      /* 0 = 4:3 com bordas, 1 = esticar */
@@ -805,6 +807,8 @@ int  Coin_GetCredits(void);          /* 0x00402430 */
 int  Coin_GetMaxCredits(void);       /* 0x00402460 — devolve moedas, não créditos */
 void Coin_ConsumeCredit(void);       /* 0x00402480 */
 bool Coin_IsFreePlay(void);
+extern bool g_gradeCheat;           /* gameplay.c: F12 no modo debug; o Dance Grade usa razão 1.0 */
+void Coin_Clear(void);              /* coin.c: COIN CLEAR (F3) */
 bool Coin_HasCredit(void);
 
 /* service_menu.c — SETUP MENU (ServiceMenu_* do PUMPY.EXE) */

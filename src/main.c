@@ -359,6 +359,7 @@ void Game_Update(float dt) {
         if (Input_IsKeyHit(VK_F4)) Arcade_ProcessCoin(1);  /* COIN1   */
         if (Input_IsKeyHit(VK_F5)) Arcade_ProcessCoin(2);  /* COIN2   */
         if (Input_IsKeyHit(VK_F2)) Arcade_ProcessCoin(3);  /* SERVICE */
+        if (Input_IsKeyHit(VK_F3)) Coin_Clear();           /* COIN CLEAR (pedido do usuário) */
     }
 
     if (Input_IsKeyHit(VK_F1) && g_game.state != STATE_SERVICE_MENU) {
@@ -376,6 +377,38 @@ void Game_Update(float dt) {
          * pulam o memcpy do fim de Game_Update e o ESC seria lido de novo no
          * frame seguinte, pulando duas cenas (WARN -> LOGO -> MENU). */
         memcpy(g_game.input.prevKeys, g_game.input.keys, sizeof(g_game.input.keys));
+
+        /* Pedido do usuário (como no original): fora de um crédito, o ESC passa para a
+         * próxima tela da atração (Logo -> NEXCADE -> abertura -> título -> demo ->
+         * ranking -> WPF2007 -> Logo); dentro de um crédito (station, seleção, missão,
+         * training, gameplay, grade, próxima fase...), volta para o Logo zerando o
+         * crédito, como no fim de jogo.
+         * era: ESC no CREDIT não fazia nada e qualquer outra tela ia para o CREDIT
+         * (bloco abaixo, mantido para as telas que não são do NX). */
+        if (s == STATE_SERVICE_MENU) {   /* ESC no SETUP MENU sai como a opção EXIT */
+            ServiceMenu_Exit();
+            return;
+        }
+        {
+            bool attract = g_demoPlay ||
+                           s == STATE_LOGO_ENTER || s == STATE_LOGO_UPDATE || s == STATE_INTRO ||
+                           s == STATE_CREDIT || s == STATE_HIGHSCORE ||
+                           s == STATE_WARNING_INIT || s == STATE_WARNING_ANIM || s == STATE_WARNING_END;
+            BGM_Stop();
+            Movie_Select(1); Movie_Close(); Movie_Select(0); Movie_Close();
+            memset(g_game.input.padPrevState, 0, sizeof(g_game.input.padPrevState));
+            if (attract) {
+                if (g_demoPlay) Demo_End();   /* fecha a demo e segue o laço */
+                else Attract_Idle();
+                return;
+            }
+            if (s == STATE_GAMEPLAY) Gameplay_Exit();
+            Game_ResetAllCheats();            /* comandos */
+            Menu_ResetState();                /* estágio, corações, skin, modo */
+            Resource_ClearBGA();
+            Attract_Restart();                /* Logo */
+            return;
+        }
 
         /* Exceed: ESC no CREDIT não faz nada (já é o destino do ESC) */
         if (s == STATE_CREDIT) return;

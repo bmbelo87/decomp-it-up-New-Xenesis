@@ -121,6 +121,18 @@ void Coin_ConsumeCredit(void)
  * reconstructed precisa para decidir se pode iniciar partida.
  */
 
+/* COIN CLEAR (F3 fora do Service Menu; extra do port, pedido do usuário): zera as moedas
+ * e, com elas, os créditos. A tela de título troca sozinha de "CENTER STEP" para
+ * "INSERT COIN", porque ela consulta Coin_HasCredit a cada quadro. Em FREE PLAY ou
+ * EVENT não há o que zerar (o crédito não vem de moeda). Quem já entrou no jogo
+ * continua: o crédito dele foi consumido na entrada. */
+void Coin_Clear(void)
+{
+    if (g_game.svcCoinTotal != 0)
+        Log_Print("Coin: COIN CLEAR, %d moeda(s) zerada(s)\n", g_game.svcCoinTotal);
+    g_game.svcCoinTotal = 0;
+}
+
 bool Coin_IsFreePlay(void)
 {
     return (g_game.svcCoin1 == 0) || (g_game.svcGameMode == 1);
