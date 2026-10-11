@@ -56,6 +56,9 @@ Releases: <https://github.com/bmbelo87/decomp-it-up-New-Xenesis/releases>
 Entered on the song select (and on the TRAINING lesson select) with the pads of the player they
 apply to (check `0x804d240`, table `0x8143ca0`, effects `0x807c050` in `piu`).
 
+Full list with arrow sprites, the GAME STYLE (VANILLA / MODDED) extras, operator keys and in-game
+shortcuts: [docs/COMMANDS.md](docs/COMMANDS.md) (Portuguese).
+
 | Sequence | Effect |
 | -------- | ------ |
 | `UL UR UL UR C` | Speed: 2X → 3X → 4X → 8X → off |
