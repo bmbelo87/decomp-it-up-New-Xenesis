@@ -180,6 +180,7 @@ static bool g_hasAudio;
 static bool g_autoplay;
 bool g_gradeCheat = false;   /* F12 no modo debug (clear cheat do NX2) */
 static bool g_autoPanel[10]; // per-panel autoplay: 0-4 P1, 5-9 P2
+static bool s_apDemo;        // g_autoPanel[] foi ligado pela demo (desfeito no Gameplay_Start seguinte sem demo)
 static float g_scrollSpeedX[2];      // velocidade atual por player
 static float g_scrollSpeedTarget[2]; // target por player
 static int   g_rvLastMeasure[2];     // última medida onde RV disparou, por player
@@ -1323,6 +1324,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     if (g_demoPlay) {                 /* 0x402A67: 0x40B9EC(0) e (5) — autoplay nas duas metades */
         g_autoplay = true;
         for (int a = 0; a < 10; a++) g_autoPanel[a] = true;
+        s_apDemo = true;
     }
 
     /* Double/Nightmare/HalfDouble: um campo só, tratado como jogador 0 em todo o
@@ -2767,12 +2769,21 @@ void Gameplay_Start(int songId)
     s_apSongId = songId;
     /* era: if (getenv("PUMPY_AUTOPLAY")) for (...) g_autoPanel[a_] = true;   (teste, sem log) */
     {
+        /* A demo liga g_autoPanel[] na carga do chart e nada desligava: a primeira música
+         * com jogador depois de uma demo herdava o autoplay (pumpy.log: "herdado de antes"
+         * sem nenhum F8, tempo=35s = fim da demo). Desfaz aqui, fora da demo. */
+        if (s_apDemo && !g_demoPlay) {
+            for (int a_ = 0; a_ < MAX_PANELS; a_++) g_autoPanel[a_] = false;
+            s_apDemo = false;
+            autoplayLog("sobra da demo da atracao", false);
+        }
         bool jaLigado = false;
         for (int a_ = 0; a_ < MAX_PANELS; a_++) if (g_autoPanel[a_]) jaLigado = true;
         if (getenv("PUMPY_AUTOPLAY")) {
             for (int a_ = 0; a_ < MAX_PANELS; a_++) g_autoPanel[a_] = true;   /* teste */
             autoplayLog("variavel de ambiente PUMPY_AUTOPLAY", true);
-        } else if (jaLigado) {
+        /* era: } else if (jaLigado) {   — na demo acusava F8 sem ter havido */
+        } else if (jaLigado && !g_demoPlay) {
             /* o F8 não é desfeito no fim da música: continua valendo nas seguintes */
             autoplayLog("herdado de antes (F8 em musica anterior, nunca desligado)", true);
         }

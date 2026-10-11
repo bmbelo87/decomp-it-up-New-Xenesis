@@ -538,6 +538,21 @@ void NxWorld_Update(float dt) {
     }
     bool ready = timeGetTime() - s_t0 >= 1000;   /* 1 s mínimo, como o lateOk da seleção */
 
+    /* "arroXX click hold" é cena em laço (modo 1) e só era trocada no aperto seguinte:
+     * soltando o painel na repetição rápida (ou com a entrada travada pela transição
+     * de região) a seta ficava disparada. Painel solto -> volta para a "click", como
+     * o nx_select.c faz com DL/DR. Não conferido no assembly do World Tour. */
+    {
+        static const PadButton k_ab[4] = { PAD_DL, PAD_DR, PAD_UL, PAD_UR };
+        static const char* const k_ac[4] = { "arroUL click", "arroUR click", "arroHL click", "arroHR click" };
+        for (int i = 0; i < 4; i++) {
+            bool down = false;
+            for (int p = 0; p < 2; p++)
+                if ((s_joined & (1u << p)) && Input_IsPadDown(p, k_ab[i])) down = true;
+            if (!down) s_arro[i] = k_ac[i];
+        }
+    }
+
     if (ready) {   /* era: entradas lidas assim que a abertura terminava */
         playerInput(0);
         playerInput(1);
