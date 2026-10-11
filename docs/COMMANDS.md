@@ -104,6 +104,7 @@ arcade. Em `MODDED`:
 
 | O que | Como fica |
 |---|---|
+| Modos escondidos | 22 dificuldades que têm notas nos steps do NX e não aparecem no arcade passam a aparecer com nível "??" (LOVELY full Crazy/Nightmare, Canon D full Nightmare, Kiss me Another Normal/Hard/Crazy e outras, quase todas na SPECIAL ZONE). |
 | Códigos extras | Valem os da seção acima (skins REbirth, EZ, SLIME e MELODY, 5X, 6X, +0.5X, BGA Off). |
 | Músicas extras | Aparecem **Fighting Spirit** (H.O.T) e **Valenti** (BoA) no canal K-POP, e **Fighting Spirit Another** na SPECIAL ZONE. Os arquivos já estão no disco do NX; só não constam na lista do arcade. |
 | Atração em FREE PLAY / EVENT | A atração roda (logo, NEXCADE, abertura, título, demo, ranking, WPF2007) em vez de ficar presa no título. O CENTER leva ao título, e o título volta à atração sozinho. |
@@ -145,8 +146,18 @@ Outras 40 músicas só têm o step no NX; áudio, BGA, capa e disco vêm do Exce
   You don't wanna run up! (819), Get The Party Started (823), Ba Be Loo Be Ra (A16), Born to be
   Alive (A24), Xibom Bombom (A25).
 
-Nenhuma versão tem intro ou prévia dessas 40: a seleção toca a própria música e mostra o vídeo
-padrão `BGA/001.MOV` no card.
+As prévias que faltam podem ser criadas com `tools/import_old_data.py` (Import Old Data): ele acha
+em que ponto da música a intro se encaixa e recorta esse trecho do vídeo do BGA, ou captura o BGA
+`.DAT` pelo próprio jogo, gravando `BGA/PREVIEW/<ID>.MOV` no formato do NX. A intro tocada na
+seleção é o `AUDIO/D<ID>.AUD` da versão anterior. Sem prévia, o card mostra `BGA/001.MOV`.
+
+Modos recuperados de `.STX` antigos (o `.SEE` do NX perdeu a dificuldade, o `.STX` ainda tem):
+
+| Música | Modos | De onde |
+|---|---|---|
+| Drunken in melody (B05) | CRAZY 10, NIGHTMARE 11 | Exceed 2 |
+| Too Late (B12) | CRAZY 11, NIGHTMARE 12 | Exceed 2 |
+| Chicken Wing (911) | FREESTYLE 6 | Exceed |
 
 O jogo sobe duas pastas a partir da pasta do jogo e procura versões anteriores pelo número no
 começo do nome da pasta. Vale a mais próxima que tiver o arquivo.

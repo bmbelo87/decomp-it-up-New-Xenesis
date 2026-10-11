@@ -800,7 +800,12 @@ static void previewStart(void) {
     /* era: sem a intro a seleção ficava muda. Extra do port (USE OLD DATA SONGS): a 508 e
      * a A07 não têm intro em nenhuma versão; toca a própria música, do começo. */
     if ((nxFind((int)e->id, "%s/AUDIO/INTRO/%03X.AUD", aud, sizeof(aud)) ||
-         (OldData_On() && (nxFind((int)e->id, "%s/AUDIO/%03X.AUD", aud, sizeof(aud)) ||
+         /* era: direto para a música inteira. Até o Zero a intro da seleção era o
+          * AUDIO/D<ID>.AUD (no NX foi para AUDIO/INTRO); é o trecho que as prévias
+          * criadas pelo tools/import_old_data.py acompanham. */
+         (OldData_On() && (OldData_FindFile((int)e->id, "AUDIO/INTRO/%X.AUD", aud, sizeof(aud)) ||
+                           OldData_FindFile((int)e->id, "AUDIO/D%X.AUD", aud, sizeof(aud)) ||
+                           nxFind((int)e->id, "%s/AUDIO/%03X.AUD", aud, sizeof(aud)) ||
                            OldData_FindFile((int)e->id, "AUDIO/%X.AUD", aud, sizeof(aud))))) &&
         BGM_LoadAUDDirect(aud))
         BGM_Play(false);
@@ -929,6 +934,9 @@ void NxSelect_Enter(void) {
         /* era: if (g_game.nxUnlockSpecial) — agora a opção só existe (e só vale) no MODDED */
         if (g_game.nxUnlockSpecial && g_game.gameStyleModded) memset(s_unl, 1, sizeof(s_unl));
     }
+    /* extra do port (USE OLD DATA SONGS): modos que só existem em .STX antigo entram ou saem
+     * da tabela conforme a opção; o songDB é refeito quando algo muda */
+    if (OldData_ApplyModes()) Select_BuildSongDB(&g_game.songDB);
     buildList();
     s_cursor = 0;
     bool newGame = (g_game.stageCount == 3 && !g_game.isBonusSong);

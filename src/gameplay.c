@@ -1250,6 +1250,15 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     snprintf(stxPath, sizeof(stxPath), "%s/STEP/%s.SEE",
              g_game.currentDirectory, Song_DataIdStr(songId));
 
+    {   /* extra do port (USE OLD DATA SONGS): modo que saiu do .SEE do NX e ainda existe no
+         * .STX de uma versão anterior (old_data.c). O arquivo inteiro passa a ser o .STX. */
+        static const int k_secMode[9] = { -1, 0, 1, 4, 2, 3, -1, -1, -1 };   /* seção -> N H C F NM */
+        int sec = Step_SelectChart(modeName, 1);
+        char old[MAX_PATH];
+        if (sec >= 0 && sec < 9 && k_secMode[sec] >= 0 &&
+            OldData_FindStep(songId, k_secMode[sec], old, sizeof(old)))
+            snprintf(stxPath, sizeof(stxPath), "%s", old);
+    }
     Log_Print("GP: loading '%s' (song %d, mode=%s)\n", stxPath, songId, modeName ? modeName : "?");
 
     bool loaded = Step_LoadSong(stxPath, &g_playSong);
@@ -2925,6 +2934,28 @@ void Gameplay_ScoreSync(void)
         g_game.stats.score[p] = (unsigned)sc;
         for (int i = 0; i < 3; i++) s_scorePrev[p][i] = cur[i];
     }
+}
+
+/* Double / Nightmare / HalfDouble jogados só pelo P2: o campo único é julgado no índice 0
+ * (judgeRows(0), processInput(0)), mas o Dance Grade, a razão do estágio e o total do
+ * crédito leem o índice do jogador que entrou. Sem isto o P2 via tudo zerado no Dance
+ * Grade. Chamado uma vez, na entrada do resultado. */
+void Gameplay_DoubleToOwner(void)
+{
+    if (!(isDNMode() || isHDMode()) || g_game.activePlayerMask != 0x2) return;
+    Gameplay_ScoreSync();   /* fecha a pontuação no índice 0 antes de mover */
+    g_game.stats.score[1]        = g_game.stats.score[0];        g_game.stats.score[0] = 0;
+    g_game.stats.combo[1]        = g_game.stats.combo[0];        g_game.stats.combo[0] = 0;
+    g_game.stats.maxCombo[1]     = g_game.stats.maxCombo[0];     g_game.stats.maxCombo[0] = 0;
+    g_game.stats.perfectCount[1] = g_game.stats.perfectCount[0]; g_game.stats.perfectCount[0] = 0;
+    g_game.stats.greatCount[1]   = g_game.stats.greatCount[0];   g_game.stats.greatCount[0] = 0;
+    g_game.stats.goodCount[1]    = g_game.stats.goodCount[0];    g_game.stats.goodCount[0] = 0;
+    g_game.stats.badCount[1]     = g_game.stats.badCount[0];     g_game.stats.badCount[0] = 0;
+    g_game.stats.missCount[1]    = g_game.stats.missCount[0];    g_game.stats.missCount[0] = 0;
+    g_game.stats.missCombo[1]    = g_game.stats.missCombo[0];    g_game.stats.missCombo[0] = 0;
+    g_game.stats.life[1]         = g_game.stats.life[0];
+    for (int i = 0; i < 3; i++) { s_scorePrev[1][i] = s_scorePrev[0][i]; s_scorePrev[0][i] = 0; }
+    Log_Print("GP: Double do P2: contadores movidos para o índice do jogador (score %u)\n", (unsigned)g_game.stats.score[1]);
 }
 
 void Gameplay_Exit(void)

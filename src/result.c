@@ -775,6 +775,7 @@ void Result_Enter(void) {
     if (BGM_LoadAUDDirect(ap)) BGM_Play(true);
     */
 
+    Gameplay_DoubleToOwner();   /* Double só do P2: contadores no índice do jogador (gameplay.c) */
     g_gradeP1 = calcGrade(g_game.stats.perfectCount[0], g_game.stats.greatCount[0],
                           g_game.stats.goodCount[0], g_game.stats.badCount[0],
                           g_game.stats.missCount[0], (int)g_game.stats.maxCombo[0]);

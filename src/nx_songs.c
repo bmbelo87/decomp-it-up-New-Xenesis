@@ -8,7 +8,8 @@
 #error "pumpy.h: SONG_TABLE_COUNT/SONG_CHANNEL_COUNT/SONG_CHANNEL_MAX fora da NX (rode tools/gen_nx_songs.py)"
 #endif
 
-const TrackEntry g_songTable[SONG_TABLE_COUNT] = {
+/* era: const (ver pumpy.h) */
+TrackEntry g_songTable[SONG_TABLE_COUNT] = {
     { 0xD01, "Yahpp ", "Yahpp ", "\354\234\204\354\271\230 \353\213\245\355\204\260 #1 ", "Witch Doctor#1 ", 122.0000, { 3, 7, 14, 5, 19 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 0, 0, 1, 1, "122", 101 }, /* 0 */
     { 0xD02, "Yahpp ", "Yahpp ", "\354\225\204\355\201\254 \354\230\244\353\270\214 \353\213\244\355\201\254\353\213\210\354\212\244 ", "Arch of Darkness ", 135.9000, { 3, 7, 14, 4, 17 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 0, 1, 1, 1, "135.9", 98 }, /* 1 */
     { 0xD03, "Yahpp ", "Yahpp ", "\355\202\244\353\251\224\353\235\274 ", "Chimera ", 210.0000, { 8, 16, 22, 20, 25 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 0, 2, 1, 1, "210", 109 }, /* 2 */

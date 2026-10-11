@@ -19,6 +19,7 @@
  * tabela de dog_table.c junto com as do NX (tools/gen_zero_dog.py).
  */
 #include "pumpy.h"
+#include "step.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -309,4 +310,140 @@ void OldData_Status(int* roots, int* ok, int* total)
                   s_ok, s_total, s_count);
     }
     *roots = s_count; *ok = s_ok; *total = s_total;
+}
+
+/* Modos que saíram do .SEE do NX e ainda existem no .STX de uma versão anterior
+ * (conferido seção por seção: tools/import_old_data.py não cobre isto; ver docs/COMMANDS.md).
+ * mode: 0 NORMAL, 1 HARD, 2 CRAZY, 3 FREESTYLE, 4 NIGHTMARE. Nível: tabela da versão em que
+ * o modo existe (exceed2_songs.c para B05 e B12, exceed_songs.c para a 911). */
+typedef struct { uint32_t id; int mode; int level; } OldMode;
+static const OldMode k_oldModes[] = {
+    { 0xB05, 2, 10 }, { 0xB05, 4, 11 },   /* Drunken in melody: CRAZY e NIGHTMARE do Exceed 2 */
+    { 0xB12, 2, 11 }, { 0xB12, 4, 12 },   /* Too Late: CRAZY e NIGHTMARE do Exceed 2 */
+    { 0x911, 3, 6 },                      /* Chicken Wing: FREESTYLE do Exceed */
+};
+#define OLD_MODE_COUNT ((int)(sizeof(k_oldModes) / sizeof(k_oldModes[0])))
+
+/* Modos que têm notas no .SEE do próprio NX e nível -1 na tabela do piu, e que não são
+ * cópia de outro chart (comparação das seções de todos os .SEE). Não dependem de versão
+ * anterior: valem com GAME STYLE = MODDED. Nenhuma tabela traz o nível deles -> 99 ("??"),
+ * pedido do usuário. */
+static const OldMode k_hiddenModes[] = {
+    { 0xD40, 2, 99 }, { 0xD40, 4, 99 },                       /* LOVELY full: CRAZY, NIGHTMARE */
+    { 0xD41, 1, 99 },                                         /* Love is a Danger Zone 2: HARD */
+    { 0xD42, 1, 99 },                                         /* Beat of the War 2: HARD */
+    { 0xDB57, 4, 99 },                                        /* Canon D full: NIGHTMARE */
+    { 0xD39, 3, 99 },                                         /* FIRE full: FREESTYLE */
+    { 0xD36, 0, 99 },                                         /* BanYa-P Classic Mix: NORMAL */
+    { 0xD735, 2, 99 },                                        /* Vook Another: CRAZY */
+    { 0xD802, 0, 99 }, { 0xD802, 1, 99 },                     /* Bee Another: NORMAL, HARD */
+    { 0xDD30, 0, 99 },                                        /* Final Audition EP.2-2 Another: NORMAL */
+    { 0xDA14, 0, 99 }, { 0xDA14, 1, 99 }, { 0xDA14, 2, 99 },  /* Kiss me Another: N, H, C */
+    { 0xD701, 0, 99 }, { 0xD701, 1, 99 },                     /* Dr. M Another: NORMAL, HARD */
+    { 0xDD11, 2, 99 },                                        /* For You Another: CRAZY */
+    { 0xDA11, 0, 99 }, { 0xDA11, 1, 99 },                     /* What do you really want? Another: N, H */
+    { 0xDB06, 0, 99 }, { 0xDB06, 1, 99 }, { 0xDB06, 2, 99 },  /* Deja Vu Another: N, H, C */
+    /* Iguais a um chart que não é música da lista (por isso tinham ficado de fora na 1ª
+     * passada): C32 é um .SEE sem dono, AA601 e AA603 são missões do WORLD TOUR. */
+    { 0xD41, 3, 99 },                                         /* Love is a Danger Zone 2 full: FREESTYLE (= C32) */
+    { 0xD205, 1, 99 }, { 0xD205, 3, 99 },                     /* Extravaganza Another: HARD, FREESTYLE (= AA601) */
+    { 0xD922, 0, 99 }, { 0xD922, 2, 99 }, { 0xD922, 3, 99 },  /* Final Audition Ep.1 Another: N, C, F (= AA603) */
+    /* Chart guardado em outro arquivo (k_stepAlias) */
+    { 0x919, 4, 99 },                                         /* Lazenca Save Us: NIGHTMARE (D901.SEE) */
+};
+
+/* Modo cujo chart está em outro .SEE do NX. D901.SEE só tem a seção NIGHTMARE, 705 notas,
+ * em 85.1 BPM — o BPM da Lazenca Save Us (919), a única música da tabela nesse BPM — e
+ * 1236 linhas contra as 614 da 919 (o dobro da divisão). Altamente provável que seja o
+ * NIGHTMARE não lançado dela; nenhuma tabela liga os dois ids. */
+typedef struct { uint32_t id; int mode; uint32_t fileId; } StepAlias;
+static const StepAlias k_stepAlias[] = { { 0x919, 4, 0xD901 } };
+#define HIDDEN_MODE_COUNT ((int)(sizeof(k_hiddenModes) / sizeof(k_hiddenModes[0])))
+
+/* O .STX tem notas no modo pedido? (o do Zero ainda traz a B05 e a B12, mas já sem o
+ * CRAZY e o NIGHTMARE: a seção existe com 16 linhas vazias) */
+static bool stxHasMode(const char* path, int mode)
+{
+    static const int k_sec[5] = { 1, 2, 4, 5, 3 };   /* N H C F NM -> seção (Step_SelectChart) */
+    static StepSong song;
+    int notes = 0;
+    if (!Step_LoadSong(path, &song)) return false;
+    int ci = k_sec[mode];
+    if (ci < song.chartCount) {
+        const StepChart* c = &song.charts[ci];
+        for (uint32_t r = 0; r < c->rowCount && notes <= 20; r++) {
+            const StepRow* w = &c->rows[r];
+            if (w->half1.dl || w->half1.ul || w->half1.cn || w->half1.ur || w->half1.dr ||
+                w->half2.dl || w->half2.ul || w->half2.cn || w->half2.ur || w->half2.dr) notes++;
+        }
+    }
+    Step_FreeSong(&song);
+    return notes > 20;
+}
+
+/* .STX do id com o modo pedido, na versão anterior mais próxima que o tiver: arquivo solto
+ * em STEP/ ou dentro do STEP.DAT (step.c abre os dois a partir do mesmo caminho
+ * "<raiz>/STEP/<ID>.STX"). */
+static bool findStx(int id, int mode, char* out, size_t n)
+{
+    for (int r = 0; r < s_count; r++) {
+        snprintf(out, n, "%s/STEP/%X.STX", s_root[r], (unsigned)id);
+        if (stxHasMode(out, mode)) return true;
+    }
+    return false;
+}
+
+/* Caminho do .STX para (música, modo) quando o modo é um dos recuperados e a opção
+ * está ligada. */
+bool OldData_FindStep(int id, int mode, char* out, size_t n)
+{
+    if (g_game.gameStyleModded)
+        for (int k = 0; k < (int)(sizeof(k_stepAlias) / sizeof(k_stepAlias[0])); k++)
+            if ((int)k_stepAlias[k].id == id && k_stepAlias[k].mode == mode) {
+                snprintf(out, n, "%s/STEP/%03X.SEE", g_game.currentDirectory, (unsigned)k_stepAlias[k].fileId);
+                return true;
+            }
+    if (!OldData_On()) return false;
+    for (int k = 0; k < OLD_MODE_COUNT; k++)
+        if ((int)k_oldModes[k].id == id && k_oldModes[k].mode == mode) return findStx(id, mode, out, n);
+    return false;
+}
+
+/* Põe o nível dos modos recuperados na tabela (opção ligada e .STX achado) ou volta
+ * para -1. Devolve true se algum nível mudou (o songDB precisa ser refeito). */
+bool OldData_ApplyModes(void)
+{
+    static int8_t s_have[OLD_MODE_COUNT];   /* 0 = não conferido, 1 = tem .STX, -1 = não tem */
+    bool on = OldData_On(), changed = false;
+    for (int k = 0; k < OLD_MODE_COUNT; k++) {
+        int want = -1;
+        if (on) {
+            if (!s_have[k]) {
+                char p[MAX_PATH];
+                s_have[k] = findStx((int)k_oldModes[k].id, k_oldModes[k].mode, p, sizeof(p)) ? 1 : -1;
+                Log_Print("OLDDATA: modo %d da %X: .STX %s\n", k_oldModes[k].mode, (unsigned)k_oldModes[k].id,
+                          s_have[k] > 0 ? "achado" : "não achado");
+            }
+            if (s_have[k] > 0) want = k_oldModes[k].level;
+        }
+        for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+            if (g_songTable[i].id != k_oldModes[k].id) continue;
+            if (g_songTable[i].level[k_oldModes[k].mode] != want) {
+                g_songTable[i].level[k_oldModes[k].mode] = want;
+                changed = true;
+            }
+        }
+    }
+    /* modos escondidos no .SEE do NX: só dependem do GAME STYLE */
+    for (int k = 0; k < HIDDEN_MODE_COUNT; k++) {
+        int want = g_game.gameStyleModded ? k_hiddenModes[k].level : -1;
+        for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+            if (g_songTable[i].id != k_hiddenModes[k].id) continue;
+            if (g_songTable[i].level[k_hiddenModes[k].mode] != want) {
+                g_songTable[i].level[k_hiddenModes[k].mode] = want;
+                changed = true;
+            }
+        }
+    }
+    return changed;
 }

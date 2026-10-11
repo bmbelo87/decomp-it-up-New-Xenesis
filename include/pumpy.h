@@ -255,7 +255,9 @@ void NxWorld_Render(void);
 typedef struct { unsigned flags; int units; int skin; int icons[4]; int nIcons; } NxMods;
 extern NxMods g_nxMods;
 bool Select_StartMission(int id, int diff, int level, unsigned joined);
-extern const TrackEntry g_songTable[SONG_TABLE_COUNT];
+/* era: extern const TrackEntry. Deixou de ser const para o USE OLD DATA SONGS ligar e desligar
+ * os modos recuperados de .STX antigos (OldData_ApplyModes); nada mais escreve na tabela. */
+extern TrackEntry g_songTable[SONG_TABLE_COUNT];
 extern const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX];
 
 typedef enum {
@@ -876,6 +878,7 @@ extern bool g_demoPlay;               /* [0x568FF4] & 0x100000: demo da atraçã
 bool Demo_SoundOn(void);            /* EEPROM +0x7F0 */
 void Demo_End(void);
 void Gameplay_ScoreSync(void);    /* Exceed: GOOD +100, BAD -700, MISS -1000, score >= 0 */        /* [0x568FF4] & 0x8000 */     /* "%X" com g_hexSongIds, senão "%d" */
+void Gameplay_DoubleToOwner(void);   /* Double só do P2: move os contadores para o índice dele */
 void Select_BuildSongDB(SongDB* db);
 void Select_Enter(void);          /* select_core.c — CSelect */
 bool Select_Run(int id, int m, int demo); /* RUN/PLAY do console: m = 0..4 (N H C D NM) ou 5 (-bt) */
@@ -942,6 +945,8 @@ bool     OldData_FindPreview(int id, char* out, size_t n);
 bool     OldData_FindFile(int id, const char* rel, char* out, size_t n);   /* rel: "BGA/%X.MOV" */
 void     OldData_LoadDiscs(int* tex, const uint8_t* want, int count);
 void     OldData_Status(int* roots, int* ok, int* total);   /* resumo para o GAME OPTION */
+bool     OldData_ApplyModes(void);                             /* liga/desliga os modos vindos de .STX; true = mudou */
+bool     OldData_FindStep(int id, int mode, char* out, size_t n);   /* mode 0..4 = N H C F NM */
 void     Eeprom_Set8(int off, uint8_t v);
 void     Eeprom_Set32(int off, uint32_t v);
 void GameOption_Save(void);   /* escreve PUMPY.INI; chama-se em cada alteração */

@@ -189,6 +189,72 @@ void Game_ChangeState(GameState newState) {
     LoadBGAForState(newState);
 }
 
+/* Extra do port (ferramenta, tools/import_old_data.py): PUMPY_BGACAP=<arquivo de tarefas>.
+ * Cada linha é "caminho do .DAT;início em s;duração em s;arquivo de saída". Para cada uma,
+ * carrega o BGA como o gameplay (Resource_LoadBGADirect), desenha 30 quadros por segundo
+ * do trecho pedido — o quadro do BGA é tempo * 60, como em Gameplay_Update — e grava os
+ * pixels do backbuffer: int32 largura, int32 altura, depois os quadros em RGB de baixo
+ * para cima. Não abre tela nem toca nada; o jogo fecha ao terminar. */
+static void bgaCaptureRun(const char* listPath) {
+    FILE* lf = fopen(listPath, "r");
+    if (!lf) { Log_Print("BGACAP: não abriu '%s'\n", listPath); return; }
+    char line[1024];
+    while (fgets(line, sizeof(line), lf)) {
+        char* f1 = strchr(line, ';');
+        char* f2 = f1 ? strchr(f1 + 1, ';') : NULL;
+        char* f3 = f2 ? strchr(f2 + 1, ';') : NULL;
+        if (!f3) continue;
+        *f1 = *f2 = *f3 = 0;
+        char* outPath = f3 + 1;
+        outPath[strcspn(outPath, "\r\n")] = 0;
+        double start = atof(f1 + 1), dur = atof(f2 + 1);
+
+        Resource_ClearBGA();
+        Resource_LoadBGADirect(line);
+        g_game.bgaLoop = false;
+        BGA_Reset();
+        int maxFrame = g_game.bgaMaxFrame;
+        if (g_game.isVSL && g_vsl.active && g_vsl.frameCount > 0) maxFrame = g_vsl.frameCount - 1;
+        if (g_game.bgaPicCount <= 0 && !(g_game.isVSL && g_vsl.active)) {
+            Log_Print("BGACAP: '%s' não carregou\n", line);
+            continue;
+        }
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        int w = vp[2], h = vp[3];
+        unsigned char* px = (unsigned char*)malloc((size_t)w * h * 3);
+        FILE* of = fopen(outPath, "wb");
+        if (!px || !of) { Log_Print("BGACAP: não criou '%s'\n", outPath); free(px); if (of) fclose(of); continue; }
+        fwrite(&w, 4, 1, of);
+        fwrite(&h, 4, 1, of);
+        int n = (int)(dur * 30.0 + 0.5);
+        for (int k = 0; k < n; k++) {
+            int frame = (int)((start + k / 30.0) * 60.0);
+            if (maxFrame > 0 && frame > maxFrame) frame = maxFrame;
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            glOrtho(0, 640, 0, 480, -1.0, 1.0);
+            glMatrixMode(GL_MODELVIEW);
+            glClearColor(0, 0, 0, 1);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glLoadIdentity();
+            glColor4f(1, 1, 1, 1);
+            g_game.bgaFrame = frame;
+            if (g_game.isVSL && g_vsl.active) VSL_Render(frame);
+            else BGA_Render(0, frame);
+            glFinish();
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadBuffer(GL_BACK);
+            glReadPixels(vp[0], vp[1], w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
+            fwrite(px, 1, (size_t)w * h * 3, of);
+        }
+        fclose(of);
+        free(px);
+        Log_Print("BGACAP: '%s' %.2f s + %.2f s -> %d quadros %dx%d (maxFrame %d)\n", line, start, dur, n, w, h, maxFrame);
+    }
+    fclose(lf);
+}
+
 void Game_Init(HINSTANCE hInstance) {
     memset(&g_game, 0, sizeof(g_game));
     g_game.hInstance = hInstance;
@@ -217,6 +283,7 @@ void Game_Init(HINSTANCE hInstance) {
     Render_SetGlobalColor(0, 0, 0, 0);
     GetCurrentDirectoryA(MAX_PATH, g_game.currentDirectory);
     GameOption_Load(); /* lê PUMPY.INI — antes de qualquer sistema, para que o restante já veja os valores corretos */
+    if (getenv("PUMPY_BGACAP")) g_game.isFullscreen = false;   /* captura de BGA (bgaCaptureRun): sempre em janela */
     InitSystems();
     Audio_Init();
     Font_Init();
@@ -232,6 +299,7 @@ void Game_Init(HINSTANCE hInstance) {
     bool dbOk = Song_LoadDatabase(cfgPath, &g_game.songDB);
     if (!dbOk) {
         /* Exceed: sem Stage.cfg, as músicas vêm das tabelas do exceed.exe */
+        OldData_ApplyModes();   /* extra do port: modos de .STX antigo, antes de montar o songDB */
         Select_BuildSongDB(&g_game.songDB);
         dbOk = g_game.songDB.songCount > 0;
     }
@@ -307,6 +375,11 @@ void Game_Init(HINSTANCE hInstance) {
                     if (Select_StartSong((int)g_songTable[i].id, 0, 3, sp, rv)) break;
                 }
         }
+    }
+    if (getenv("PUMPY_BGACAP")) {   /* ferramenta: captura e fecha, sem entrar no laço do jogo */
+        bgaCaptureRun(getenv("PUMPY_BGACAP"));
+        Game_Shutdown();
+        exit(0);
     }
     g_game.lastTime = timeGetTime();
 }
