@@ -181,6 +181,7 @@ add_executable(Pumpy
     src/nx_mission.c
     src/nx_rank.c
     src/nx_credit.c
+    src/old_data.c
     src/nx_training.c
     src/nx_sports.c
     src/nx_font.c

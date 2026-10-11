@@ -752,18 +752,19 @@ static void svcRenderGameOption(void)
  * visível. Pedido do usuário: os extras ficam abaixo do GAME STYLE e só aparecem com ele em
  * MODDED — UNLOCK SPECIAL ZONE, tecla do autoplay (F8) e tecla do teste do Dance Grade (F12).
  * O índice aqui é o id do item (usado nos switch); a ordem na tela vem de svcGameOptRows. */
-static const char* SVC_GAMEOPT_ITEMS[15] = {
+/* era: SVC_GAMEOPT_ITEMS[15]; "USE OLD DATA SONGS" (15) é extra do port, só no MODDED (old_data.c) */
+static const char* SVC_GAMEOPT_ITEMS[16] = {
     "GAME MODE", "LEVEL", "STAGE BREAK", "DEMO SOUND", "SHOW HELP",
     "DEFAULT STATION", "MERCY TICKET", "SCORE PER TICKET", "UNLOCK SPECIAL ZONE", "GAME STYLE",
-    "", "DEFAULT SETTING", "EXIT", "AUTOPLAY KEY (F8)", "DG TEST KEY (F12)"
+    "", "DEFAULT SETTING", "EXIT", "AUTOPLAY KEY (F8)", "DG TEST KEY (F12)", "USE OLD DATA SONGS"
 };
 /* linhas visíveis, de cima para baixo; devolve a quantidade */
-static int svcGameOptRows(int rows[15])
+static int svcGameOptRows(int rows[16])
 {
     int n = 0;
     for (int i = 0; i <= 7; i++) rows[n++] = i;
     rows[n++] = 9;                       /* GAME STYLE */
-    if (g_game.gameStyleModded) { rows[n++] = 8; rows[n++] = 13; rows[n++] = 14; }
+    if (g_game.gameStyleModded) { rows[n++] = 8; rows[n++] = 13; rows[n++] = 14; rows[n++] = 15; }   /* era: sem o 15 */
     rows[n++] = 10;                      /* MENU_BLANK */
     rows[n++] = 11;                      /* DEFAULT SETTING */
     rows[n++] = 12;                      /* EXIT */
@@ -790,6 +791,7 @@ static void svcGameOptionReset(void)
     g_game.gameStyleModded  = false;  /* extra do port: VANILLA */
     g_game.keyAutoplay      = false;  /* extra do port */
     g_game.keyDgTest        = false;  /* extra do port */
+    g_game.useOldData       = false;  /* extra do port */
 }
 
 static void svcRenderGameOption(void)
@@ -805,7 +807,7 @@ static void svcRenderGameOption(void)
     svcColor(SVC_NORMAL);
     svcText(276.0f, 428.0f, "GAME OPTION");
 
-    int rows[15];
+    int rows[16];   /* era: rows[15] */
     int nRows = svcGameOptRows(rows);
     if (g_svcCursor >= nRows) g_svcCursor = nRows - 1;   /* a lista encolhe ao voltar para VANILLA */
     for (int row = 0; row < nRows; row++) {   /* era: for (i = 0; i < 13; i++), índice = linha */
@@ -864,6 +866,21 @@ static void svcRenderGameOption(void)
             if (!g_game.keyDgTest) svcColor(SVC_SUCCESS);
             svcText(404.0f, y, g_game.keyDgTest ? "ON" : "OFF");
             break;
+        case 15:  /* extra do port: capa, prévia e disco que faltam vêm de uma versão anterior */
+            if (!g_game.useOldData) svcColor(SVC_SUCCESS);
+            /* era: só "ON"/"OFF". Pedido do usuário: dizer se os dados das outras versões
+             * existem ou estão faltando (old_data.c: capa, disco e áudio de cada música). */
+            {
+                char ob[48];
+                int oRoots, oOk, oTotal;
+                OldData_Status(&oRoots, &oOk, &oTotal);
+                const char* onoff = g_game.useOldData ? "ON" : "OFF";
+                if (oRoots == 0)        snprintf(ob, sizeof(ob), "%s - NO OLD GAMES FOUND", onoff);
+                else if (oOk == oTotal) snprintf(ob, sizeof(ob), "%s - DATA OK (%d/%d)", onoff, oOk, oTotal);
+                else                    snprintf(ob, sizeof(ob), "%s - MISSING DATA (%d/%d)", onoff, oOk, oTotal);
+                svcText(404.0f, y, ob);
+            }
+            break;
         default:
             break;
         }
@@ -889,6 +906,7 @@ static void svcRenderGameOption(void)
         case 9: g_game.gameStyleModded = !g_game.gameStyleModded; break;
         case 13: g_game.keyAutoplay = !g_game.keyAutoplay; break;
         case 14: g_game.keyDgTest = !g_game.keyDgTest; break;
+        case 15: g_game.useOldData = !g_game.useOldData; break;
         case 11: svcGameOptionReset(); break;   /* era 10 */
         case 12:                                /* era 11 */
             GameOption_Save();

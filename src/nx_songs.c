@@ -4,7 +4,7 @@
  *   g_nxResMap    <- 0x0813f860 (328 pares recurso/chart, 0x8061d10) */
 #include "pumpy.h"
 
-#if SONG_TABLE_COUNT != 196 || NX_SONG_BASE != 193 || SONG_CHANNEL_COUNT != 7 || SONG_CHANNEL_MAX != 46
+#if SONG_TABLE_COUNT != 210 || NX_SONG_BASE != 193 || SONG_CHANNEL_COUNT != 7 || SONG_CHANNEL_MAX != 46
 #error "pumpy.h: SONG_TABLE_COUNT/SONG_CHANNEL_COUNT/SONG_CHANNEL_MAX fora da NX (rode tools/gen_nx_songs.py)"
 #endif
 
@@ -219,6 +219,44 @@ const TrackEntry g_songTable[SONG_TABLE_COUNT] = {
     { 0x208, "H.O.T ", "H.O.T ", "\355\210\254\354\247\200 ", "Fighting Spirit ", 98.0000, { 2, -1, -1, 5, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 195, 0, 1, "98", 92 }, /* 193 */
     { 0xA10, "\353\263\264\354\225\204 ", "BoA ", "\353\260\234\353\240\214\355\213\260 ", "Valenti ", 104.0000, { 2, 4, 9, 4, 11 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 196, 0, 1, "104", 107 }, /* 194 */
     { 0xD208, "H.O.T ", "H.O.T ", "\355\210\254\354\247\200(N/C/NM) ", "Fighting Spirit ", 98.0000, { 99, -1, 13, -1, 16 } /* era { 99, -1, 99, -1, 99 }. Informado pelo usuário: CRAZY 13, NIGHTMARE 1 caveira (15 ou 16 em levelSlots; ele lembra 16 ou 17 -> 16), NORMAL sem nível (nunca foi ativado no original). FREESTYLE desligado: seção 5 = mesmas notas do FREESTYLE da 208 */, 1, 1, { 1, 1, 1, 1, 1 }, 0x208, 6, 197, 0, 1, "98", 92 }, /* 195 */
+    /* Extras do "USE OLD DATA SONGS" (índices >= NX_SONG_OLD_BASE): têm AUDIO, INTRO, BGA e
+     * STEP no NX, mas não a capa, a prévia e o disco, que vêm de uma versão anterior
+     * (old_data.c). Só aparecem com GAME STYLE = MODDED e a opção ligada.
+     * Nomes, níveis e canal (BANYA / K-POP): tabela do Zero (zero_songs.c) pelo mesmo id.
+     * BPM: 1º bloco do .SEE do NX. Dificuldades conferidas no .SEE (seções 1 N, 2 H, 4 C,
+     * 5 FREESTYLE, 3 NIGHTMARE) e iguais às do Zero. Duração: estimativa pelo .AUD
+     * (~24200 bytes/s). A C90 ficou de fora: é o HOW TO PLAY (capa TC90E.PNZ do Zero) e o
+     * .SEE dela não tem notas. */
+    { 0x202, "\353\260\230\354\225\274 ", "BanYa ", "\354\213\253\354\226\264 ", "HATE ", 90.4000, { 1, 4, -1, 3, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 3, 198, 0, 1, "90.4", 93 }, /* 196 */
+    { 0x311, "\353\260\230\354\225\274 ", "BanYa ", "\355\216\214\355\225\221 \354\227\205 ", "Pumping Up ", 135.0000, { -1, 4, -1, -1, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 3, 199, 0, 1, "135", 88 }, /* 197 */
+    { 0x707, "\353\260\230\354\225\274 ", "BanYa ", "\353\247\210\354\235\264\354\233\250\354\235\264 ", "My Way ", 118.0000, { 2, 5, 12, 6, 15 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 3, 200, 0, 1, "118", 98 }, /* 198 */
+    { 0x730, "\353\224\224\353\260\224 ", "DIVA ", "\353\224\261\354\235\264\354\225\274! ", "PERFECT! ", 132.0000, { 1, 5, 10, 4, 13 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 201, 0, 1, "132", 102 }, /* 199 */
+    { 0x910, "\355\227\210\353\213\210 \355\214\250\353\260\200\353\246\254 ", "Honey Family ", "\353\236\251\352\265\220 3\353\247\211 ", "The Rap. act 3 ", 98.0000, { 3, 5, 12, 5, 13 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 202, 0, 1, "98", 98 }, /* 200 */
+    { 0xB04, "\353\271\204\354\227\240\354\274\200\354\235\264 ", "B.M.K ", "\353\226\240\353\202\230\353\262\204\353\240\244 ", "Go Away ", 132.0000, { 2, 6, 11, 5, 15 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 203, 0, 1, "132", 91 }, /* 201 */
+    { 0xB10, "\354\227\204\354\240\225\355\231\224 ", "Uhm Jung Hwa ", "\354\235\264\355\204\260\353\213\210\355\213\260 ", "ETERNITY ", 120.0000, { 1, 5, 9, 5, 12 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 204, 0, 1, "120", 92 }, /* 202 */
+    { 0xC07, "\353\260\230\354\225\274 ", "BanYa ", "\354\240\220\355\224\204 ", "Jump ", 96.0000, { 3, 7, 9, -1, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 3, 205, 0, 1, "96", 98 }, /* 203 */
+    { 0xC13, "\354\235\200\354\247\200\354\233\220 ", "Eun Ji Won ", "\354\230\254\353\271\274\353\257\270 ", "All Famy ", 94.0000, { 2, 3, -1, 4, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 206, 0, 1, "94", 96 }, /* 204 */
+    /* "Parciais" do USE OLD DATA SONGS: no NX falta também o BGA ou o áudio.
+     *   508  NX: AUD e SEE. BGA (508.DAT), capa e disco: Exceed 2. Sem intro e sem prévia em
+     *        nenhuma versão. Nome, BPM e níveis: tabela do Exceed 2 (exceed2_songs.c).
+     *   A07  NX: AUD e SEE. BGA (A07.MOV), capa e disco: Exceed 2. Idem.
+     *   C44  NX: intro, BGA e SEE. AUD, capa e prévia: Zero. Canal REMIX e CRAZY 18: tabela do
+     *        Zero; HARD e FREESTYLE estão lá com nível 0 -> 99 ("??").
+     *   B58  NX: AUD, intro e SEE (só CRAZY e NIGHTMARE). Capa, prévia e disco: Zero. Não está
+     *        em nenhuma tabela de músicas; o nome vem da capa TB58E.PNZ ("Tream Vook of the
+     *        war ANOTHER", BPM 184), o artista da DB28 do NX. Níveis desconhecidos -> 99.
+     *        Canal ANOTHER: hipótese, pela palavra na capa. Sem BGA em nenhuma versão (como a
+     *        DB28): usa BGA/001.MOV. */
+    { 0x508, "\352\271\200\354\204\261\354\236\254 ", "KIM SUNG JAE ", "\353\247\220\355\225\230\354\236\220\353\251\264 ", "As I Told You ", 119.5000, { 2, 5, 9, 5, 12 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 1, 207, 0, 1, "119.5", 96 }, /* 205 */
+    { 0xA07, "\353\260\230\354\225\274 ", "BanYa ", "Get Up! ", "Get Up! ", 180.0000, { 4, 7, 13, 7, 16 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 3, 208, 0, 1, "180", 94 }, /* 206 */
+    { 0xC44, "\353\260\230\354\225\274 ", "BanYa ", "BANYA HARD REMIX ", "BANYA HARD REMIX ", 146.1000, { -1, 99, 18, 99, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 5, 209, 0, 1, "146.1", 152 }, /* 207 */
+    { 0xB58, "\353\260\230\354\225\274 ", "BanYa ", "Tream Vook of the war(C/NM) ", "Tream Vook of the war ", 184.0000, { -1, -1, 99, -1, 99 }, 1, 1, { 1, 1, 1, 1, 1 }, -1, 5 /* era 6 (ANOTHER, hipótese). Pedido do usuário: canal REMIX, ao lado da Tream Vook REMIX (DB28) */, 210, 0, 1, "184", 163 }, /* 208 */
+    /* DB52 Novasonic Remix, no molde dos remixes do NX (id Dxxx, base xxx): NX tem o step
+     * (DB52.SEE: HARD, CRAZY, FREESTYLE), a intro (DB52), o áudio (B52) e o BGA (326.DAT,
+     * informado pelo usuário). Capa, prévia e disco: Zero, como B52. Nome e níveis: tabela
+     * do Zero (0xB52) — os remixes do NX mudaram de nível em relação ao Zero, então estes
+     * podem não ser os do NX. BPM: 1º bloco do .SEE. */
+    { 0xDB52, "\353\205\270\353\260\224\354\206\214\353\213\211 ", "NOVASONIC ", "NOVASONIC REMIX ", "NOVASONIC REMIX ", 136.0000, { -1, 7, 11, 9, -1 }, 1, 1, { 1, 1, 1, 1, 1 }, 0xB52, 5, 211, 0, 1, "136", 158 }, /* 209 */
 };
 
 const int g_songChannels[SONG_CHANNEL_COUNT][SONG_CHANNEL_MAX] = {

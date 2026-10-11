@@ -512,19 +512,32 @@ static void buildList(void) {
      * aqui vai para o fim do canal. Valenti (A10) fica antes da A11; a
      * Fighting Spirit Another (D208) antes da Dr. M Another (D701); a
      * Fighting Spirit (208) antes da Com'Back (212). */
-    static const uint32_t k_before[][2] = { { 0xA10, 0xA11 }, { 0xD208, 0xD701 }, { 0x208, 0x212 } };
+    /* era: k_before só com { 0xA10, 0xA11 }, { 0xD208, 0xD701 }, { 0x208, 0x212 }.
+     * Os 9 do USE OLD DATA SONGS entram na ordem de id do próprio canal (sugestão do
+     * port, não informada pelo usuário): 202 antes da 204, 311 antes da 404, 707 antes da
+     * 708, C07 antes da B17 (BANYA); 730 antes da 902, 910 antes da 915, B04 antes da
+     * B05, B10 antes da B11, C13 antes da C14 (K-POP). */
+    static const uint32_t k_before[][2] = { { 0xA10, 0xA11 }, { 0xD208, 0xD701 }, { 0x208, 0x212 },
+        /* parciais: A07 depois da A06 (antes da 202), 508 antes da 516, C44 depois da DC43
+         * (antes da DB26); era: a B58 ia para o fim do canal ANOTHER */
+        { 0xA07, 0x204 }, { 0x508, 0x516 }, { 0xC44, 0xDB26 }, { 0xDB52, 0xDB53 }, { 0xB58, 0xDB30 },   /* B58: logo depois da DB28 (pedido do usuário) */
+        { 0x202, 0x204 }, { 0x311, 0x404 }, { 0x707, 0x708 }, { 0xC07, 0xB17 },
+        { 0x730, 0x902 }, { 0x910, 0x915 }, { 0xB04, 0xB05 }, { 0xB10, 0xB11 }, { 0xC13, 0xC14 } };
     const int nBefore = (int)(sizeof(k_before) / sizeof(k_before[0]));
+    /* era: os laços dos extras iam até SONG_TABLE_COUNT; os índices >= NX_SONG_OLD_BASE
+     * só entram com USE OLD DATA SONGS ligado */
+    const int nExtra = OldData_On() ? SONG_TABLE_COUNT : NX_SONG_OLD_BASE;
     for (int i = 0; i < NX_SONG_BASE; i++) {
         if (g_game.gameStyleModded)
             for (int b = 0; b < nBefore; b++)
                 if (k_before[b][1] == g_songTable[i].id)
-                    for (int x = NX_SONG_BASE; x < SONG_TABLE_COUNT; x++)
+                    for (int x = NX_SONG_BASE; x < nExtra; x++)
                         if (g_songTable[x].id == k_before[b][0]) listAdd(x);
         listAdd(i);
         if (!g_game.gameStyleModded) continue;
         int ch = g_songTable[i].channel;
         if (i + 1 < NX_SONG_BASE && g_songTable[i + 1].channel == ch) continue;
-        for (int x = NX_SONG_BASE; x < SONG_TABLE_COUNT; x++) {
+        for (int x = NX_SONG_BASE; x < nExtra; x++) {
             bool placed = false;
             for (int b = 0; b < nBefore; b++) if (k_before[b][0] == g_songTable[x].id) placed = true;
             if (!placed && g_songTable[x].channel == ch) listAdd(x);
@@ -753,12 +766,20 @@ static void previewStart(void) {
     const TrackEntry* e = cur();
     if (!e) return;
     char mov[MAX_PATH], aud[MAX_PATH];
-    if (!nxFind((int)e->id, "%s/BGA/PREVIEW/%03X.MOV", mov, sizeof(mov)))
+    /* era: sem a prévia ia direto para a 001.MOV. Extra do port (USE OLD DATA SONGS):
+     * antes tenta a prévia de uma versão anterior. */
+    if (!nxFind((int)e->id, "%s/BGA/PREVIEW/%03X.MOV", mov, sizeof(mov)) &&
+        !OldData_FindPreview((int)e->id, mov, sizeof(mov)))
         snprintf(mov, sizeof(mov), "%s/BGA/PREVIEW/001.MOV", g_game.currentDirectory);
     Movie_Select(1);
     Movie_Open(mov, true);
     Movie_Select(0);
-    if (nxFind((int)e->id, "%s/AUDIO/INTRO/%03X.AUD", aud, sizeof(aud)) && BGM_LoadAUDDirect(aud))
+    /* era: sem a intro a seleção ficava muda. Extra do port (USE OLD DATA SONGS): a 508 e
+     * a A07 não têm intro em nenhuma versão; toca a própria música, do começo. */
+    if ((nxFind((int)e->id, "%s/AUDIO/INTRO/%03X.AUD", aud, sizeof(aud)) ||
+         (OldData_On() && (nxFind((int)e->id, "%s/AUDIO/%03X.AUD", aud, sizeof(aud)) ||
+                           OldData_FindFile((int)e->id, "AUDIO/%X.AUD", aud, sizeof(aud))))) &&
+        BGM_LoadAUDDirect(aud))
         BGM_Play(false);
     s_previewOn = true;
     NxText_StartScroll();   /* 0x807bb8c: prévia carregada -> texto começa a rolar */
@@ -860,6 +881,16 @@ void NxSelect_Enter(void) {
             }
         }
         RES_Close();
+    }
+    /* extra do port (USE OLD DATA SONGS): disco dos extras que o TEST.DAT não tem */
+    if (OldData_On()) {
+        static uint8_t want[SONG_TABLE_COUNT];
+        for (int i = 0; i < SONG_TABLE_COUNT; i++)
+            want[i] = (i >= NX_SONG_OLD_BASE && s_discTex[i] < 0 &&
+                       ((g_songTable[i].channel & 4) != 0) == special());
+        OldData_LoadDiscs(s_discTex, want, SONG_TABLE_COUNT);
+        int oRoots, oOk, oTotal;
+        OldData_Status(&oRoots, &oOk, &oTotal);   /* 1ª vez: resumo no pumpy.log */
     }
 
     for (int k = 0; k < SFX_COUNT; k++)

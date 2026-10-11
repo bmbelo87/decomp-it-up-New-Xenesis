@@ -36,6 +36,7 @@ static bool loadIni(bool all)
         if (sscanf(line, "GameStyle=%d",   &v) == 1) g_game.gameStyleModded = (v != 0);   /* extra do port: 0 VANILLA, 1 MODDED */
         if (sscanf(line, "AutoplayKey=%d", &v) == 1) g_game.keyAutoplay = (v != 0);       /* extra do port (MODDED): F8 */
         if (sscanf(line, "DgTestKey=%d",   &v) == 1) g_game.keyDgTest   = (v != 0);       /* extra do port (MODDED): F12 */
+        if (sscanf(line, "UseOldData=%d",  &v) == 1) g_game.useOldData  = (v != 0);       /* extra do port (MODDED): old_data.c */
         /* if (sscanf(line, "Upscale=%d",     &v) == 1) g_game.gfxUpscale   = (v >= 2 && v <= 4) ? v : 0;   UPSCALE desativado */
         if (!all) continue;
         if (sscanf(line, "Difficulty=%d",  &v) == 1) g_game.optionDifficulty = v;
@@ -78,6 +79,7 @@ void GameOption_Save(void)
         fprintf(f, "GameStyle=%d\n", (int)g_game.gameStyleModded);
         fprintf(f, "AutoplayKey=%d\n", (int)g_game.keyAutoplay);
         fprintf(f, "DgTestKey=%d\n", (int)g_game.keyDgTest);
+        fprintf(f, "UseOldData=%d\n", (int)g_game.useOldData);
         Input_WriteJoyConfigToIni(f);
         /* fprintf(f, "Upscale=%d\n", g_game.gfxUpscale);   UPSCALE desativado */
         fclose(f);
@@ -96,6 +98,7 @@ void GameOption_Load(void)
     g_game.gameStyleModded = false;   /* VANILLA */
     g_game.keyAutoplay = false;
     g_game.keyDgTest = false;
+    g_game.useOldData = false;
     g_game.gfxAspect    = 0;
     g_game.gfxUpscale   = 0;      /* xBRZ desligado: texturas como no original */
     g_game.isFullscreen = false;

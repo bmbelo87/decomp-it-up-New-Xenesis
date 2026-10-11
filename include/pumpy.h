@@ -151,8 +151,14 @@ typedef enum {
 #define SONG_CH_ANOTHER 4
 */
 /* era: SONG_TABLE_COUNT 193. +3 extras do port no fim da tabela (208, A10, D208), só no GAME STYLE MODDED */
-#define SONG_TABLE_COUNT     196   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 extras */
+/* era: SONG_TABLE_COUNT 196. +9 extras que dependem do "USE OLD DATA SONGS" (202, 311, 707, 730,
+ * 910, B04, B10, C07, C13): sem capa, prévia e disco no NX, lidos de uma versão anterior (old_data.c) */
+/* era: 205. +4 "parciais" (508, A07, C44, B58): além de capa, prévia e disco, o BGA ou o áudio também
+ * vêm de uma versão anterior */
+/* era: 209. +1: DB52 (Novasonic Remix) */
+#define SONG_TABLE_COUNT     210   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 + 9 + 4 extras */
 #define NX_SONG_BASE      193   /* índices >= este são extras do port (fora do piu) */
+#define NX_SONG_OLD_BASE  196   /* índices >= este só entram com USE OLD DATA SONGS ligado */
 #define SONG_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
 #define SONG_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
 #define SONG_CH_NX       0
@@ -471,6 +477,8 @@ typedef struct {
     bool nxUnlockSpecial;   /* extra do port: SPECIAL ZONE com tudo liberado (PUMPY.INI UnlockSpecial) */
     bool keyAutoplay;       /* extra do port (só MODDED): F8 liga/desliga o autoplay (PUMPY.INI AutoplayKey) */
     bool keyDgTest;         /* extra do port (só MODDED): F12 encerra a música no Dance Grade (PUMPY.INI DgTestKey) */
+    bool useOldData;        /* extra do port (só MODDED): capa, prévia e disco que faltam vêm de uma versão
+                             * anterior instalada ao lado (PUMPY.INI UseOldData, old_data.c) */
     bool gameStyleModded;   /* extra do port: GAME STYLE (PUMPY.INI GameStyle). false = VANILLA (só os
                              * códigos do piu); true = MODDED (códigos extras do port: skins, BGA Off) */
     int  gfxAspect;      /* 0 = 4:3 com bordas, 1 = esticar */
@@ -926,6 +934,13 @@ void Eeprom_Save(void);   /* lê PUMPY.INI; chama-se na inicialização do jogo 
 uint32_t Eeprom_Get32(int off);   /* u32 da imagem (offset no arquivo) */
 uint8_t  Eeprom_Get8(int off);
 bool     NxRestrict_IsOff(int songIdx);   /* service_menu.c: RESTRICTION (extra do port) */
+/* old_data.c: USE OLD DATA SONGS (extra do port, só MODDED) */
+bool     OldData_On(void);
+bool     OldData_FindTitle(int id, char* out, size_t n);
+bool     OldData_FindPreview(int id, char* out, size_t n);
+bool     OldData_FindFile(int id, const char* rel, char* out, size_t n);   /* rel: "BGA/%X.MOV" */
+void     OldData_LoadDiscs(int* tex, const uint8_t* want, int count);
+void     OldData_Status(int* roots, int* ok, int* total);   /* resumo para o GAME OPTION */
 void     Eeprom_Set8(int off, uint8_t v);
 void     Eeprom_Set32(int off, uint32_t v);
 void GameOption_Save(void);   /* escreve PUMPY.INI; chama-se em cada alteração */

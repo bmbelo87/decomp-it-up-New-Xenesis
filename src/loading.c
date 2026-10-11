@@ -41,8 +41,21 @@ void Loading_Enter(int songId) {
     {
         FILE* tf = fopen(path, "rb");
         if (tf) fclose(tf);
-        else if (NX_ResId(songId) >= 0)
-            snprintf(path, sizeof(path), "%s/TITLE/%s.PNZ", g_game.currentDirectory, Song_IdStr(NX_ResId(songId)));
+        else {
+            /* era: com base, usava o caminho dela sem conferir; sem base, OldData. Agora a
+             * capa de uma versão anterior (USE OLD DATA SONGS) entra sempre que a base
+             * também não tem o arquivo (DB52: base B52 sem capa no NX). */
+            char old[MAX_PATH];
+            bool got = false;
+            if (NX_ResId(songId) >= 0) {
+                snprintf(old, sizeof(old), "%s/TITLE/%s.PNZ", g_game.currentDirectory, Song_IdStr(NX_ResId(songId)));
+                FILE* bf = fopen(old, "rb");
+                if (bf) { fclose(bf); got = true; }
+                else if (!OldData_On()) got = true;   /* comportamento anterior */
+            }
+            if (!got) got = OldData_FindTitle(songId, old, sizeof(old));
+            if (got) snprintf(path, sizeof(path), "%s", old);
+        }
     }
     /* era (Exceed2): "%s/TITLE/T%s.pnz" com Song_DataIdStr(songId) */
     Log_Print("Loading: loading PNZ '%s'\n", path);
@@ -59,6 +72,8 @@ void Loading_Enter(int songId) {
     g_game.stateFrame = 0;
     Render_SetGlobalColor(0, 0, 0, 0);
 }
+
+static bool song326Exists(const char* p) { FILE* f = fopen(p, "rb"); if (f) { fclose(f); return true; } return false; }
 
 /* Fim do título: carrega BGA/MOV/AUD e começa o gameplay (era o corpo do
  * if no fim de STATE_SONG_TITLE_OUT; separado para a missão do WORLD TOUR). */
@@ -106,6 +121,20 @@ void Loading_BeginGameplay(void) {
         if (useDat) {
             Log_Print("Loading: loading BGA '%s'\n", bgaPath);
             Resource_LoadBGADirect(bgaPath);
+        } else if (OldData_On() && g_loadingSongId == 0xDB52 &&
+                   (snprintf(bgaPath, sizeof(bgaPath), "%s/BGA/326.DAT", g_game.currentDirectory), song326Exists(bgaPath))) {
+            /* extra do port: o BGA do Novasonic Remix está no NX como 326.DAT (informado pelo
+             * usuário); nenhuma tabela do projeto liga a DB52 a ele */
+            useDat = true;
+            Log_Print("Loading: loading BGA '%s'\n", bgaPath);
+            Resource_LoadBGADirect(bgaPath);
+        } else if (OldData_FindFile(g_loadingSongId, "BGA/%X.MOV", movPath, sizeof(movPath))) {
+            /* extra do port (USE OLD DATA SONGS): BGA de uma versão anterior, vídeo e depois .DAT */
+            useMov = true;
+        } else if (OldData_FindFile(g_loadingSongId, "BGA/%X.DAT", bgaPath, sizeof(bgaPath))) {
+            useDat = true;
+            Log_Print("Loading: loading BGA '%s'\n", bgaPath);
+            Resource_LoadBGADirect(bgaPath);
         } else {
             snprintf(movPath, sizeof(movPath), "%s/BGA/001.MOV", g_game.currentDirectory);
             FILE* mf = fopen(movPath, "rb");
@@ -118,7 +147,13 @@ void Loading_BeginGameplay(void) {
 
     char audioPath[MAX_PATH];
     /* Zero 0x8081d74: AUDIO/%03X.AUD, id e depois base (Another usa a da base) */
-    Song_FindFile(g_loadingSongId, "%s/AUDIO/%s.AUD", true, audioPath, sizeof(audioPath));
+    /* era: o resultado de Song_FindFile era ignorado. Extra do port (USE OLD DATA SONGS):
+     * sem o .AUD no NX, usa o de uma versão anterior (C44). */
+    if (!Song_FindFile(g_loadingSongId, "%s/AUDIO/%s.AUD", true, audioPath, sizeof(audioPath))) {
+        char old[MAX_PATH];
+        if (OldData_FindFile(g_loadingSongId, "AUDIO/%X.AUD", old, sizeof(old)))
+            snprintf(audioPath, sizeof(audioPath), "%s", old);
+    }
     Log_Print("Loading: loading AUD '%s'\n", audioPath);
     bool audOk = BGM_LoadAUDDirect(audioPath);
 

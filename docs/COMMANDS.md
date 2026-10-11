@@ -108,7 +108,7 @@ arcade. Em `MODDED`:
 | Músicas extras | Aparecem **Fighting Spirit** (H.O.T) e **Valenti** (BoA) no canal K-POP, e **Fighting Spirit Another** na SPECIAL ZONE. Os arquivos já estão no disco do NX; só não constam na lista do arcade. |
 | Atração em FREE PLAY / EVENT | A atração roda (logo, NEXCADE, abertura, título, demo, ranking, WPF2007) em vez de ficar presa no título. O CENTER leva ao título, e o título volta à atração sozinho. |
 | Dance Grade | São precisos três CENTER para pular a tela (no VANILLA, um). |
-| Opções extras no GAME OPTION | Aparecem três linhas abaixo do GAME STYLE (tabela seguinte). |
+| Opções extras no GAME OPTION | Aparecem quatro linhas abaixo do GAME STYLE (tabela seguinte). |
 
 Opções que só existem, e só valem, com o estilo em `MODDED`:
 
@@ -117,9 +117,46 @@ Opções que só existem, e só valem, com o estilo em `MODDED`:
 | UNLOCK SPECIAL ZONE | OFF | Libera todas as músicas e dificuldades da SPECIAL ZONE. |
 | AUTOPLAY KEY (F8) | OFF | Permite ligar e desligar o autoplay com o F8 durante a música. |
 | DG TEST KEY (F12) | OFF | Permite encerrar a música com o F12 e ir ao Dance Grade com valores fixos. |
+| USE OLD DATA SONGS | OFF | Mostra mais catorze músicas que têm o step no disco do NX, buscando o que falta (capa, prévia, disco e, em algumas, BGA ou áudio) numa versão anterior instalada ao lado (ver abaixo). |
 
-As três são gravadas no `PUMPY.INI` ao sair pelo EXIT. O DEFAULT SETTING desliga todas e volta o
+As quatro são gravadas no `PUMPY.INI` ao sair pelo EXIT. O DEFAULT SETTING desliga todas e volta o
 estilo para `VANILLA`.
+
+### USE OLD DATA SONGS
+
+Músicas liberadas: HATE (202), Pumping Up (311), My Way (707) e Jump (C07) no canal BANYA;
+PERFECT! (730), The Rap. act 3 (910), Go Away (B04), ETERNITY (B10) e All Famy (C13) no K-POP.
+
+Cinco músicas precisam de mais coisas da versão anterior: As I Told You (508, K-POP) e Get Up!
+(A07, BANYA) usam o BGA do Exceed 2; BANYA HARD REMIX (C44, canal REMIX da SPECIAL ZONE) usa o áudio
+do Zero; Tream Vook of the war Another (B58, canal REMIX, ao lado da Tream Vook REMIX) usa capa, prévia e disco do Zero; NOVASONIC REMIX (DB52, canal REMIX) usa o BGA `326.DAT` do próprio NX e capa, prévia e disco do Zero. A 508
+e a A07 não têm intro nem prévia em nenhuma versão: a seleção toca a própria música.
+
+O jogo sobe duas pastas a partir da pasta do jogo e procura versões anteriores pelo número no
+começo do nome da pasta. Vale a mais próxima que tiver o arquivo.
+
+```
+E:\18_nx\game      <- o NX (pasta do jogo)
+E:\17_zero\game    <- procurada primeiro
+E:\16_exc2\game
+E:\15_exc\game
+E:\14_px3\game
+```
+
+| O que falta no NX | Onde é procurado na versão anterior |
+|---|---|
+| Capa da tela de título | `TITLE/T<ID>E.PNZ` ou `T<ID>H.PNZ` (pelo idioma), `TITLE/T<ID>.PNZ` |
+| Prévia da seleção | `BGA/PREVIEW/<ID>.MOV`, `BGA/PREVIEW/ENG/<ID>.MOV` ou `HAN/<ID>.MOV` |
+| Disco da seleção | `<ID>.TGA` dentro de `BGA/90.DAT`, `90E.DAT` ou `90H.DAT` |
+| BGA da música | `BGA/<ID>.MOV` ou `BGA/<ID>.DAT` |
+| Áudio da música | `AUDIO/<ID>.AUD` |
+
+Sem a pasta da versão anterior as músicas continuam aparecendo e dá para jogar, só que sem capa,
+com a prévia padrão e sem disco. O `pumpy.log` mostra o que foi achado (procure por `OLDDATA:`).
+
+A linha da opção no GAME OPTION mostra a situação, ligada ou não: `DATA OK (14/14)` quando todas
+as músicas têm capa, disco e áudio; `MISSING DATA (n/14)` quando falta algo em alguma; `NO OLD GAMES
+FOUND` quando não há nenhuma pasta de versão anterior. As músicas incompletas saem no `pumpy.log`.
 
 ## Teclas de operador
 
