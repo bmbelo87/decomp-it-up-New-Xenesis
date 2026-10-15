@@ -1,0 +1,14 @@
+{
+  "game": "Pump It Up NX: New Xenesis",
+  "system": "Arcade",
+  "type": "decomp",
+  "status": "playable",
+  "targets": ["Windows", "Linux"],
+  "toolchain": ["Ghidra", "SDL2", "OpenGL"],
+  "project": "NXReconstructed",
+  "approach": "Faithful C reconstruction of the Linux arcade executable piu (ELF i386), no emulation, native SDL2 + OpenGL.",
+  "notes": "Attract loop, all four stations (TRAINING / ARCADE / WORLD TOUR / SPECIAL ZONE), NX Mode and modifiers, Stage Break, kcal screen, name entry and NX service menu work. Internet Ranking is turned off on purpose.",
+  "tags": ["rhythm", "dance", "andamiro", "pump-it-up"],
+  "maintainers": [{ "name": "bmbelo87", "link": "https://github.com/bmbelo87" }],
+  "links": [{ "label": "Releases", "url": "https://github.com/bmbelo87/decomp-it-up-New-Xenesis/releases" }]
+}
