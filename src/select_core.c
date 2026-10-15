@@ -83,6 +83,10 @@ const char* Song_IdStr(int id) {
     static char buf[4][16];
     static int slot;
     char* s = buf[slot++ & 3];
+    if (id == 0xDA25) {
+        snprintf(s, 16, "A-25");
+        return s;
+    }
     /* era (Zero): g_hexSongIds ? "%X" : "%d" — NX: "%03X" em todos os nomes (STEP, BGA, TITLE, AUDIO) */
     snprintf(s, 16, g_hexSongIds ? "%03X" : "%d", id);
     return s;

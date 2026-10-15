@@ -299,6 +299,7 @@ bool Step_LoadSong(const char* path, StepSong* song)
 
         int chartIdx = song->chartCount;
         StepChart* chart = &song->charts[chartIdx];
+        chart->sectionIndex = si;
         chart->bpm = bpm;
         chart->beatPerMeasure = beatPerMeasure;
         chart->beatSplit = beatSplit;
@@ -656,6 +657,19 @@ int Step_SelectChart(const char* modeName, int fallbackSection)
     if (_stricmp(modeName, "LIGHTMAP") == 0) return 8;
 
     return fallbackSection;
+}
+
+int Step_SelectChartInSong(const StepSong* song, const char* modeName, int fallbackSection)
+{
+    if (!song || song->chartCount <= 0) return 0;
+    int targetSec = Step_SelectChart(modeName, fallbackSection);
+    for (int i = 0; i < song->chartCount; i++) {
+        if (song->charts[i].sectionIndex == targetSec) return i;
+    }
+    if (targetSec >= 0 && targetSec < song->chartCount) {
+        return targetSec;
+    }
+    return 0;
 }
 
 /* ── Helpers de permutacao (usados pelo Mirror) ─────────────────────────────

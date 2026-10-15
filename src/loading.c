@@ -19,7 +19,9 @@ static uint32_t g_loadingStartMs = 0;
 
 void Loading_Enter(int songId) {
     g_loadingSongId = songId;
-    g_loadingTimer = LOADING_DURATION_MS;
+    /* era: g_loadingTimer = LOADING_DURATION_MS;
+     * DEMO PLAY (pedido do usuário): sem título, entra o mais rápido possível */
+    g_loadingTimer = g_demoPlay ? 1 : LOADING_DURATION_MS;
     g_loadingStartMs = timeGetTime();
     g_pnzTexId = -1;
 
@@ -178,7 +180,8 @@ void Loading_BeginGameplay(void) {
     }
 
     /* Espera ativa como no original (0x4116b5): nada é desenhado. */
-    while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
+    /* era: while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)  (também na demo) */
+    while (!g_demoPlay && timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
         Sleep(1);
     if (audOk && !(g_demoPlay && !Demo_SoundOn()))   /* 0x40236A */
         BGM_Play(false);

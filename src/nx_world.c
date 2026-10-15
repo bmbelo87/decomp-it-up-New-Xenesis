@@ -656,7 +656,9 @@ void NxWorld_Render(void) {
         BGA_SetLayerSrc(NW_CM, 0x57, &s_digit[(s_time / 10) % 10]);
     }
     BGA_ScenePlay(NW_CM, "time position", true);
-    if (s_confirmed) BGA_ScenePlay(NW_CM, "center step", true);
+    /* era: if (s_confirmed) BGA_ScenePlay(NW_CM, "center step", true);
+     * movido para o fim (pedido do usuário: PRESS CENTER STEP na frente do nome do
+     * recorde); ordem do original não confirmada */
 
     /* setas (0x8082c25) */
     for (int i = 0; i < 4; i++) BGA_ScenePlay(NW_AR, s_arro[i], true);
@@ -671,6 +673,8 @@ void NxWorld_Render(void) {
         snprintf(sc, sizeof(sc), "Score: %d", (int)Rank_LocScore(num));
         NxText_DrawCentered(sc, 0x140, 0x16f);
     }
+    glColor4f(1, 1, 1, 1);
+    if (s_confirmed) BGA_ScenePlay(NW_CM, "center step", true);
     glColor4f(1, 1, 1, 1);
 }
 

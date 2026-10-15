@@ -157,12 +157,12 @@ typedef enum {
  * vêm de uma versão anterior */
 /* era: 209. +1: DB52 (Novasonic Remix) */
 /* era: 210. +40 que no NX só têm o step (áudio, BGA, capa e disco do Exceed 2 / Exceed) */
-/* era: 250. +13 da varredura dos .SEE sem dono */
-#define SONG_TABLE_COUNT     263   /* NX: 0xC0 da tabela 0x0813c200 (0x8061be0), tools/gen_nx_songs.py, + D29 (FIRE) à mão + 3 + 9 + 4 extras */
+/* era: 263. +13 charts órfãos com níveis exclusivos no Another (FIRE NM 12, FIRE NM 19, C23, C26, A-25, A101, B902, B501, C28, C25, C182, 2516, C32; FFC04 removido por ser clone do Arcade) */
+#define SONG_TABLE_COUNT     276   /* NX: tabela base + FIRE + extras do port + 13 Another com charts exclusivos */
 #define NX_SONG_BASE      193   /* índices >= este são extras do port (fora do piu) */
 #define NX_SONG_OLD_BASE  196   /* índices >= este só entram com USE OLD DATA SONGS ligado */
 #define SONG_CHANNEL_COUNT  7     /* campo +0x1C (nomes = hipotese pelos ids) */
-#define SONG_CHANNEL_MAX    46    /* maior canal (K-POP, 45) + 0 final; gerado por gen_nx_songs.py */
+#define SONG_CHANNEL_MAX    64    /* maior canal + extras + 0 final */
 #define SONG_CH_NX       0
 #define SONG_CH_KPOP     1
 #define SONG_CH_POP      2

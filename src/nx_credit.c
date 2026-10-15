@@ -79,6 +79,9 @@ static void crDigit(int d, float cx, float cy) {
 
 void NxCredit_Draw(void) {
     if (g_game.state == STATE_SERVICE_MENU) return;
+    /* pedido do usuário: a capa TITLE (STATE_SONG_TITLE/_OUT) cobre a tela inteira,
+     * sem CREDIT / FREE PLAY / EVENT por cima */
+    if (Loading_IsActive()) return;
     if (!crLoad()) return;
 
     glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();

@@ -72,6 +72,7 @@ typedef struct {
     StepRow* rows;
     int panelCount;
     int totalNotes;
+    int sectionIndex; // Seção de origem (0..8) no arquivo .SEE / .STX
     // Split section (BPM changes)
     bool hasSplit;
     // Per-segment timing (segments = main + each split block)
@@ -114,6 +115,7 @@ typedef struct {
 bool Step_LoadSong(const char* path, StepSong* song);
 void Step_FreeSong(StepSong* song);
 int Step_SelectChart(const char* modeName, int fallbackSection);
+int Step_SelectChartInSong(const StepSong* song, const char* modeName, int fallbackSection);
 
 /* Random Step: embaralha painéis do chart no load time.
  *

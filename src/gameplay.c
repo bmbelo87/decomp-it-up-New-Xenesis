@@ -408,15 +408,24 @@ static int g_misFlash[2];       /* +0x4f0 do item Flash (wea) */
 static int g_misWhite[2];       /* +0x4ec: tela branca da mina e das setas de pista, 50 quadros */
 static int g_misSndMine = -1;   /* EFF_ITEM_MINE = WAVE/B09.WAV (SFX_GLOBAL.LUA) */
 static int g_misItemSpr[21];   /* índice do 1º tile de item_<nome>.spr, -1 sem */
-static bool g_misHiddenRow(int ri) {
-    if (!g_misSpec) return false;
-    for (int i = 0; i < 10; i++) { uint8_t s = g_misSpec[ri * 10 + i]; if (s == 0x0e || s == 0x10) return true; }
-    return false;
+/* era: linha hidden = QUALQUER coluna hidden (as 10, sem olhar o jogador).
+ * static bool g_misHiddenRow(int ri) {
+ *     if (!g_misSpec) return false;
+ *     for (int i = 0; i < 10; i++) { uint8_t s = g_misSpec[ri * 10 + i]; if (s == 0x0e || s == 0x10) return true; }
+ *     return false;
+ * }
+ * piu 0x806fb40..0x806fb74: máscara = AND dos atributos (0x8142fa0) de todas as notas
+ * julgáveis da linha (attr & 1); hidden (0x21/0x69) só sobrevive a "& 0x60" se TODAS
+ * as notas forem hidden (nota comum 0x09, long 0x0c). Bit p = linha hidden do jogador p. */
+static uint8_t* g_misHidRow;
+static bool g_misHiddenRow(int p, int ri) {
+    return g_misHidRow && (g_misHidRow[ri] & (1u << p));
 }
 
 static void misExtract(void)
 {
     free(g_misSpec); g_misSpec = NULL;
+    free(g_misHidRow); g_misHidRow = NULL;
     memset(g_nxMis, 0, sizeof(g_nxMis));
     /* era: g_misTrack = 0;
      * piu 0x806ad97 + 0x806ae14..0x806ae40: começa normal; quem tem UA (0x80) põe 0x13,
@@ -428,10 +437,28 @@ static void misExtract(void)
     if (!g_chart || g_game.nxGameMode != 2) return;
     g_misSpec = (uint8_t*)calloc((size_t)g_chart->rowCount * 10, 1);
     if (!g_misSpec) return;
+    g_misHidRow = (uint8_t*)calloc((size_t)g_chart->rowCount, 1);
+    static const uint8_t k_attr[0x30] = {   /* 0x8142fa0 */
+        0x00, 0x09, 0x0c, 0x0c, 0x0c, 0x0c, 0x0c, 0x00, 0x00, 0x00, 0x19, 0x19, 0x19, 0x08, 0x21, 0x48,
+        0x69, 0x00, 0x00, 0x00, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
+        0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    bool dnMis = isDNMode();
     int hiddenRows = 0, n[0x30] = { 0 };
     for (uint32_t r = 0; r < g_chart->rowCount; r++) {
         uint8_t* h[2] = { (uint8_t*)&g_chart->rows[r].half1, (uint8_t*)&g_chart->rows[r].half2 };
         bool hid = false;
+        /* máscara por jogador (0x806fb5d), com as notas ainda originais */
+        uint8_t mask[2] = { 0xff, 0xff }; bool any[2] = { false, false };
+        for (int k = 0; k < 2; k++)
+            for (int i = 0; i < 5; i++) {
+                uint8_t a = k_attr[(h[k][i] & 0x7f) < 0x30 ? (h[k][i] & 0x7f) : 0];
+                if (!(a & 1)) continue;
+                for (int pl = 0; pl < 2; pl++)
+                    if (dnMis || pl == k) { mask[pl] &= a; any[pl] = true; }
+            }
+        if (g_misHidRow)
+            for (int pl = 0; pl < 2; pl++)
+                if (any[pl] && (mask[pl] & 0x60)) g_misHidRow[r] |= (uint8_t)(1u << pl);
         for (int k = 0; k < 2; k++)
             for (int i = 0; i < 5; i++) {
                 uint8_t v = (uint8_t)(h[k][i] & 0x7f);
@@ -449,7 +476,13 @@ static void misExtract(void)
     }
     /* totais (all*): o original soma ao coletar; aqui é o total do chart */
     for (int p = 0; p < 2; p++) {
-        g_nxMis[p].allHidden = hiddenRows;
+        /* era: g_nxMis[p].allHidden = hiddenRows;
+         * o original soma [+0x7c] em toda linha hidden avaliada (0x806fcd5, acerto ou falha);
+         * aqui é o total do chart com o mesmo critério da máscara */
+        g_nxMis[p].allHidden = 0;
+        if (g_misHidRow)
+            for (uint32_t r = 0; r < g_chart->rowCount; r++)
+                if (g_misHidRow[r] & (1u << p)) g_nxMis[p].allHidden++;
         for (int v = 0x14; v <= 0x28; v++) g_nxMis[p].allItem += n[v];
         g_nxMis[p].allHeart = n[0x1d];
         g_nxMis[p].allMine = n[0x19];
@@ -472,7 +505,7 @@ static void misExtract(void)
         }
         RES_Close();
     }
-    Log_Print("MISSION: hidden %d linhas, itens %d (heart %d mine %d potion %d vel %d)\n", hiddenRows,
+    Log_Print("MISSION: hidden %d linhas, itens %d (heart %d mine %d potion %d vel %d)\n", g_nxMis[0].allHidden,
               g_nxMis[0].allItem, n[0x1d], n[0x19], n[0x24], g_nxMis[0].allVelocity);
 }
 
@@ -750,6 +783,16 @@ static int g_flashCnt[2];
  * escala 1.5 em torno de (320,240) (Y -1.5 junto com UA). UA: Translate(640,480)
  * + Rotate(180,0,0,1) = giro de 180 graus no centro da tela. */
 static int g_nxField;   /* 0 nada, 1 só modelview, 2 projeção + modelview */
+/* 0x806cc0c: missão ([0xa7f4a64] = id & 0xff000 == 0xaa000, 0x806ad31), sem Double e
+ * com um jogador só ([0x81f8904] != 3): Translate(+160 P1 / -160 P2 [0x810f79c]) =
+ * pista no centro da tela. Vale para a pista e para judge/combo do jogador. */
+static float nxMisShift(void)
+{
+    if (g_game.nxGameMode != 2 || isDNMode() || isHDMode()) return 0.0f;
+    if (g_game.activePlayerMask == 0x1) return 160.0f;
+    if (g_game.activePlayerMask == 0x2) return -160.0f;
+    return 0.0f;
+}
 static void nxFieldBegin(void)
 {
     bool nx = g_game.cmdNXMode[0] || g_game.cmdNXMode[1];
@@ -759,7 +802,9 @@ static void nxFieldBegin(void)
     bool ua = (g_misTrack == 0x13);
     bool side = (g_misTrack == 0x12 || g_misTrack == 0x14);
     g_nxField = 0;
-    if (!nx && !ua && !side) return;
+    float misShift = nxMisShift();   /* todos os caminhos (normal, NX, UA, rd/ld) */
+    /* era: if (!nx && !ua && !side) return; */
+    if (!nx && !ua && !side && misShift == 0.0f) return;
     if (nx) {
         const double fov = 75.0, n = 0.1, f = 5000.0;
         double t = n * tan(fov * 0.5 * 3.14159265358979 / 180.0);
@@ -789,6 +834,7 @@ static void nxFieldBegin(void)
     }
     if (g_misTrack == 0x12) { glTranslatef(160.0f, 560.0f, 0.0f); glRotatef(-90.0f, 0.0f, 0.0f, 1.0f); }   /* 0x806d50a */
     if (g_misTrack == 0x14) { glTranslatef(480.0f, -80.0f, 0.0f); glRotatef(90.0f, 0.0f, 0.0f, 1.0f); }    /* 0x806d566 */
+    if (misShift != 0.0f) glTranslatef(misShift, 0.0f, 0.0f);   /* 0x806cc4b */
 }
 static void nxFieldEnd(void)
 {
@@ -977,7 +1023,8 @@ static void zeroHoldDrawOld(int panel, int col, float left, float yh, float yt, 
  * linha (origem) de cada uma fica em centro + 32. Y para cima local v vira
  * tela = linha - v. X: 'left' = coluna + ajuste da skin; cada tile soma o
  * próprio x do .spr (rcVtx[X1]). */
-static void holdDraw(int panel, int col, float left, float yh, float yt, bool held)
+/* alpha: piu 0x806e7e4 glColor4f(1, 1, 1, a) no long inteiro (era: sempre 1) */
+static void holdDraw(int panel, int col, float left, float yh, float yt, bool held, float alpha)
 {
     (void)panel;   /* segurado (held): o chamador já passa yh = receptor */
     if (g_skinL1[col] < 0 || g_skinL2[col] < 0 || g_skinL3[col] < 0) return;
@@ -1004,11 +1051,11 @@ static void holdDraw(int panel, int col, float left, float yh, float yt, bool he
         /* LongMiddle.DrawPicYY(st, 63 + vtxY, height + 1 + vtxY) */
         float yLo = 63.0f + (float)bt->srcY, yHi = height + 1.0f + (float)bt->srcY;
         Texture_DrawUV(bt->texId, left + (float)bt->srcX, lineT - yHi, (float)bt->srcW, yHi - yLo,
-                       bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
+                       bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, alpha);
         /* LongEnd.DrawPic(st) */
         Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - (float)(tt->srcY + tt->srcH),
                        (float)tt->srcW, (float)tt->srcH,
-                       tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+                       tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, alpha);
     } else if (held && g_skinTap[col] >= 0) {
         /* Fim do long SEGURADO (ajuste do port, pedido do usuário após comparar com o
          * original): a ponta entra por baixo da seta do receptor e some aos poucos.
@@ -1021,7 +1068,7 @@ static void holdDraw(int panel, int col, float left, float yh, float yt, bool he
         float len = tt->v2 - tt->v1;
         float vTop = tt->v2 - len * (rowsV / (float)tt->srcH);
         Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - (float)tt->srcY - rowsV, (float)tt->srcW, rowsV,
-                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, alpha);
         int iT = g_skinTap[col] + st;
         if (iT >= g_game.sprTileCount) iT = g_skinTap[col];
         SPRTileDef* ns = &g_game.sprTiles[iT];              /* seta comum (skinN.spr) */
@@ -1030,7 +1077,7 @@ static void holdDraw(int panel, int col, float left, float yh, float yt, bool he
         float lineN = lineT - height;
         Texture_DrawUV(ns->texId, left + (float)ns->srcX, lineN - (float)(ns->srcY + ns->srcH),
                        (float)ns->srcW, (float)ns->srcH,
-                       ns->u1 * nw, ns->v1 * nh, ns->u2 * nw, ns->v2 * nh, 1, 1, 1, 1);
+                       ns->u1 * nw, ns->v1 * nh, ns->u2 * nw, ns->v2 * nh, 1, 1, 1, alpha);
         return;
     } else {
         /* LongEnd.DrawPicYY_UV(st, 0 + vtxY, height + 1 + vtxY, (height + 1) / 63, 0) */
@@ -1038,13 +1085,13 @@ static void holdDraw(int panel, int col, float left, float yh, float yt, bool he
         float len = tt->v2 - tt->v1;
         float vTop = tt->v2 - len * ((height + 1.0f) / 63.0f);
         Texture_DrawUV(tt->texId, left + (float)tt->srcX, lineT - yHi, (float)tt->srcW, yHi - yLo,
-                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, alpha);
     }
     /* Translate(0, height); LongStart.DrawPic(st) */
     float lineH = lineT - height;
     Texture_DrawUV(hs->texId, left + (float)hs->srcX, lineH - (float)(hs->srcY + hs->srcH),
                    (float)hs->srcW, (float)hs->srcH,
-                   hs->u1 * hw, hs->v1 * hh, hs->u2 * hw, hs->v2 * hh, 1, 1, 1, 1);
+                   hs->u1 * hw, hs->v1 * hh, hs->u2 * hw, hs->v2 * hh, 1, 1, 1, alpha);
 }
 
 static int g_hitTimer[2][MAX_PANELS]; // hit flash animation timer (p1)
@@ -1276,7 +1323,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         return false;
     }
 
-    g_chartIdx = Step_SelectChart(modeName, 1);
+    g_chartIdx = Step_SelectChartInSong(&g_playSong, modeName, 1);
     if (g_chartIdx < 0 || g_chartIdx >= g_playSong.chartCount)
     {
         Log_Print("GP: chart index %d out of range, using 0\n", g_chartIdx);
@@ -2022,7 +2069,7 @@ static void judgeRows(int p)
                         }
                 }
                 applyRowJudgment(p, jt);
-                if (g_misHiddenRow(ri) && jt != JT_MISS) g_nxMis[p].hidden++;   /* 0x806fb8e */
+                if (g_misHiddenRow(p, ri) && jt != JT_MISS) g_nxMis[p].hidden++;   /* 0x806fb8e */
             }
             g_zDone[p][ri] = 1;                                  /* também linha vazia */
         }
@@ -2047,10 +2094,13 @@ static void judgeRows(int p)
              * if (ZJ_ISHOLD(v)) { g_holdRows[p][pan] = -1; ZJ_CLR(ri, pan); } */
             if (ZJ_ISHOLD(v)) g_holdRows[p][pan] = -1;
         }
-        if (missed) applyRowJudgment(p, JT_MISS);
+        /* era: if (missed) applyRowJudgment(p, JT_MISS);
+         * piu 0x806fd2b: resultado 5 (MISS) com máscara & 0x20 (linha só de hidden) sai sem
+         * [+0x10]++ (totalstep) e sem 0x80706f0 — não conta MISS nem quebra combo */
+        if (missed) { if (!g_misHiddenRow(p, ri)) applyRowJudgment(p, JT_MISS); }
         else if (g_zRowJ[p][ri]) {
             applyRowJudgment(p, rowResult(p, ri));   /* era: (JudgeType)g_zRowJ[p][ri] */
-            if (g_misHiddenRow(ri)) g_nxMis[p].hidden++;
+            if (g_misHiddenRow(p, ri)) g_nxMis[p].hidden++;
         }
         g_zDone[p][ri] = 1;
     }
@@ -4096,6 +4146,7 @@ void Gameplay_Render(void)
                 for (int i = 0; i < 5; i++) posX[i] = 28.0f + g_skinFieldX[0] + i * FIELD_COL_STEP;
                 centerX = P1_CENTER_X;
             }
+            /* era: centerX += (int)nxMisShift();  (o judge da NX não usa centerX: sai das cenas do BGA) */
         }
 
         /* // Zonas de acerto (julgamento) - desativadas, 01.SPR substitui
@@ -4314,7 +4365,7 @@ void Gameplay_Render(void)
                 /* ponta de um hold a partir da cabeça h: atravessa corpo e linhas
                  * vazias (apagadas ao passar), para em outra nota */
                 #define Z_TAIL(h, out) do { out = -1;                     for (int k_ = (h) + 1; k_ < rows; k_++) { uint8_t v_ = Z_PV(k_, panel);                         if (v_ == NT_HOLD_T) { out = k_; break; }                         if (v_ != NT_HOLD_B && v_ != 0) break; } } while (0)
-                #define Z_DRAW(h, t, isHeld) do {                     float yh = ((isHeld) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;                     float yt = Z_ROWY(t) - g_skinOffY;                     if ((isHeld) && yt < yh) yt = yh;                     holdDraw(panel, col, posX[panel] + g_skinOffX[col] + XM_DXP(panel, yh), yh, yt, (isHeld)); } while (0)
+                #define Z_DRAW(h, t, isHeld) do {                     float yh = ((isHeld) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;                     float yt = Z_ROWY(t) - g_skinOffY;                     if ((isHeld) && yt < yh) yt = yh;                     /* era: holdDraw(panel, col, posX[panel] + g_skinOffX[col] + XM_DXP(panel, yh), yh, yt, (isHeld));                      *  yh já tem o -g_skinOffY; a seta comum usa o X sem ele (XM_DXP(panel, y)) */                     float yx_ = yh + g_skinOffY;                     /* piu 0x806ebab: alpha da linha da cabeça ([0xa7f4ac0]); segurado, [0xa7f4a8c] =                      * 0 com o vanish (+0x494 & 1, 0x806ee6b) e 1 sem */                     float za_ = 1.0f;                     if (g_game.cmdVanish[p]) {                         if (isHeld) za_ = 0.0f;                         else { za_ = (yx_ - 122.0f) / 84.0f; za_ = za_ < 0.0f ? 0.0f : (za_ > 1.0f ? 1.0f : za_); }                     }                     holdDraw(panel, col, posX[panel] + g_skinOffX[col] + XM_DXP(panel, yx_), yh, yt, (isHeld), za_); } while (0)
                 int lastTail = -1;
                 /* 1) hold segurado: cabeça no receptor (a linha dela já foi apagada) */
                 int held = g_holdRows[p][panel];
@@ -4877,7 +4928,13 @@ void Gameplay_Render(void)
                  * em y = 20 + 110 (Y para cima); com a pista em 0x13 (UA/dd), 20 - 110 */
                 bool jNx = g_game.cmdNXMode[0] || g_game.cmdNXMode[1];
                 glPushMatrix();
-                if (jNx) glTranslatef(0.0f, 20.0f + (g_misTrack == 0x13 ? -110.0f : 110.0f), 0.0f);
+                /* 0x806f7bd..0x806f7ef: missão e sem Double ([0x81f8908] & 8) -> X = +160
+                 * ([0x810f798]) com o bit do P1 em [0x81f8904], senão -160 ([0x810f79c]) */
+                float jX = 0.0f;
+                if (g_game.nxGameMode == 2 && !isDoubleOrNightmare && !isHalfDouble)
+                    jX = (g_game.activePlayerMask & 0x1) ? 160.0f : -160.0f;
+                /* era: if (jNx) glTranslatef(0.0f, 20.0f + (g_misTrack == 0x13 ? -110.0f : 110.0f), 0.0f); */
+                glTranslatef(jX, jNx ? 20.0f + (g_misTrack == 0x13 ? -110.0f : 110.0f) : 0.0f, 0.0f);
                 bool rg = g_game.cmdGradeRev[p];   /* 0x806f856: sprite 5 - t (só visual) */
                 if (rg) jt = (JudgeType)(JT_MISS + JT_PERFECT - jt);
                 const char* jn = isDoubleOrNightmare ? k_jD[jt] : (p == 0 ? k_j1P[jt] : k_j2P[jt]);
