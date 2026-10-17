@@ -1,0 +1,239 @@
+name: Build and Release Multiplatform
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up vcpkg dependencies
+        run: |
+          vcpkg install sdl2:x64-windows-static zlib:x64-windows-static
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="x64-windows-static"
+
+      - name: Build Pumpy
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Sign Binary (Authenticode)
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $exePath = if (Test-Path "build/Release/Pumpy.exe") { "build/Release/Pumpy.exe" } else { "build/Pumpy.exe" }
+          if ($env:WINDOWS_CERTIFICATE_BASE64) {
+            Write-Host "Assinando executavel com certificado dos secrets..."
+            $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64)
+            [IO.File]::WriteAllBytes("$PWD/cert.pfx", $certBytes)
+            & "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" sign /f "$PWD/cert.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /tr http://timestamp.digicert.com /td sha256 /fd sha256 $exePath
+            Remove-Item "$PWD/cert.pfx" -Force
+          } else {
+            Write-Host "Certificado comercial nao configurado. Gerando assinatura Authenticode autoassinada..."
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Decomp It Up Team, O=Decomp It Up, C=US" -CertStoreLocation "Cert:\CurrentUser\My" -NotAfter (Get-Date).AddYears(5)
+            Set-AuthenticodeSignature -FilePath $exePath -Certificate $cert -TimestampServer "http://timestamp.digicert.com" -HashAlgorithm SHA256
+          }
+
+      - name: Prepare Windows Package
+        shell: pwsh
+        run: |
+          $exePath = if (Test-Path "build/Release/Pumpy.exe") { "build/Release/Pumpy.exe" } else { "build/Pumpy.exe" }
+          New-Item -ItemType Directory -Path "dist/Pumpy-Windows-x64" -Force
+          Copy-Item $exePath -Destination "dist/Pumpy-Windows-x64/Pumpy.exe"
+          if (Test-Path "packaging/windows/Unblock-Pumpy.ps1") {
+            Copy-Item "packaging/windows/Unblock-Pumpy.ps1" -Destination "dist/Pumpy-Windows-x64/"
+          }
+          if (Test-Path "packaging/windows/Run_Pumpy.bat") {
+            Copy-Item "packaging/windows/Run_Pumpy.bat" -Destination "dist/Pumpy-Windows-x64/"
+          }
+          Compress-Archive -Path "dist/Pumpy-Windows-x64/*" -DestinationPath "Pumpy-Windows-x64.zip" -Force
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pumpy-Windows-x64
+          path: Pumpy-Windows-x64.zip
+
+  build-macos:
+    name: Build macOS (Universal)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        run: |
+          brew install sdl2 || true
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build Pumpy
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Sign and Notarize (macOS)
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP_PATH="build/Pumpy.app"
+          ENTITLEMENTS="packaging/mac/entitlements.plist"
+
+          if [ -n "$APPLE_CERTIFICATE_BASE64" ]; then
+            echo "Importando certificado Apple Developer..."
+            KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+            KEYCHAIN_PASSWORD=$(openssl rand -base64 16)
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+            CERT_PATH=$RUNNER_TEMP/certificate.p12
+            echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+            security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+            echo "Assinando com Developer ID e Hardened Runtime..."
+            codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS" --sign "Developer ID Application" "$APP_PATH"
+
+            echo "Enviando para o servico de Notarizacao da Apple..."
+            ditto -c -k --keepParent "$APP_PATH" "$RUNNER_TEMP/notarize.zip"
+            xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+
+            echo "Grampeando ticket de notarizacao (staple)..."
+            xcrun stapler staple "$APP_PATH"
+          else
+            echo "Sem credenciais Apple Developer nos secrets. Assinando ad-hoc com Hardened Runtime..."
+            codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP_PATH"
+          fi
+
+          # Remove qualquer atributo de quarentena existente
+          xattr -cr "$APP_PATH" 2>/dev/null || true
+
+      - name: Prepare macOS Package
+        run: |
+          mkdir -p dist/Pumpy-macOS-Universal
+          cp -R build/Pumpy.app dist/Pumpy-macOS-Universal/
+          cp build/Pumpy dist/Pumpy-macOS-Universal/
+          if [ -f packaging/mac/Run_Pumpy.command ]; then
+            cp packaging/mac/Run_Pumpy.command dist/Pumpy-macOS-Universal/
+            chmod +x dist/Pumpy-macOS-Universal/Run_Pumpy.command
+          fi
+          cd dist
+          zip -r -y ../Pumpy-macOS-Universal.zip Pumpy-macOS-Universal
+          tar -czf ../Pumpy-macOS-Universal.tar.gz Pumpy-macOS-Universal
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pumpy-macOS-Universal
+          path: |
+            Pumpy-macOS-Universal.zip
+            Pumpy-macOS-Universal.tar.gz
+
+  build-linux:
+    name: Build Linux (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libgl-dev libglu1-mesa-dev zlib1g-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Pumpy
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Prepare Linux Package
+        run: |
+          mkdir -p dist/Pumpy-Linux-x86_64
+          cp build/Pumpy dist/Pumpy-Linux-x86_64/
+          chmod +x dist/Pumpy-Linux-x86_64/Pumpy
+          if [ -f packaging/linux/pumpy.sh ]; then
+            cp packaging/linux/pumpy.sh dist/Pumpy-Linux-x86_64/
+            chmod +x dist/Pumpy-Linux-x86_64/pumpy.sh
+          fi
+          cd dist
+          tar -czf ../Pumpy-Linux-x86_64.tar.gz Pumpy-Linux-x86_64
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pumpy-Linux-x86_64
+          path: Pumpy-Linux-x86_64.tar.gz
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos, build-linux]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Release Directory
+        run: |
+          mkdir -p release_assets
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release_assets/ \;
+          ls -la release_assets/
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: continuous
+          name: "Continuous Build (Main)"
+          prerelease: false
+          draft: false
+          files: release_assets/*
+          body: |
+            ## Continuous Build - Decomp It Up: New Xenesis
+
+            Binários gerados automaticamente a cada atualização na branch `main`.
+
+            ### 📦 Arquivos para download
+            - **Windows (x64)**: `Pumpy-Windows-x64.zip`
+              - Executável estático independente (`Pumpy.exe`), sem necessidade de instalar DLLs ou runtimes adicionais.
+              - Inclui manifest com permissões de usuário padrão e flags de segurança (ASLR/DEP).
+              - Caso o Windows exiba aviso do SmartScreen, execute o script `Unblock-Pumpy.ps1` ou `Run_Pumpy.bat`.
+            - **macOS (Universal - Apple Silicon & Intel)**: `Pumpy-macOS-Universal.zip` ou `Pumpy-macOS-Universal.tar.gz`
+              - Contém `Pumpy.app` completo com frameworks embutidos e assinatura ad-hoc com runtime protegido.
+              - Para evitar bloqueios do Gatekeeper sem necessidade de conta Apple Developer paga, execute o `Run_Pumpy.command` incluído no pacote ou rode no terminal:
+                ```bash
+                xattr -cr Pumpy.app
+                ```
+            - **Linux (x86_64)**: `Pumpy-Linux-x86_64.tar.gz`
+              - Extraia e execute `./pumpy.sh` ou `./Pumpy` diretamente na pasta do jogo.

@@ -10,8 +10,8 @@ void Menu_ResetState(void) {
     g_menuSelection = 0;
     g_p2MenuSel = 0;
     g_game.activePlayerMask = 0x1; /* reset: P1 ativo por padrão */
-    g_game.stageCount = 3;
-    g_game.bonusStage = true;
+    g_game.stageCount = (g_game.svcGameMode == 1) ? 1 : 3;
+    g_game.bonusStage = (g_game.svcGameMode != 1);
     g_game.isBonusSong = false;
     g_game.nxGameMode = 0;     /* 0x8062930: +0x98 = 0 */
     g_game.nxHearts = 7;       /* +0x114 = 7 */

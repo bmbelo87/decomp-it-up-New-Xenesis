@@ -58,10 +58,6 @@ static void Window_SetFullscreen(bool fs) {
     int disp = SDL_GetWindowDisplayIndex(g_win);
     if (disp < 0) disp = 0;
 
-    /* era: em monitor não-4:3 (ou ASPECT 4:3) ia para FULLSCREEN_DESKTOP na resolução
-     * nativa e ignorava a RESOLUTION. Agora é sempre exclusivo no modo escolhido
-     * (640x480 = 640x480 no monitor); o Windows volta o modo ao sair. */
-#if 0
     SDL_DisplayMode dm;
     if (SDL_GetDesktopDisplayMode(disp, &dm) == 0) {
         /* Em telas widescreen (16:9, 16:10, 21:9) ou quando em modo 4:3 com bordas,
@@ -75,7 +71,6 @@ static void Window_SetFullscreen(bool fs) {
             return;
         }
     }
-#endif
 
     int w, h;
     Window_GetResolution(g_game.gfxResIdx, &w, &h);
@@ -385,6 +380,15 @@ void Window_ToggleFullscreen(void) {
      * na troca de modo de vídeo). */
     Window_ApplyGraphics();
     Log_Print("Window: %s\n", g_game.isFullscreen ? "fullscreen" : "windowed");
+}
+
+bool Window_IsFullscreen(void) {
+    if (g_win) {
+        Uint32 flags = SDL_GetWindowFlags(g_win);
+        if (flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP))
+            return true;
+    }
+    return g_game.isFullscreen;
 }
 
 /* Event dispatcher -> input.c keeps keyboard/focus state. Returns false when

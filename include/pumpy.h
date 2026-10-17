@@ -10,6 +10,7 @@
     #endif
     #include <windows.h>
     #include <mmsystem.h>
+    #define Platform_InitCWD() ((void)0)
 #else
     #include "platform_linux.h"
 #endif
@@ -19,8 +20,14 @@
  * layout das structs compartilhadas. */
 typedef void* LPDIRECTSOUND;
 typedef void* LPDIRECTSOUNDBUFFER;
-#include <GL/gl.h>
-#include <GL/glu.h>
+#if defined(__APPLE__)
+    #define GL_SILENCE_DEPRECATION
+    #include <OpenGL/gl.h>
+    #include <OpenGL/glu.h>
+#else
+    #include <GL/gl.h>
+    #include <GL/glu.h>
+#endif
 
 /* O gl.h da Microsoft (opengl32 = GL 1.1) não traz constantes do GL 1.2+. */
 #ifndef GL_CLAMP_TO_EDGE
@@ -486,6 +493,7 @@ typedef struct {
     bool gameStyleModded;   /* extra do port: GAME STYLE (PUMPY.INI GameStyle). false = VANILLA (só os
                              * códigos do piu); true = MODDED (códigos extras do port: skins, BGA Off) */
     int  gfxAspect;      /* 0 = 4:3 com bordas, 1 = esticar */
+    int  gfxLoadTime;    /* 1 = ARCADE (3s de espera na tela de título), 0 = FAST */
     int  gfxUpscale;     /* 0 = OFF, 2/3/4 = xBRZ ao carregar texturas (xbrz.c) */
     
     InputState input;
@@ -659,6 +667,7 @@ void Window_SwapBuffers(void);
 bool Window_ProcessMessages(void);
 void Window_ToggleFullscreen(void);
 bool Input_AltEnterHit(void);      /* input.c: Alt+Enter apertado neste quadro (o Enter fica retido) */
+bool Window_IsFullscreen(void);
 void Window_ApplyGraphics(void);
 bool Window_VsyncActive(void);     /* window.c: vsync aplicado de fato */
 void Window_VsyncFailed(void);     /* o swap não bloqueia: cai no limitador */

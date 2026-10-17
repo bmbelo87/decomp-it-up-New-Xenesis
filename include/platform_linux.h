@@ -20,10 +20,10 @@
 typedef int              BOOL;
 typedef unsigned char    BYTE;
 typedef unsigned short   WORD;
-typedef unsigned long    DWORD;
-typedef long             LONG;
+typedef uint32_t         DWORD;
+typedef int32_t          LONG;
 typedef unsigned int     UINT;
-typedef unsigned long    ULONG;
+typedef uint32_t         ULONG;
 typedef int              INT;
 typedef unsigned short   WCHAR;
 typedef void*            HANDLE;
@@ -135,6 +135,8 @@ void GetTempPathA(DWORD nBufferLength, LPSTR lpBuffer);
 BOOL DeleteFileA(LPCSTR lpFileName);
 DWORD GetFileAttributesA(LPCSTR lpFileName); /* 0xFFFFFFFF = not found */
 #define INVALID_FILE_ATTRIBUTES 0xFFFFFFFF
+
+void Platform_InitCWD(void);
 
 /* ---- microsoft debugger sink: no-op on Linux (pumpy.log carries the log) ---- */
 #define OutputDebugStringA(s) ((void)0)

@@ -421,6 +421,13 @@ void Game_Update(float dt) {
     if (Input_AltEnterHit())
         Window_ToggleFullscreen();
 
+    /* Kill switch: Backspace ou Delete encerra o jogo imediatamente, mas apenas se estiver em fullscreen */
+    if (Window_IsFullscreen() && !Input_IsListening() &&
+        (Input_IsKeyHit(VK_BACK) || Input_IsKeyHit(VK_DELETE))) {
+        Log_Print("Kill switch triggered: fechando jogo em fullscreen (Backspace/Delete)\n");
+        Window_RequestQuit();
+    }
+
     /* F1 abre o SETUP MENU de qualquer tela. Dentro do menu o F1 passa a ser o
      * TEST BUTTON (percorre a lista) e o F2 o SERVICE BUTTON (confirma) —
      * tratados em service_menu.c. */
@@ -1311,6 +1318,7 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
+    Platform_InitCWD();
     Game_Init(NULL);
     Game_MainLoop();
     Game_Shutdown();

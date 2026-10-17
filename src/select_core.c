@@ -1073,11 +1073,11 @@ void Select_Update(float dt) {
     }
 
     /* 0x4177D1: tempo esgotado (ou [+0xA0] zerado) -> início do jogo */
-    if (g_timeLeft <= 0) startGame();
+    if (g_game.svcGameMode != 1) {
+        if (g_timeLeft <= 0) startGame();
 
-    /* 0x416FAD..0x41701A: 60 s pelo cronômetro; ao mudar e estar <= 5 toca
-     * TIME_LIMIT.WAV */
-    {
+        /* 0x416FAD..0x41701A: 60 s pelo cronômetro; ao mudar e estar <= 5 toca
+         * TIME_LIMIT.WAV */
         int ms = (int)(timeGetTime() - g_startTick);
         int left = (60000 - ms) / 1000;
         if (left != g_timeLeft && left <= 5)

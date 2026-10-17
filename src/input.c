@@ -572,6 +572,7 @@ void Input_Update(void) {
         { SDLK_F7, VK_F7 }, { SDLK_F8, VK_F8 }, { SDLK_F9, VK_F9 },
         { SDLK_F10, VK_F10 }, { SDLK_F11, VK_F11 }, { SDLK_F12, VK_F12 },
         { SDLK_RETURN, VK_RETURN }, { SDLK_ESCAPE, VK_ESCAPE },
+        { SDLK_BACKSPACE, VK_BACK },
         { SDLK_SPACE, VK_SPACE }, { SDLK_BACKQUOTE, VK_OEM_3 },
         { SDLK_HOME, VK_HOME }, { SDLK_END, VK_END },
         { SDLK_PAGEUP, VK_PRIOR }, { SDLK_PAGEDOWN, VK_NEXT },

@@ -1,5 +1,6 @@
 #include "pumpy.h"
 #include "zlibinflate.h"
+#include <ctype.h>
 
 #ifndef Z_OK
 #define Z_OK 0
