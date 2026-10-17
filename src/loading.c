@@ -19,9 +19,9 @@ static uint32_t g_loadingStartMs = 0;
 
 void Loading_Enter(int songId) {
     g_loadingSongId = songId;
-    /* era: g_loadingTimer = LOADING_DURATION_MS;
-     * DEMO PLAY (pedido do usuário): sem título, entra o mais rápido possível */
-    g_loadingTimer = g_demoPlay ? 1 : LOADING_DURATION_MS;
+    /* DEMO PLAY (pedido do usuário): sem título, entra o mais rápido possível;
+     * ARCADE: espera 3 segundos na tela de titulo com o banner da musica; FAST: 500ms */
+    g_loadingTimer = g_demoPlay ? 1 : ((g_game.gfxLoadTime == 1) ? 3000 : 500);
     g_loadingStartMs = timeGetTime();
     g_pnzTexId = -1;
 
@@ -179,11 +179,10 @@ void Loading_BeginGameplay(void) {
         }
     }
 
-    /* Espera ativa como no original (0x4116b5): nada é desenhado. */
-    /* era: while (timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)  (também na demo) */
-    while (!g_demoPlay && timeGetTime() - g_loadingStartMs < LOADING_MIN_TO_MUSIC_MS)
+    /* Espera visual configurada no título (ARCADE 3s / FAST 0.5s); DEMO PLAY entra direto */
+    while (!g_demoPlay && (timeGetTime() - g_loadingStartMs < (uint32_t)g_loadingTimer))
         Sleep(1);
-    if (audOk && !(g_demoPlay && !Demo_SoundOn()))   /* 0x40236A */
+    if (audOk && !(g_demoPlay && !Demo_SoundOn()))
         BGM_Play(false);
     g_game.stateFrame = 0;
     g_game.bgaFrame = 0;

@@ -63,3 +63,35 @@ BOOL DeleteFileA(LPCSTR lpFileName) {
 DWORD GetFileAttributesA(LPCSTR lpFileName) {
     return access(lpFileName, F_OK) == 0 ? 0x0 : INVALID_FILE_ATTRIBUTES;
 }
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <libgen.h>
+#include <limits.h>
+
+void Platform_InitCWD(void) {
+    /* Se os arquivos do jogo já estiverem acessíveis no CWD atual, não altera */
+    if (access("Stage.cfg", F_OK) == 0 || access("BGA", F_OK) == 0 ||
+        access("AUDIO", F_OK) == 0 || access("STEP", F_OK) == 0 || access("WAVE", F_OK) == 0) {
+        return;
+    }
+
+    char execPath[PATH_MAX];
+    uint32_t size = (uint32_t)sizeof(execPath);
+    if (_NSGetExecutablePath(execPath, &size) == 0) {
+        char real[PATH_MAX];
+        if (realpath(execPath, real)) {
+            char* bundlePattern = strstr(real, ".app/Contents/MacOS");
+            if (bundlePattern) {
+                *bundlePattern = '\0';
+                char* appDir = dirname(real);
+                if (appDir && *appDir) {
+                    chdir(appDir);
+                }
+            }
+        }
+    }
+}
+#else
+void Platform_InitCWD(void) {}
+#endif

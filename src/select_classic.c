@@ -902,9 +902,11 @@ void ClassicSelect_Update(float dt) {
     }
 
     /* 60 - segundos */
-    s_timePrev = s_time;
-    if (s_time > 0) s_time = 60 - (int)((timeGetTime() - s_timeTick) / 1000);
-    if (s_time != s_timePrev && s_time < 11 && s_time > 0) sfx(SFX_TIME_LIMIT);
+    if (g_game.svcGameMode != 1) {
+        s_timePrev = s_time;
+        if (s_time > 0) s_time = 60 - (int)((timeGetTime() - s_timeTick) / 1000);
+        if (s_time != s_timePrev && s_time < 11 && s_time > 0) sfx(SFX_TIME_LIMIT);
+    }
 
     /* 30 quadros parado: prévia da música do cursor */
     if ((int)s_idle > 0x1D && !s_previewDone) {

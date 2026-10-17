@@ -1,6 +1,7 @@
 #include "pumpy.h"
 #include "vsl.h"
 #include "bga.h"
+#include "movie.h"
 
 #ifndef GL_BGR_EXT
 #define GL_BGR_EXT 0x80E0  /* dump de debug; alguns gl.h (Linux) so definem GL_BGR */
@@ -3509,17 +3510,29 @@ void Gameplay_Update(float dt)
      *   - o chart do jogador ativo acabou: linha atual [0xda24b4] >= total de
      *     linhas [chart+0xd39130]  (aqui: g_songTime >= duracao do chart);
      *   - a musica terminou: 0x4192a0() == 1 (BGM nao esta mais tocando). */
-    if (g_chart && g_totalSongSeconds > 0 && g_songTime >= g_totalSongSeconds) {
-        Log_Print("GP: chart ended (%.2f >= %.2f)\n", g_songTime, g_totalSongSeconds);
-        BGM_Stop();
-        Game_ChangeState(STATE_DANCE_GRADE_ENTER);
-        return;
+    /* Chart acabou: esperar o audio e o BGA (video) terminarem antes de ir para o Grade */
+    bool chartEnded = (g_chart && g_totalSongSeconds > 0 && g_songTime >= g_totalSongSeconds);
+    if (chartEnded) {
+        bool audioDone = !g_hasAudio || !BGM_IsPlaying();
+        bool movieDone = !Movie_IsOpen() || Movie_HasEnded();
+        bool timeout = (g_songTime >= g_totalSongSeconds + 6.0);
+
+        if ((audioDone && movieDone) || timeout) {
+            Log_Print("GP: chart & song finished (time=%.2f, audioDone=%d, movieDone=%d, timeout=%d)\n",
+                      g_songTime, (int)audioDone, (int)movieDone, (int)timeout);
+            BGM_Stop();
+            Game_ChangeState(STATE_DANCE_GRADE_ENTER);
+            return;
+        }
     }
     if (g_hasAudio && g_songTime > 1.0 && !BGM_IsPlaying()) {
-        Log_Print("GP: music ended (%.2f)\n", g_songTime);
-        BGM_Stop();
-        Game_ChangeState(STATE_DANCE_GRADE_ENTER);
-        return;
+        bool movieDone = !Movie_IsOpen() || Movie_HasEnded();
+        if (movieDone || (g_totalSongSeconds > 0 && g_songTime >= g_totalSongSeconds + 4.0)) {
+            Log_Print("GP: music & movie ended (%.2f)\n", g_songTime);
+            BGM_Stop();
+            Game_ChangeState(STATE_DANCE_GRADE_ENTER);
+            return;
+        }
     }
 
     // MCI: g_songTime continua avançando (+= dt), verificar por timeout
@@ -4886,8 +4899,9 @@ void Gameplay_Render(void)
             /* exceed.exe 0x40C9D7: contador [0x568FF8] 0 -> m01, 1 -> m02,
              * 2 -> m03, 3+ -> m04 (extra). Aqui: stage = 2 - stageCount;
              * extra = isBonusSong. O caso [+0x7EC] == 1 (m04 no stage 0)
-             * não foi portado: flag não identificada. */
-            if (g_game.isBonusSong)          stageSpr = g_fontSprM04;
+             * corresponde a svcGameMode == 1 (modo EVENT). */
+            if (g_game.svcGameMode == 1)     stageSpr = g_fontSprM04;
+            else if (g_game.isBonusSong)     stageSpr = g_fontSprM04;
             else if (g_game.stageCount == 2) stageSpr = g_fontSprM01;
             else if (g_game.stageCount == 1) stageSpr = g_fontSprM02;
             else                             stageSpr = g_fontSprM03;

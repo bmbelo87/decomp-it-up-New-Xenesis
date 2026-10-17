@@ -9,6 +9,7 @@
 !/tools
 !/third_party
 !/.github
+!/packaging
 !/WAVE
 
 /build

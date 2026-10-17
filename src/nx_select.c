@@ -429,7 +429,7 @@ static void cmdToGame(void) {
  * (no índice 3 dos BGAs, como aqui).
  * ------------------------------------------------------------------------- */
 void NxCmd_Begin(void) {
-    if (g_game.stageCount == 3) {
+    if (g_game.stageCount == 3 || g_game.svcGameMode == 1) {
         s_nxFlags[0] = s_nxFlags[1] = 0;
         s_nxSpeed[0] = s_nxSpeed[1] = 4;
         s_nxHalf[0] = s_nxHalf[1] = false;
@@ -940,7 +940,7 @@ void NxSelect_Enter(void) {
     if (OldData_ApplyModes()) Select_BuildSongDB(&g_game.songDB);
     buildList();
     s_cursor = 0;
-    bool newGame = (g_game.stageCount == 3 && !g_game.isBonusSong);
+    bool newGame = ((g_game.stageCount == 3 || g_game.svcGameMode == 1) && !g_game.isBonusSong);
     /* era: sempre voltava para s_lastId, que muda a cada DL/DR; depois de um ESC
      * a lista reabria na última música só navegada. Agora o crédito novo começa
      * no início e só os stages seguintes voltam para a música jogada. */
@@ -1113,7 +1113,7 @@ static void playerInput(int p) {
             return;
         }
         const TrackEntry* e = cur();
-        if (s_ready) { s_time = 0; sfx(SFX_SELECT); }
+        if (s_ready) { s_time = 0; sfx(SFX_SELECT); startGame(); }
         else if (e && songAvail(e)) {
             s_ready = true;
             if (s_dir != 0) { s_dir = 0; fixDiff(); carousel(0); channelUpdate(false); levelsAll(); }
@@ -1159,10 +1159,12 @@ void NxSelect_Update(float dt) {
     if (g_game.nxGameMode == 2) { NxWorld_Update(dt); return; }
     if (g_game.nxGameMode == 3) { NxTraining_Update(dt); return; }
     if (s_started) return;
-    int el = (int)((timeGetTime() - s_timeTick) / 1000);
-    if (s_time > 0) s_time = 0x5a - el;
-    if (s_time < 0) s_time = 0;
-    if (s_time > 0 && s_time < 11 && s_time != s_prevTimeSnd) { s_prevTimeSnd = s_time; sfx(SFX_TIME_LIMIT); }
+    if (g_game.svcGameMode != 1) {   /* modo EVENT: timer congelado, sem limite de tempo */
+        int el = (int)((timeGetTime() - s_timeTick) / 1000);
+        if (s_time > 0) s_time = 0x5a - el;
+        if (s_time < 0) s_time = 0;
+        if (s_time > 0 && s_time < 11 && s_time != s_prevTimeSnd) { s_prevTimeSnd = s_time; sfx(SFX_TIME_LIMIT); }
+    }
 
     Movie_Update(dt);
     NxText_Update(dt);

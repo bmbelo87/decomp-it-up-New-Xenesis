@@ -164,6 +164,7 @@ static GameState resNextState(void) {
     }
     Log_Print("RESULT(EX): estágio %d razão P1 %.3f P2 %.3f\n", st, r1, r2);
     if (r1 < 0.75f && r2 < 0.75f) return STATE_GAMEOVER_ENTER;   /* 0x40D0F3 */
+    if (g_game.svcGameMode == 1) return STATE_GAMEOVER_ENTER;   /* modo EVENT: partida limitada a 1 stage */
     if (g_game.nxGameMode >= 1 && g_game.nxGameMode <= 3) {   /* SPECIAL ZONE / WORLD TOUR / TRAINING */
         /* NX SPECIAL ZONE (0x8073a88..0x8073b54): segue enquanto houver mais de 1
          * coração. Sem corações e sem extra: algum jogador com todas as razões dos
@@ -225,6 +226,11 @@ GameState Result_GetNextState(void) {
     // F = game over
     if (grade == 5) {
         Log_Print("RESULT DECISION: grade=F -> GAMEOVER\n");
+        return STATE_GAMEOVER_ENTER;
+    }
+
+    if (g_game.svcGameMode == 1) {
+        Log_Print("RESULT DECISION: EVENT MODE -> GAMEOVER\n");
         return STATE_GAMEOVER_ENTER;
     }
 
@@ -529,6 +535,14 @@ static bool zDanceGradeUpdate(int* tp, float dt)   /* era: (int t, float dt) */
         zPlay(8 + best);                                      /* EFF_RANK_x_B */
         zPlay(2 + best);                                      /* EFF_RANK_x */
     }
+
+    /* Permite avançar com CENTER (ou Enter/Espaço), mas APENAS após pelo menos 1 segundo (60 quadros) */
+    if (t >= 60) {
+        bool hitAdvance = Input_IsKeyHit(VK_RETURN) || Input_IsKeyHit(VK_SPACE) ||
+                          Input_IsPadHit(0, PAD_C) || Input_IsPadHit(1, PAD_C);
+        if (hitAdvance) return true;
+    }
+
     /* era (Zero): também saía no fim do GRADE.MOV; o BG.MOV da NX é em loop */
     return t >= 630;
 }
@@ -768,6 +782,9 @@ void Result_Enter(void) {
     Font_LoadTexture();   /* já grava no g_fontTexId global */
 
     BGM_Stop();
+    /* Limpa entradas anteriores para evitar pular a tela de score imediatamente */
+    memset(g_game.input.padState, 0, sizeof(g_game.input.padState));
+    memset(g_game.input.padPrevState, 0, sizeof(g_game.input.padPrevState));
     /* Exceed 0x40CD3F: AUDIO\GRADE.AUD — o Zero não tem (fundo = BGA/GRADE.MOV)
     char ap[MAX_PATH];
     snprintf(ap, sizeof(ap), "%s/AUDIO/%s.AUD", g_game.currentDirectory,
@@ -848,8 +865,9 @@ void Result_Update(float dt) {
         Game_ChangeState(ns);
         return;
     }
-    if (Input_IsKeyHit(VK_ESCAPE) || Input_IsKeyHit(VK_RETURN) ||
-        Input_IsKeyHit(VK_SPACE) || Input_IsKeyHit(VK_F1)) {
+    if (g_resultFrame >= 60 && (Input_IsKeyHit(VK_ESCAPE) || Input_IsKeyHit(VK_RETURN) ||
+        Input_IsKeyHit(VK_SPACE) || Input_IsKeyHit(VK_F1) ||
+        Input_IsPadHit(0, PAD_C) || Input_IsPadHit(1, PAD_C))) {
         Log_Print("RESULT: manual exit at f=%d bgaCount=%d\n", g_resultFrame, g_game.bgaPicCount);
         BGM_Stop();
         Resource_ClearBGA();
