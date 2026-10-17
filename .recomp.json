@@ -3,7 +3,7 @@
   "system": "Arcade",
   "type": "decomp",
   "status": "playable",
-  "targets": ["Windows", "Linux"],
+  "targets": ["Windows", "Linux", "MacOS"],
   "toolchain": ["Ghidra", "SDL2", "OpenGL"],
   "project": "NXReconstructed",
   "approach": "Faithful C reconstruction of the Linux arcade executable piu (ELF i386), no emulation, native SDL2 + OpenGL.",
