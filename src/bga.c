@@ -842,6 +842,15 @@ void BGA_SceneSetOffset(int bgaIndex, const char* name, int n) {
     if (sc) sc->cur = sc->start + n;
 }
 
+/* Extra do port: leva a cena ao último quadro, como se já tivesse tocado inteira
+ * (o próximo ScenePlay aplica o modo do fim). */
+void BGA_SceneFinish(int bgaIndex, const char* name) {
+    BGAScene* sc = bga_findScene(bgaIndex, name);
+    if (!sc) return;
+    sc->cur = sc->end - 1;
+    sc->rev = 0;
+}
+
 int BGA_SceneFrame(int bgaIndex, const char* name) {
     BGAScene* sc = bga_findScene(bgaIndex, name);
     return sc ? sc->cur : -1;

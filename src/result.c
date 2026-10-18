@@ -506,8 +506,11 @@ static void zStopAll(void) { if (!g_zSndInit) return; for (int k = 0; k < 14; k+
  *            o fade de saída (600..630);
  *   MODDED:  só no terceiro CENTER, para não pular a tela com um passo dado sem querer.
  * Vale o CENTER de qualquer jogador que esteja no crédito. era: sem atalho, a tela só
- * saía sozinha em 630 quadros. */
-static int s_dgCenter;   /* CENTER contados nesta tela */
+ * saía sozinha em 630 quadros.
+ * No pulo todos os números e a nota já aparecem prontos durante o fade (sem a animação
+ * da letra entrando). Enter/Espaço contam como CENTER. */
+static int  s_dgCenter;   /* CENTER contados nesta tela */
+static bool s_dgFinish;   /* pulou: o render leva as cenas da tela ao último quadro */
 
 static bool zDanceGradeUpdate(int* tp, float dt)   /* era: (int t, float dt) */
 {
@@ -515,7 +518,8 @@ static bool zDanceGradeUpdate(int* tp, float dt)   /* era: (int t, float dt) */
     if (*tp > 30 && *tp < 600) {
         for (int p = 0; p < 2; p++)
             if ((g_game.activePlayerMask & (1 << p)) && Input_IsPadHit(p, PAD_C)) s_dgCenter++;
-        if (s_dgCenter >= (g_game.gameStyleModded ? 3 : 1)) *tp = 599;
+        if (Input_IsKeyHit(VK_RETURN) || Input_IsKeyHit(VK_SPACE)) s_dgCenter++;
+        if (s_dgCenter >= (g_game.gameStyleModded ? 3 : 1)) { *tp = 599; s_dgFinish = true; }
     }
     int t = *tp;
     int maxD = 3;
@@ -536,12 +540,8 @@ static bool zDanceGradeUpdate(int* tp, float dt)   /* era: (int t, float dt) */
         zPlay(2 + best);                                      /* EFF_RANK_x */
     }
 
-    /* Permite avançar com CENTER (ou Enter/Espaço), mas APENAS após pelo menos 1 segundo (60 quadros) */
-    if (t >= 60) {
-        bool hitAdvance = Input_IsKeyHit(VK_RETURN) || Input_IsKeyHit(VK_SPACE) ||
-                          Input_IsPadHit(0, PAD_C) || Input_IsPadHit(1, PAD_C);
-        if (hitAdvance) return true;
-    }
+    /* era: com t >= 60 qualquer CENTER/Enter/Espaço saía na hora (return true), sem o fade
+     * e passando por cima da contagem do MODDED. O pulo agora é só o de cima. */
 
     /* era (Zero): também saía no fim do GRADE.MOV; o BG.MOV da NX é em loop */
     return t >= 630;
@@ -561,6 +561,12 @@ static void zDanceGradeRender(int t)
             BGA_SceneReset(0, "grade start");
             BGA_SceneReset(0, "1p_rank");
             BGA_SceneReset(0, "2p_rank");
+        }
+        if (s_dgFinish && g_nxLetterOk) {   /* pulo: entrada da tela e letras já no fim */
+            s_dgFinish = false;
+            BGA_SceneFinish(0, "grade start");
+            BGA_SceneFinish(0, "1p_rank");
+            BGA_SceneFinish(0, "2p_rank");
         }
         BGA_ScenePlay(0, "grade start", true);   /* 0x8073867 */
     }
@@ -773,6 +779,7 @@ void Result_Enter(void) {
     g_resultFrame = 0;
     g_resT = 0;
     s_dgCenter = 0;
+    s_dgFinish = false;
     g_lastDigitSoundCount = 0;
     g_lastSoundFrame = -100;
     g_gradeSoundPlayed = false;
