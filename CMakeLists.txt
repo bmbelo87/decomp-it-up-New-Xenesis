@@ -231,9 +231,10 @@ target_include_directories(Pumpy PRIVATE include)
 # RECOMP_BASE_COMMIT = último commit da série anterior; o commit dessa troca vira o .0
 # (ver tools/recomp_version.cmake).
 # era: RECOMP_PATCH_BASE -1, base fcfa521. Depois da v0.4.4 (17be57d) entraram commits de fora
-# da série (.recomp.json, PR #6); a 0.4.5 é o commit de release seguinte a e41ee29.
+# da série (.recomp.json, PR #6); a 0.4.5 é o 2º commit depois de e41ee29 (o 1º, b9b1754,
+# não compilava no Win32).
 set(RECOMP_MAJOR_MINOR "0.4")
-set(RECOMP_PATCH_BASE 4)    # o 1º commit depois da base é o .5
+set(RECOMP_PATCH_BASE 3)    # o 2º commit depois da base é o .5
 set(RECOMP_BASE_COMMIT "e41ee29")
 set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(recomp_version ALL
@@ -284,7 +285,11 @@ if(MSVC)
     target_link_options(Pumpy PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
     # 4 GB de endereço no Win32 rodando em Windows 64-bit (UPSCALE xBRZ ocupa muita textura)
     # Flags de segurança para conformidade com Windows SmartScreen / Defender (ASLR + DEP)
-    target_link_options(Pumpy PRIVATE /LARGEADDRESSAWARE /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
+    # era: /HIGHENTROPYVA sempre — o link x86 (Win32) recusa (LNK1246); só no 64-bit
+    target_link_options(Pumpy PRIVATE /LARGEADDRESSAWARE /DYNAMICBASE /NXCOMPAT)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        target_link_options(Pumpy PRIVATE /HIGHENTROPYVA)
+    endif()
 elseif(WIN32)
     target_link_options(Pumpy PRIVATE -mwindows -Wl,--dynamicbase -Wl,--nxcompat)
 endif()
