@@ -230,9 +230,11 @@ target_include_directories(Pumpy PRIVATE include)
 # Para abrir a próxima série (ex.: 0.4): RECOMP_MAJOR_MINOR "0.4", RECOMP_PATCH_BASE -1 e
 # RECOMP_BASE_COMMIT = último commit da série anterior; o commit dessa troca vira o .0
 # (ver tools/recomp_version.cmake).
+# era: RECOMP_PATCH_BASE -1, base fcfa521. Depois da v0.4.4 (17be57d) entraram commits de fora
+# da série (.recomp.json, PR #6); a 0.4.5 é o commit de release seguinte a e41ee29.
 set(RECOMP_MAJOR_MINOR "0.4")
-set(RECOMP_PATCH_BASE -1)   # o 1º commit depois da base é o .0
-set(RECOMP_BASE_COMMIT "fcfa521")
+set(RECOMP_PATCH_BASE 4)    # o 1º commit depois da base é o .5
+set(RECOMP_BASE_COMMIT "e41ee29")
 set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(recomp_version ALL
     COMMAND ${CMAKE_COMMAND}

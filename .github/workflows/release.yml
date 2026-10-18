@@ -1,7 +1,10 @@
-name: release-linux
+name: release
 
-# Quando um release é publicado no GitHub, compila o binário Linux e anexa
-# PumpyReconstructed-<tag>-linux-x86_64.tar.gz ao mesmo release.
+# Quando um release é publicado no GitHub, compila e anexa ao mesmo release:
+#   Pumpy-<tag>-win64.zip / Pumpy-<tag>-win32.zip   (Pumpy.exe único, sem DLL extra)
+#   PumpyReconstructed-<tag>-linux-x86_64.tar.gz
+#   Pumpy-<tag>-macOS-Universal.zip                 (arm64 + x86_64)
+# era: só o binário Linux (release-linux).
 on:
   release:
     types: [published]
@@ -57,3 +60,65 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" "PumpyReconstructed-${TAG}-linux-x86_64.tar.gz" --clobber
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - { name: win64, arch: x64,   triplet: x64-windows-static }
+          - { name: win32, arch: Win32, triplet: x86-windows-static }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Dependências (vcpkg)
+        run: vcpkg install sdl2:${{ matrix.triplet }} zlib:${{ matrix.triplet }}
+
+      - name: Configurar e compilar
+        run: |
+          cmake -S . -B build -A ${{ matrix.arch }} `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          cmake --build build --target Pumpy --config Release --parallel
+
+      - name: Empacotar e anexar
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $zip = "Pumpy-$env:TAG-${{ matrix.name }}.zip"
+          Compress-Archive -Path build/Release/Pumpy.exe -DestinationPath $zip -Force
+          gh release upload "$env:TAG" $zip --clobber
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Configurar e compilar
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          cmake --build build --parallel
+
+      - name: Assinar (ad-hoc), empacotar e anexar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          codesign --force --deep --options runtime --entitlements packaging/mac/entitlements.plist --sign - build/Pumpy.app
+          xattr -cr build/Pumpy.app 2>/dev/null || true
+          PKG="Pumpy-${TAG}-macOS-Universal"
+          mkdir -p "dist/$PKG"
+          cp -R build/Pumpy.app "dist/$PKG/"
+          cp build/Pumpy "dist/$PKG/"
+          cp packaging/mac/Run_Pumpy.command "dist/$PKG/"
+          chmod +x "dist/$PKG/Run_Pumpy.command"
+          (cd dist && zip -r -y "../$PKG.zip" "$PKG")
+          gh release upload "$TAG" "$PKG.zip" --clobber
