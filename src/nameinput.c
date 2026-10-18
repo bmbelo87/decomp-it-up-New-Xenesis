@@ -73,6 +73,10 @@ enum { NS_NAME_INPUT, NS_MOVE, NS_MOVE_ACC, NS_HIDDEN_SELECTED, NS_COUNT };
 static int   g_nxSnd[NS_COUNT] = { -1, -1, -1, -1 };
 static void  nxSnd(int k) { if (g_nxSnd[k] >= 0) Audio_Play(g_nxSnd[k], false); }
 static int   g_wfontTex[2] = { -1, -1 };
+/* 085.BGA da NX: TIME nas camadas 30 (dezena) / 31 (unidade), dígitos F00..F09.spr
+ * (nifont.tga) nas camadas 40..49 */
+static BGALayerSrc g_timeDigit[10];
+static bool  g_timeDigitOk;
 static float g_nxCnt;                  /* +0x1c */
 static bool  g_nxChanged;
 static const int8_t k_wfCol[64] = { 0,0,0,0,0,0,0,1,1,1,1,1,1,1,2,2,2,2,2,2,2,3,3,3,3,3,3,3,4,4,4,4,4,4,4,5,5,5,5,5,5,5,6,6,6,6,6,6,6,0,0,0,0,0,0,0,1,1,1,0,10,0,0,0 };
@@ -217,6 +221,17 @@ static void timeNums(float x, float y, int value)
     }
 }
 
+/* NX: o TIME é do próprio 085.BGA — troca a origem das camadas 30/31 pelo dígito,
+ * como o tempo da seleção (nx_select.c). Sem as camadas, false (timeNums). */
+static bool timeDigits(int value)
+{
+    if (!g_timeDigitOk) return false;
+    if (value < 0) value = 0;
+    BGA_SetLayerSrc(NI_BGA, 30, &g_timeDigit[(value / 10) % 10]);
+    BGA_SetLayerSrc(NI_BGA, 31, &g_timeDigit[value % 10]);
+    return true;
+}
+
 /* S3DSetProjection(43.603) / S3DSetOrtho — mesmo espaço do select_core.c */
 static void setProjection(void)
 {
@@ -325,6 +340,9 @@ static void NameInput_Enter(void)
         RES_Close();
     }
     if (g_bfontTex < 0) Log_Print("NAMEINPUT: BFONT.DAT não carregou\n");
+    g_timeDigitOk = true;
+    for (int i = 0; i < 10; i++) g_timeDigitOk &= BGA_GetLayerSrc(NI_BGA, 40 + i, &g_timeDigit[i]);
+    if (!g_timeDigitOk) Log_Print("NAMEINPUT: dígitos F00..F09 do 085 faltando, TIME pelo font4.tga\n");
 
     memset(g_name, ' ', sizeof(g_name));
     g_name[0][4] = g_name[1][4] = '\0';
@@ -583,13 +601,18 @@ void NameInput_Render(void)
     }
 
     if (g_phase == 0) {
+        /* era: o BGA_Render desenhava as camadas 30/31 com o F00 ("00") e o font4.tga
+         * (branco, posição do Exceed) ia por cima. Na NX a entrada é a das camadas. */
+        bool nxTime = timeDigits(NI_TIME);
         BGA_Render(NI_BGA, g_cnt);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        float ty = (g_cnt <= 10) ? (424.0f + 80.0f) - 9.0f * g_cnt
-                 : (g_cnt <= 17) ? 414.0f + 1.42f * (g_cnt - 10) : 424.0f;
-        glColor4f(1, 1, 1, 1);
-        timeNums(590.0f, ty, NI_TIME);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        if (!nxTime) {
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            float ty = (g_cnt <= 10) ? (424.0f + 80.0f) - 9.0f * g_cnt
+                     : (g_cnt <= 17) ? 414.0f + 1.42f * (g_cnt - 10) : 424.0f;
+            glColor4f(1, 1, 1, 1);
+            timeNums(590.0f, ty, NI_TIME);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
         BGA_DrawSlot(NI_BGA, 180, p == 0 ? 24 : 25);
         BGA_DrawSlot(NI_BGA, 180, 26);
         drawCharBar(g_curChar);
@@ -600,10 +623,15 @@ void NameInput_Render(void)
     BGA_DrawSlot(NI_BGA, g_cnt % 56, 0);
     BGA_DrawSlot(NI_BGA, 35, 4);                         /* barra de baixo */
     BGA_DrawSlot(NI_BGA, 35, 22);                        /* barra de cima */
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-    glColor4f(1, 1, 1, 1);
-    timeNums(590.0f, 424.0f, g_time);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (timeDigits(g_time)) {                            /* era: só o timeNums (font4.tga) */
+        BGA_DrawSlot(NI_BGA, 35, 30);
+        BGA_DrawSlot(NI_BGA, 35, 31);
+    } else {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glColor4f(1, 1, 1, 1);
+        timeNums(590.0f, 424.0f, g_time);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
     BGA_DrawSlot(NI_BGA, 180, p == 0 ? 24 : 25);
     BGA_DrawSlot(NI_BGA, 180, 26);
 
