@@ -1204,6 +1204,10 @@ void NxSelect_Update(float dt) {
         playerInput(0);
         playerInput(1);
     }
+    /* era: seguia o quadro depois do startGame; o previewStop dele zerava s_previewOn e o
+     * pedido da prévia logo abaixo reabria PREVIEW/INTRO por cima do TITLE (log: RUN ->
+     * PNZ -> PREVIEW/D01.MOV + INTRO/D01.AUD). No título fica em silêncio. */
+    if (s_started) return;
 
     /* 0x807af7f..0x807bc33: com DL/DR segurado (0x807e830), todo quadro refaz o
      * carrossel (0x807d820) e o canal (0x807d5a0) — o canal troca durante a rolagem.
