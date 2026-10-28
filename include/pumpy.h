@@ -956,6 +956,7 @@ bool     OldData_FindPreview(int id, char* out, size_t n);
 bool     OldData_FindFile(int id, const char* rel, char* out, size_t n);   /* rel: "BGA/%X.MOV" */
 void     OldData_LoadDiscs(int* tex, const uint8_t* want, int count);
 void     OldData_Status(int* roots, int* ok, int* total);   /* resumo para o GAME OPTION */
+bool     OldData_SongOk(int songIdx);   /* extra old data com capa, disco e áudio achados */
 bool     OldData_ApplyModes(void);                             /* liga/desliga os modos vindos de .STX; true = mudou */
 bool     OldData_FindStep(int id, int mode, char* out, size_t n);   /* mode 0..4 = N H C F NM */
 void     Eeprom_Set8(int off, uint8_t v);

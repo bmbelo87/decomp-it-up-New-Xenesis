@@ -549,7 +549,7 @@ static void buildList(void) {
             for (int b = 0; b < nBefore; b++)
                 if (k_before[b][1] == g_songTable[i].id)
                     for (int x = NX_SONG_BASE; x < nExtra; x++)
-                        if (g_songTable[x].id == k_before[b][0]) listAdd(x);
+                        if (g_songTable[x].id == k_before[b][0] && OldData_SongOk(x)) listAdd(x);
         listAdd(i);
         if (!g_game.gameStyleModded) continue;
         int ch = g_songTable[i].channel;
@@ -557,7 +557,8 @@ static void buildList(void) {
         for (int x = NX_SONG_BASE; x < nExtra; x++) {
             bool placed = false;
             for (int b = 0; b < nBefore; b++) if (k_before[b][0] == g_songTable[x].id) placed = true;
-            if (!placed && g_songTable[x].channel == ch) listAdd(x);
+            /* era: sem OldData_SongOk. Pedido do usuário: só as old data com arquivos completos */
+            if (!placed && g_songTable[x].channel == ch && OldData_SongOk(x)) listAdd(x);
         }
     }
 }

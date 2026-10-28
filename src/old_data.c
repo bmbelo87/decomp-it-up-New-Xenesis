@@ -262,6 +262,8 @@ void OldData_LoadDiscs(int* tex, const uint8_t* want, int count)
  * que o próprio NX já traz. Prévia e BGA ficam de fora da conta: têm reserva (001.MOV)
  * e algumas músicas não os têm em versão nenhuma. Não depende de a opção estar ligada.
  * Calculado uma vez por execução (abre os pacotes de disco). */
+static uint8_t s_songOk[SONG_TABLE_COUNT];   /* 1 = capa, disco e áudio achados (OldData_Status) */
+
 void OldData_Status(int* roots, int* ok, int* total)
 {
     static int s_ok = -1, s_total = 0;
@@ -302,7 +304,8 @@ void OldData_Status(int* roots, int* ok, int* total)
         s_ok = 0; s_total = 0;
         for (int i = NX_SONG_OLD_BASE; i < SONG_TABLE_COUNT; i++) {
             s_total++;
-            if (title[i] && audio[i] && disc[i]) s_ok++;
+            s_songOk[i] = title[i] && audio[i] && disc[i];
+            if (s_songOk[i]) s_ok++;
             else Log_Print("OLDDATA: %X incompleta (capa %d, disco %d, audio %d)\n",
                            (unsigned)g_songTable[i].id, title[i], disc[i], audio[i]);
         }
@@ -310,6 +313,18 @@ void OldData_Status(int* roots, int* ok, int* total)
                   s_ok, s_total, s_count);
     }
     *roots = s_count; *ok = s_ok; *total = s_total;
+}
+
+/* Música do USE OLD DATA SONGS com os arquivos completos? Pedido do usuário: com a opção
+ * ligada, só entram na lista as músicas que alguma versão instalada (ou o próprio NX)
+ * tem por inteiro; ex.: só a 17_zero presente -> só as que o Zero completa. Índices
+ * abaixo de NX_SONG_OLD_BASE não dependem disto. */
+bool OldData_SongOk(int i)
+{
+    if (i < NX_SONG_OLD_BASE || i >= SONG_TABLE_COUNT) return true;
+    int roots, ok, total;
+    OldData_Status(&roots, &ok, &total);
+    return s_songOk[i] != 0;
 }
 
 /* Modos que saíram do .SEE do NX e ainda existem no .STX de uma versão anterior
