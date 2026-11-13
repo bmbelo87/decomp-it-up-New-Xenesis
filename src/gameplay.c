@@ -3514,7 +3514,9 @@ void Gameplay_Update(float dt)
     bool chartEnded = (g_chart && g_totalSongSeconds > 0 && g_songTime >= g_totalSongSeconds);
     if (chartEnded) {
         bool audioDone = !g_hasAudio || !BGM_IsPlaying();
-        bool movieDone = !Movie_IsOpen() || Movie_HasEnded();
+        /* era: !Movie_IsOpen() || Movie_HasEnded() — um filme em loop (fallback 001.MOV de música
+         * sem BGA) nunca termina; extra do port: conta como terminado */
+        bool movieDone = !Movie_IsOpen() || Movie_HasEnded() || Movie_IsLooping();
         bool timeout = (g_songTime >= g_totalSongSeconds + 6.0);
 
         if ((audioDone && movieDone) || timeout) {
@@ -3526,7 +3528,8 @@ void Gameplay_Update(float dt)
         }
     }
     if (g_hasAudio && g_songTime > 1.0 && !BGM_IsPlaying()) {
-        bool movieDone = !Movie_IsOpen() || Movie_HasEnded();
+        /* era: !Movie_IsOpen() || Movie_HasEnded() (ver acima: filme em loop nunca termina) */
+        bool movieDone = !Movie_IsOpen() || Movie_HasEnded() || Movie_IsLooping();
         if (movieDone || (g_totalSongSeconds > 0 && g_songTime >= g_totalSongSeconds + 4.0)) {
             Log_Print("GP: music & movie ended (%.2f)\n", g_songTime);
             BGM_Stop();

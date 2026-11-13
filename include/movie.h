@@ -8,6 +8,7 @@ bool Movie_Open(const char* path, bool loop);
 void Movie_Close(void);
 bool Movie_IsOpen(void);
 bool Movie_HasEnded(void);
+bool Movie_IsLooping(void);
 int  Movie_GetDecoded(void);   /* [+0x30]: quadros decodificados */
 void Movie_Update(float dt);
 void Movie_Render(void);

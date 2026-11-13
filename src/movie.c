@@ -202,6 +202,7 @@ bool Movie_IsOpen(void) { return g_mov->f != NULL; }
 void Movie_Select(int slot) { g_mov = &g_movs[(slot == 1) ? 1 : 0]; }
 unsigned Movie_GLTexture(void) { return g_mov->hasFrame ? (unsigned)g_mov->tex : 0u; }
 bool Movie_HasEnded(void) { return g_mov->ended; }
+bool Movie_IsLooping(void) { return g_mov->loop; }   /* extra do port: filme em loop nunca chega ao fim */
 int  Movie_GetDecoded(void) { return g_mov->decoded; }
 
 static void movie_upload(void) {
