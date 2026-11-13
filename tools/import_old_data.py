@@ -29,12 +29,26 @@ import sys
 import tempfile
 import zlib
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# Dentro do .exe do assistente (PyInstaller) os dados ficam em sys._MEIPASS; o ffmpeg.exe, ao lado
+# do .exe ou lá dentro. era: HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from respack_extract import KeyGen  # noqa: E402  (cifra do Exceed)
 
 import numpy as np  # noqa: E402
 
+def _find_ffmpeg():
+    names = ("ffmpeg.exe", "ffmpeg")
+    dirs = [HERE, os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))]
+    for d in dirs:
+        for n in names:
+            p = os.path.join(d, n)
+            if os.path.isfile(p):
+                return p
+    return "ffmpeg"                                    # senão, o do PATH
+
+
+FFMPEG = _find_ffmpeg()
 BITREV = bytes(int(f"{i:08b}"[::-1], 2) for i in range(256))
 RATE = 8000          # Hz da comparação de áudio
 PREVIEW_W, PREVIEW_H, PREVIEW_FPS = 256, 192, 30
@@ -66,12 +80,18 @@ def capture_dat(exe, game, dat, t0, dur, tmp):
 
 
 # ───────────────────────────── dongle / cifras ─────────────────────────────
+KEY_FILES = ("nx_dog.key", "zero_dog.key")
+APP_DIR = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
+KEY_DIRS = [os.path.join(HERE, "data"), os.path.join(APP_DIR, "data"), APP_DIR]
+
+
 def load_dog():
     """Respostas do MicroDog (NX e Zero) para consultas de 16 bytes."""
     tab = {}
-    for key in ("nx_dog.key", "zero_dog.key"):
-        p = os.path.join(HERE, "data", key)
-        if not os.path.exists(p):
+    for key in KEY_FILES:
+        # as chaves NÃO vão no .exe do assistente: data/ do projeto ou data/ (ou a própria pasta) ao lado do .exe
+        p = next((q for q in (os.path.join(d, key) for d in KEY_DIRS) if os.path.exists(q)), None)
+        if not p:
             continue
         raw = open(p, "rb").read()
         for o in range(0xE0, len(raw) - 0x4B, 0x4C):
@@ -82,6 +102,13 @@ def load_dog():
 
 
 DOG = load_dog()
+
+
+def reload_dog():
+    """Relê as chaves (a pessoa pode ter colocado os arquivos depois de abrir o assistente)."""
+    global DOG
+    DOG = load_dog()
+    return {k for _, k in DOG.values()}
 
 
 def x2_key(data, resp):
@@ -242,6 +269,12 @@ def song_table():
     """[(id, baseId)] de src/nx_songs.c."""
     out = []
     p = os.path.join(HERE, "..", "src", "nx_songs.c")
+    if not os.path.exists(p):          # release: lista gerada de nx_songs.c (tools/data/songs.txt)
+        for line in open(os.path.join(HERE, "data", "songs.txt"), encoding="ascii"):
+            f = line.split()
+            if f:
+                out.append((f[0], f[1] if len(f) > 1 else None))
+        return out
     for line in open(p, encoding="utf-8"):
         m = re.match(r'\s*\{ 0x([0-9A-F]+), .*\}, (-1|0x[0-9A-F]+), \d', line)
         if m:
@@ -256,7 +289,7 @@ def decode_pcm(aud_path, tmp):
         raise ValueError("áudio não é ENC1/ENC2 ou não decifrou: " + aud_path)
     src = os.path.join(tmp, "a.bin")
     open(src, "wb").write(raw)
-    r = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-"],
+    r = subprocess.run([FFMPEG, "-v", "error", "-i", src, "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-"],
                        capture_output=True)
     if r.returncode != 0 or not r.stdout:
         raise ValueError("ffmpeg não decodificou o áudio: " + r.stderr.decode(errors="replace")[:200])
@@ -283,7 +316,7 @@ def locate(full, intro):
 
 
 # ───────────────────────────── principal ─────────────────────────────
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description="Import Old Data: cria as prévias que faltam em BGA/PREVIEW.")
     ap.add_argument("--game", default=os.path.join(HERE, "..", "..", "game"), help="pasta do jogo (NX)")
     ap.add_argument("--exe", help="executável do jogo para capturar os fundos .DAT "
@@ -293,7 +326,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="só calcula e lista; não grava nada")
     ap.add_argument("--min-score", type=float, default=0.30, help="confiança mínima do encaixe (0..1)")
     ap.add_argument("--report", help="grava a lista (id;status;inicio;duracao;confianca;fonte) neste arquivo")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     roots = find_roots(args.game)
     game, olds = roots[0], roots[1:]
@@ -356,7 +389,7 @@ def main():
                 if mov:
                     mov_to_m2v(mov, m2v)
                     r = subprocess.run(
-                        ["ffmpeg", "-v", "error", "-y", "-f", "mpegvideo", "-framerate", str(PREVIEW_FPS), "-i", m2v,
+                        [FFMPEG, "-v", "error", "-y", "-f", "mpegvideo", "-framerate", str(PREVIEW_FPS), "-i", m2v,
                          "-ss", "%.3f" % t0, "-t", "%.3f" % dur] + encode_args(scale) + [cutp],
                         capture_output=True)
                 else:
@@ -366,7 +399,7 @@ def main():
                     with open(raw, "rb") as rf:
                         rf.seek(8)
                         r = subprocess.run(
-                            ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                            [FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                              "-s", "%dx%d" % (w, h), "-framerate", str(PREVIEW_FPS), "-i", "-"]
                             + encode_args("vflip," + scale) + [cutp],
                             stdin=rf, capture_output=True)
