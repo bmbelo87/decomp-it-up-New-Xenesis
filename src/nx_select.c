@@ -64,6 +64,7 @@ static int  s_diffSaved[2];          /* +0x84 */
 static int  s_dir;                   /* +0xa4: 0 parado, 1 DR (L move), 2 DL (R move) */
 static bool s_ready;                 /* +0x25 */
 static bool s_previewOn;             /* +0x26 */
+static int  s_previewMark;           /* extra do port: palavra da marca da música em prévia (0 = nenhuma, 1 ANOTHER, 2 LEFTOVERS) */
 static bool s_previewGlow;           /* extra do port: prévia de outro jogo leva o glowdisc */
 static int  s_glowTex = -1, s_glowGL;/* extra do port: glowdisc.png embutido no .exe */
 static unsigned s_joined;            /* [0x81f8904] bits 0/1 */
@@ -837,6 +838,190 @@ static void glowBake(int texId) {
     free(g); free(d);
 }
 
+/* ---------------------------------------------------------------------------
+ * Extra do port (pedido do usuário): marca discreta no disco, em letras da WFONT:
+ *   "ANOTHER"   só nas músicas de k_anotherMark;
+ *   "LEFTOVERS" nas músicas do canal ANOTHER (6) que só existem com MODDED (extras do port,
+ *               índice >= NX_SONG_BASE), exceto a Fighting Spirit Another (D208).
+ * As letras vêm da WFONT.DAT (wfont01.tga, células 71x68; mesma grade de nx_world.c: wfontPrint) reduzidas
+ * e misturadas com transparência no canto superior direito (disco e, durante a prévia, um overlay por cima do
+ * vídeo: SPRTileDef.overlay). Cada música ganha uma CÓPIA da textura do
+ * disco (o TEST.DAT divide discos entre versões da mesma música, então não se mexe na original), guardada
+ * em cache para não vazar uma textura a cada entrada na seleção.
+ * Ajuste fino: ANOTHER_MARK_ALPHA (opacidade), _SCALE (tamanho da célula, 1.0 = 71 px num disco de 256),
+ * _MARGIN (px do canto, num disco de 256).
+ * ------------------------------------------------------------------------- */
+#define ANOTHER_MARK_ALPHA   0.60f
+#define ANOTHER_MARK_SCALE   0.32f   /* era 0.22; pedido do usuário: maior */
+#define ANOTHER_MARK_MARGIN  8.0f
+/* Quais músicas levam a marca: SÓ as desta lista (ids da tabela, ex.: 0xDB18), definida pelo usuário.
+ * era: todas do canal ANOTHER (channel == 6). Vazia = nenhuma música tem a marca. */
+static const uint32_t k_anotherMark[] = {
+    0xC32,   /* Love is a Danger Zone 2 Remix (FullSong; usa o disco da D41) */
+    0        /* acrescente os ids acima; o 0 só fecha a lista */
+};
+static bool anotherMarkWanted(uint32_t id) {
+    for (size_t k = 0; k < sizeof(k_anotherMark) / sizeof(k_anotherMark[0]); k++)
+        if (id && k_anotherMark[k] == id) return true;
+    return false;
+}
+static const char* const k_markWord[2] = { "ANOTHER", "LEFTOVERS" };
+/* 0 = sem marca; 1 = ANOTHER; 2 = LEFTOVERS (índice em k_markWord + 1) */
+static int markWordOf(int i) {
+    if (i < 0 || i >= SONG_TABLE_COUNT) return 0;
+    if (anotherMarkWanted(g_songTable[i].id)) return 1;
+    if (i >= NX_SONG_BASE && g_songTable[i].channel == 6 && g_songTable[i].id != 0xD208) return 2;
+    return 0;
+}
+static int    s_anSlot[SONG_TABLE_COUNT];     /* slot da cópia do disco */
+static GLuint s_anGL[SONG_TABLE_COUNT];       /* id GL da cópia (0 = ainda não tem) */
+static GLuint s_anBase[SONG_TABLE_COUNT];     /* id GL do disco original de que a cópia saiu */
+static int    s_anOvSlot[2] = { -1, -1 };     /* overlay só com as letras (256x192) de cada palavra, desenhado sobre a PRÉVIA */
+static GLuint s_anOvGL[2];
+
+/* wfont01.tga em RGBA (malloc; o chamador libera). NULL se a WFONT.DAT não abre. */
+static uint8_t* wfontLoad(int* w, int* h) {
+    char wp[MAX_PATH];
+    snprintf(wp, sizeof(wp), "%s/BGA/WFONT.DAT", g_game.currentDirectory);
+    int wt = -1;
+    if (RES_Open(wp)) { wt = loadTextureFromRES("wfont01.tga"); RES_Close(); }
+    if (wt < 0 || !g_game.textures[wt].inUse) { Log_Print("NXSELECT: ANOTHER sem WFONT.DAT, sem marca\n"); return NULL; }
+    glBindTexture(GL_TEXTURE_2D, g_game.textures[wt].id);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, w);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, h);
+    if (*w < 71 * 7 || *h < 68 * 4) { Log_Print("NXSELECT: wfont01 %dx%d fora do esperado\n", *w, *h); return NULL; }
+    uint8_t* wf = (uint8_t*)malloc((size_t)*w * *h * 4);
+    if (wf) glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, wf);
+    return wf;
+}
+
+/* Pinta "ANOTHER" em d (RGBA dw x dh, linha 0 = topo), canto superior direito. Tamanho e margem seguem
+ * a largura (256 = escala 1), então o disco (256x256) e o overlay da prévia (256x192) ficam iguais.
+ * overlay = false: mistura nas cores do disco (só onde ele é opaco); true: d é transparente e recebe as
+ * letras com alpha (source-over). */
+static void markPaint(uint8_t* d, int dw, int dh, const uint8_t* wf, int wfw, bool overlay, const char* word) {
+    int nLet = (int)strlen(word);                                /* letras A-Z: índice = letra - 'A' (wfontPrint: A=0, H=7, ...) */
+    float sc = (float)dw / 256.0f;
+    float k = ANOTHER_MARK_SCALE * sc;                           /* fonte -> destino */
+    float adv = 56.8f * k, cw = 71.0f * k, ch = 68.0f * k;       /* avanço de wfontPrint e célula */
+    float x0 = (float)dw - ANOTHER_MARK_MARGIN * sc - (adv * (float)(nLet - 1) + cw);
+    float y0 = ANOTHER_MARK_MARGIN * sc;                         /* V=0 é o topo */
+    for (int c = 0; c < nLet; c++) {
+        int v = word[c] - 'A';
+        if (v < 0 || v > 25) continue;
+        int sx0 = (v % 7) * 71, sy0 = (v / 7) * 68;              /* células da 1ª textura: 7 colunas */
+        int dx0 = (int)(x0 + adv * (float)c), dy0 = (int)y0;
+        int nw = (int)cw + 2, nh = (int)ch + 2;
+        for (int py = 0; py < nh; py++) {
+            for (int px = 0; px < nw; px++) {
+                int dx = dx0 + px, dy = dy0 + py;
+                if (dx < 0 || dy < 0 || dx >= dw || dy >= dh) continue;
+                /* média da área da célula original que cai neste pixel (cores pré-multiplicadas pelo alpha) */
+                int sxa = (int)((float)px / k), sxb = (int)((float)(px + 1) / k);
+                int sya = (int)((float)py / k), syb = (int)((float)(py + 1) / k);
+                if (sxb <= sxa) sxb = sxa + 1;
+                if (syb <= sya) syb = sya + 1;
+                unsigned sr = 0, sg = 0, sb = 0, sa = 0, n = 0;
+                for (int yy = sya; yy < syb; yy++) {
+                    for (int xx = sxa; xx < sxb; xx++, n++) {
+                        if (xx >= 71 || yy >= 68) continue;
+                        const uint8_t* wp = wf + ((size_t)(sy0 + yy) * wfw + (sx0 + xx)) * 4;
+                        sr += wp[0] * wp[3]; sg += wp[1] * wp[3]; sb += wp[2] * wp[3]; sa += wp[3];
+                    }
+                }
+                if (!sa || !n) continue;
+                float a = ((float)sa / (float)n / 255.0f) * ANOTHER_MARK_ALPHA;
+                float col[3] = { (float)sr / (float)sa, (float)sg / (float)sa, (float)sb / (float)sa };
+                uint8_t* dp = d + ((size_t)dy * dw + dx) * 4;
+                if (!overlay) {
+                    if (!dp[3]) continue;
+                    for (int q = 0; q < 3; q++) dp[q] = (uint8_t)(dp[q] * (1.0f - a) + col[q] * a + 0.5f);
+                } else {
+                    float da = (float)dp[3] / 255.0f, oa = a + da * (1.0f - a);
+                    if (oa <= 0.0f) continue;
+                    for (int q = 0; q < 3; q++)
+                        dp[q] = (uint8_t)(((float)dp[q] * da * (1.0f - a) + col[q] * a) / oa + 0.5f);
+                    dp[3] = (uint8_t)(oa * 255.0f + 0.5f);
+                }
+            }
+        }
+    }
+}
+
+/* textura GL nova (RGBA) embrulhada num slot do gerenciador; id GL em *glOut. -1 se falhar. */
+static int markTexture(const uint8_t* rgba, int w, int h, GLuint* glOut) {
+    GLuint id = 0;
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    GLint flt = g_game.gfxTexFilter ? GL_NEAREST : GL_LINEAR;      /* igual a Texture_CreateGL */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, flt);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, flt);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    int slot = Texture_Wrap(-1, id, w, h);
+    if (slot < 0) { glDeleteTextures(1, &id); return -1; }
+    *glOut = id;
+    return slot;
+}
+
+static void anotherMarks(void) {
+    uint8_t* wf = NULL;                       /* wfont01 em RGBA (carregada só se alguma música precisar) */
+    int wfw = 0, wfh = 0;
+    bool anyW[2] = { false, false };
+    for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+        /* era: g_songTable[i].channel != 6 / depois: anotherMarkWanted(id) */
+        int wi = markWordOf(i);
+        if (!wi) continue;
+        anyW[wi - 1] = true;
+        if (s_discTex[i] < 0 || s_discTex[i] >= MAX_TEXTURES || !g_game.textures[s_discTex[i]].inUse) continue;
+        GLuint baseGL = g_game.textures[s_discTex[i]].id;
+        if (s_anGL[i] && s_anSlot[i] >= 0 && s_anSlot[i] < MAX_TEXTURES && g_game.textures[s_anSlot[i]].inUse &&
+            g_game.textures[s_anSlot[i]].id == s_anGL[i] && s_anBase[i] == baseGL) {
+            s_discTex[i] = s_anSlot[i];       /* cópia de uma entrada anterior ainda vale */
+            continue;
+        }
+        if (s_anGL[i]) {                      /* disco original mudou (ou a cópia sumiu): refaz */
+            if (s_anSlot[i] >= 0 && s_anSlot[i] < MAX_TEXTURES && g_game.textures[s_anSlot[i]].inUse &&
+                g_game.textures[s_anSlot[i]].id == s_anGL[i]) Texture_Unwrap(s_anSlot[i]);
+            glDeleteTextures(1, &s_anGL[i]);
+            s_anSlot[i] = -1; s_anGL[i] = 0;
+        }
+        if (!wf && !(wf = wfontLoad(&wfw, &wfh))) return;
+        int dw = 0, dh = 0;
+        glBindTexture(GL_TEXTURE_2D, baseGL);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &dw);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &dh);
+        if (dw <= 0 || dh <= 0) continue;
+        uint8_t* d = (uint8_t*)malloc((size_t)dw * dh * 4);
+        if (!d) continue;
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, d);
+        markPaint(d, dw, dh, wf, wfw, false, k_markWord[wi - 1]);
+        GLuint id = 0;
+        int slot = markTexture(d, dw, dh, &id);
+        free(d);
+        if (slot < 0) continue;
+        s_anSlot[i] = slot; s_anGL[i] = id; s_anBase[i] = baseGL;
+        s_discTex[i] = slot;
+    }
+    /* overlay da prévia: só as letras, 256x192 (o vídeo da prévia substitui o disco no card central) */
+    for (int w = 0; w < 2; w++) {
+        if (!anyW[w]) continue;
+        if (s_anOvGL[w] && s_anOvSlot[w] >= 0 && s_anOvSlot[w] < MAX_TEXTURES && g_game.textures[s_anOvSlot[w]].inUse &&
+            g_game.textures[s_anOvSlot[w]].id == s_anOvGL[w]) continue;
+        if (s_anOvGL[w]) { glDeleteTextures(1, &s_anOvGL[w]); s_anOvGL[w] = 0; s_anOvSlot[w] = -1; }
+        if (wf || (wf = wfontLoad(&wfw, &wfh))) {
+            uint8_t* o = (uint8_t*)calloc((size_t)256 * 192, 4);
+            if (o) {
+                markPaint(o, 256, 192, wf, wfw, true, k_markWord[w]);
+                s_anOvSlot[w] = markTexture(o, 256, 192, &s_anOvGL[w]);
+                free(o);
+            }
+        }
+    }
+    free(wf);
+}
+
 static void previewStop(void) {
     if (!s_previewOn) return;
     s_previewOn = false;
@@ -858,6 +1043,7 @@ static void previewStart(void) {
     const TrackEntry* e = cur();
     if (!e) return;
     char mov[MAX_PATH], aud[MAX_PATH];
+    s_previewMark = markWordOf((int)(e - g_songTable));   /* extra do port: marca por cima do vídeo (era: anotherMarkWanted(e->id)) */
     s_previewGlow = !nxHasOrigPreview((int)e->id);   /* era: !nxFind (as prévias importadas também existem em BGA/PREVIEW) */
     /* era: sem a prévia ia direto para a 001.MOV. Extra do port (USE OLD DATA SONGS):
      * antes tenta a prévia de uma versão anterior. */
@@ -1015,6 +1201,7 @@ void NxSelect_Enter(void) {
             if (!shared) glowBake(s_discTex[i]);
         }
     }
+    anotherMarks();   /* extra do port: marca ANOTHER no disco (depois do glow, que é misturado na textura original) */
 
     for (int k = 0; k < SFX_COUNT; k++)
         if (s_sfx[k] < 0) s_sfx[k] = Audio_LoadWaveFile(k_sfx[k]);
@@ -1275,6 +1462,11 @@ void NxSelect_Update(float dt) {
                 g_game.sprTiles[t] = g_game.sprTiles[s_movieSpr.sprTileStart];
                 g_game.sprTiles[t].texId = s_movieTex;
                 g_game.sprTiles[t].glow = s_previewGlow;
+                g_game.sprTiles[t].overlay = 0;
+                if (s_previewMark) {
+                    int ov = s_anOvSlot[s_previewMark - 1];
+                    if (ov >= 0 && ov < MAX_TEXTURES && g_game.textures[ov].inUse) g_game.sprTiles[t].overlay = ov + 1;
+                }
                 /* movie.spr foi feito para a movie.tga 256x256, com o vídeo 256x192 nas
                  * linhas de cima; nossa textura do vídeo tem só 256x192 -> reescala V */
                 g_game.sprTiles[t].v1 *= 256.0f / 192.0f;

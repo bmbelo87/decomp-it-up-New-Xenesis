@@ -370,6 +370,7 @@ typedef struct {
     int texId;
     bool flipH, flipV;
     bool glow;   /* extra do port: drawTileQuad cobre o tile com o glowdisc (prévia de outro jogo) */
+    int  overlay;   /* extra do port: texId+1 de uma textura desenhada por cima do tile (marca ANOTHER na prévia); 0 = nenhuma */
 } SPRTileDef;
 extern int g_glowTexId;   /* textura do glowdisc.png (embutido no .exe), -1 = sem */
 

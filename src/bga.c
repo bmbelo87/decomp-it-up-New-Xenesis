@@ -385,6 +385,20 @@ static void drawTileQuad(SPRTileDef* tile, float offsetX, float offsetY) {
         glVertex2f(offsetX + (float)tile->srcX, 480.0f - (offsetY + (float)(tile->srcY + tile->srcH)));
         glEnd();
     }
+    /* extra do port: textura por cima do tile (marca ANOTHER sobre a prévia) */
+    if (tile->overlay > 0 && tile->overlay - 1 < MAX_TEXTURES && g_game.textures[tile->overlay - 1].inUse) {
+        glBindTexture(GL_TEXTURE_2D, g_game.textures[tile->overlay - 1].id);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f);
+        glVertex2f(offsetX + (float)tile->srcX, 480.0f - (offsetY + (float)tile->srcY));
+        glTexCoord2f(1.0f, 0.0f);
+        glVertex2f(offsetX + (float)(tile->srcX + tile->srcW), 480.0f - (offsetY + (float)tile->srcY));
+        glTexCoord2f(1.0f, 1.0f);
+        glVertex2f(offsetX + (float)(tile->srcX + tile->srcW), 480.0f - (offsetY + (float)(tile->srcY + tile->srcH)));
+        glTexCoord2f(0.0f, 1.0f);
+        glVertex2f(offsetX + (float)tile->srcX, 480.0f - (offsetY + (float)(tile->srcY + tile->srcH)));
+        glEnd();
+    }
 }
 
 static void renderSPTile(SPRTileDef* tile, float posX, float posY, float scaleX, float scaleY, float hotX, float hotY, float rotation, float r, float g, float b, float alpha) {
