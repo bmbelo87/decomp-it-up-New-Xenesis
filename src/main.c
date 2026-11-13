@@ -1314,9 +1314,13 @@ void Game_MainLoop(void) {
 
 /* On Linux this is a plain main(); the original WinMain/SEH path only exists
  * on Windows. */
+int DogServe_Run(void);   /* dog_serve.c */
+
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
+    /* extra do port: --dog-serve = modo sem janela do OldDataWizard (tabela do dongle por stdin/stdout);
+     * tem de vir antes de qualquer inicialização do jogo. era: (void)argc; (void)argv; */
+    for (int i = 1; i < argc; i++)
+        if (strcmp(argv[i], "--dog-serve") == 0) return DogServe_Run();
 
     Platform_InitCWD();
     Game_Init(NULL);

@@ -132,9 +132,15 @@ def check_tree(game):
             n = iod.version_num(d)
             if 0 <= n < cur and not os.path.isdir(os.path.join(base, d, "game")):
                 out.append(("warn", "k_old_nogame", (d,)))
-    have = iod.reload_dog()                  # chaves do dongle: fora do .exe, ao lado dele (iod.KEY_DIRS)
-    for k in iod.KEY_FILES:
-        out.append(("ok", "k_key_ok", (k,)) if k in have else ("err", "k_key_err", (k,)))
+    # a decifragem é feita pelo próprio Pumpy.exe (--dog-serve, src/dog_serve.c): nenhum arquivo de chave
+    # é distribuído. Os arquivos .key em data/ ficam só como reserva (uso de desenvolvimento).
+    n = iod.dog_probe(exe) if exe else 0
+    if n:
+        out.append(("ok", "k_dog_ok", (n,)))
+    elif len(iod.reload_dog()) >= len(iod.KEY_FILES):
+        out.append(("warn", "k_dog_files", ()))
+    else:
+        out.append(("err", "k_dog_err", ()))
     ff = iod.FFMPEG
     ok = os.path.isfile(ff) or shutil.which(ff)
     out.append(("ok", "k_ff_ok", (ff,)) if ok else ("err", "k_ff_err", ()))
@@ -390,12 +396,12 @@ class Wizard(tk.Tk):
             messagebox.showwarning(T("title"), T("pick_game_first"))
             self.nb.select(1)
             return
-        if len(iod.reload_dog()) < len(iod.KEY_FILES):
+        exe = find_game_exe(game)
+        if not (exe and iod.dog_probe(exe)) and len(iod.reload_dog()) < len(iod.KEY_FILES):
             messagebox.showwarning(T("title"), T("need_keys"))
             self.nb.select(1)
             return
         argv = ["--game", game]
-        exe = find_game_exe(game)
         if exe:
             argv += ["--exe", exe]
         if self.force.get():

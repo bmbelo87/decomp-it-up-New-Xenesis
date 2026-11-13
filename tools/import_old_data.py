@@ -21,12 +21,15 @@ Requer ffmpeg no PATH e numpy. Uso:
   import_old_data.py [--game PASTA] [--exe JOGO] [--ids 102,A07] [--force] [--dry-run] [--report ARQ]
 """
 import argparse
+import atexit
 import os
+import queue
 import re
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import zlib
 
 # Dentro do .exe do assistente (PyInstaller) os dados ficam em sys._MEIPASS; o ffmpeg.exe, ao lado
@@ -104,6 +107,110 @@ def load_dog():
 DOG = load_dog()
 
 
+class DogService:
+    """Pumpy.exe --dog-serve (src/dog_serve.c): a tabela do dongle fica DENTRO do executável do jogo e é
+    consultada por stdin/stdout; o assistente não precisa de arquivo de chave nenhum.
+    Um Pumpy.exe sem esse modo abriria a janela do jogo: o HELLO tem prazo e, se não vier a resposta,
+    o processo é encerrado."""
+
+    def __init__(self, exe, cwd, timeout=4.0):
+        self.p = subprocess.Popen([exe, "--dog-serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, cwd=cwd,
+                                  creationflags=0x08000000 if os.name == "nt" else 0)   # sem janela de console
+        self.lines = queue.Queue()
+        threading.Thread(target=self._reader, daemon=True).start()
+        self.count = 0
+        try:
+            hello = self.ask("HELLO", timeout).split()
+            if len(hello) != 3 or hello[0] != "PUMPY-DOG":
+                raise ValueError("resposta inesperada")
+            self.count = int(hello[2])
+        except Exception:
+            self.close()
+            raise
+
+    def _reader(self):
+        for raw in self.p.stdout:
+            self.lines.put(raw.decode("ascii", "replace").strip())
+        self.lines.put(None)
+
+    def ask(self, line, timeout=10.0):
+        self.p.stdin.write((line + "\n").encode("ascii"))
+        self.p.stdin.flush()
+        r = self.lines.get(timeout=timeout)
+        if r is None:
+            raise ValueError("o Pumpy.exe encerrou")
+        return r
+
+    def resp(self, q16):
+        r = self.ask("Q " + bytes(q16).hex().upper())
+        return int(r, 16) if r not in ("-", "?") else None
+
+    def query(self, i):
+        r = self.ask("N %d" % i)
+        return bytes.fromhex(r) if r not in ("-", "?") else None
+
+    def close(self):
+        try:
+            self.p.stdin.write(b"QUIT\n")
+            self.p.stdin.flush()
+        except Exception:
+            pass
+        for f in (self.p.stdin, self.p.stdout):   # fecha à mão: o fechamento tardio num processo morto gera ruído
+            try:
+                f.close()
+            except Exception:
+                pass
+        try:
+            self.p.wait(2)
+        except Exception:
+            self.p.kill()
+
+
+SERVICE = None
+
+
+def dog_start(exe, cwd):
+    """Liga o serviço do dongle do Pumpy.exe. True se deu certo; False (e fica nos arquivos .key, se houver)."""
+    global SERVICE
+    dog_stop()
+    if not exe or not os.path.isfile(exe):
+        return False
+    try:
+        SERVICE = DogService(exe, cwd)
+    except Exception:
+        SERVICE = None
+        return False
+    atexit.register(dog_stop)
+    return True
+
+
+def dog_stop():
+    global SERVICE
+    if SERVICE:
+        SERVICE.close()
+        SERVICE = None
+
+
+_probe_cache = {}
+
+
+def dog_probe(exe):
+    """Quantidade de consultas que o Pumpy.exe responde (0 = não tem o modo --dog-serve). Guarda por exe/data."""
+    try:
+        key = (os.path.abspath(exe), os.path.getmtime(exe))
+    except OSError:
+        return 0
+    if key not in _probe_cache:
+        try:
+            s = DogService(exe, os.path.dirname(os.path.abspath(exe)))
+            _probe_cache[key] = s.count
+            s.close()
+        except Exception:
+            _probe_cache[key] = 0
+    return _probe_cache[key]
+
+
 def reload_dog():
     """Relê as chaves (a pessoa pode ter colocado os arquivos depois de abrir o assistente)."""
     global DOG
@@ -122,6 +229,9 @@ def x2_key(data, resp):
 
 
 def dog_resp(q):
+    if SERVICE:                  # tabela dentro do Pumpy.exe (dog_serve.c)
+        r = SERVICE.resp(q)
+        return r if r is not None else 0
     r = DOG.get(bytes(q))
     return r[0] if r else 0      # fora da tabela: resposta 0 (Exceed 2)
 
@@ -209,8 +319,11 @@ def m2v_to_mov3(m2v, out, internal_name, rng):
     if data[:4] != b"\x00\x00\x01\xb3":
         raise ValueError("o vídeo gerado não começa com o sequence header do MPEG-2")
     # A precisa ter resposta na tabela do dongle do NX, senão o piu original não abre
-    nx_q = sorted(q for q, (_, key) in DOG.items() if key == "nx_dog.key")
-    A = nx_q[rng.integers(len(nx_q))] if nx_q else bytes(rng.integers(0, 256, 16, dtype=np.uint8))
+    if SERVICE and SERVICE.count:   # qualquer consulta da tabela do próprio Pumpy.exe (é ele que vai ler a prévia)
+        A = SERVICE.query(int(rng.integers(SERVICE.count)))
+    else:
+        nx_q = sorted(q for q, (_, key) in DOG.items() if key == "nx_dog.key")
+        A = nx_q[rng.integers(len(nx_q))] if nx_q else bytes(rng.integers(0, 256, 16, dtype=np.uint8))
     B = bytes(rng.integers(0, 256, 16, dtype=np.uint8))
     n = int(rng.integers(0x100, 0x380))
     G = int(rng.integers(1, 256))
@@ -339,6 +452,12 @@ def main(argv=None):
         cands = [os.path.join(HERE, "..", "build", "Debug", "Pumpy.exe"), os.path.join(game, "NXTESTE.EXE"),
                  os.path.join(game, "Pumpy.exe")]
         exe = next((os.path.abspath(c) for c in cands if os.path.exists(c)), None)
+    if dog_start(exe, game):          # a tabela do dongle fica dentro do Pumpy.exe (src/dog_serve.c)
+        print("Dongle: tabela do", os.path.basename(exe))
+    elif DOG:
+        print("Dongle: arquivos de chave (tools/data)")
+    else:
+        print("AVISO: sem a tabela do dongle (precisa do Pumpy.exe desta versão na pasta do jogo)")
     rng = np.random.default_rng()
     prev_dir = os.path.join(game, "BGA", "PREVIEW")
     rows = []

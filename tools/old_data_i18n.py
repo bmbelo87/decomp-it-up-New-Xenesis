@@ -20,8 +20,8 @@ O que você precisa ter
   1. A pasta do jogo NX, com o Pumpy.exe dentro dela.
   2. Pelo menos uma versão anterior do jogo, instalada em uma pasta irmã, seguindo a árvore da
      aba "2. Pastas" (o nome da pasta precisa começar com o número da versão: 17_zero, 16_exc2...).
-  3. Os arquivos de chave nx_dog.key e zero_dog.key, numa pasta "data" ao lado deste programa
-     (eles NÃO vêm junto: sem eles o assistente não consegue ler os arquivos cifrados do NX e do Zero).
+  3. O Pumpy.exe desta versão, na mesma pasta do jogo: é ele que faz a parte cifrada (decifrar os
+     arquivos do NX e do Zero e gravar a prévia), então não é preciso nenhum arquivo de chave.
   4. Nada mais: o ffmpeg já vai junto com este programa.
 
 Passo a passo
@@ -51,8 +51,8 @@ What you need
   1. The NX game folder, with Pumpy.exe inside it.
   2. At least one older version of the game, installed in a sibling folder, following the tree on
      the "2. Folders" tab (the folder name must start with the version number: 17_zero, 16_exc2...).
-  3. The key files nx_dog.key and zero_dog.key, in a "data" folder next to this program
-     (they are NOT included: without them the assistant cannot read the encrypted NX and Zero files).
+  3. The Pumpy.exe of this version, in the same game folder: it does the encrypted part (decrypting
+     the NX and Zero files and writing the preview), so no key file is needed.
   4. Nothing else: ffmpeg is already shipped with this program.
 
 Step by step
@@ -169,9 +169,11 @@ S = {
         "k_old_ok": "Older version '{0}' found",
         "k_old_nogame": "'{0}' looks like an older version, but has no 'game' folder inside",
         "k_ff_ok": "ffmpeg: {0}", "k_ff_err": "ffmpeg not found (it should be next to the program)",
-        "k_key_ok": "Key file {0} found",
-        "k_key_err": "Key file {0} NOT found: put it in a 'data' folder next to the program",
-        "need_keys": "The key files are missing (see tab 2). Generating previews is blocked until they are in place.",
+        "k_dog_ok": "Pumpy.exe does the decryption ({0} queries): ready",
+        "k_dog_files": "This folder's Pumpy.exe has no assistant mode; using the key files in the data folder",
+        "k_dog_err": "No way to decrypt: this folder's Pumpy.exe has no assistant mode (use the Pumpy.exe of this "
+                     "version) and there are no key files in a data folder",
+        "need_keys": "There is no way to decrypt the files (see tab 2). Generating previews is blocked.",
     },
     "pt": {
         "title": "NXReconstructed - Assistente Old Data",
@@ -209,9 +211,11 @@ S = {
         "k_old_ok": "Versão anterior '{0}' encontrada",
         "k_old_nogame": "'{0}' parece uma versão anterior, mas não tem a pasta 'game' dentro",
         "k_ff_ok": "ffmpeg: {0}", "k_ff_err": "ffmpeg não encontrado (deveria estar ao lado do programa)",
-        "k_key_ok": "Arquivo de chave {0} encontrado",
-        "k_key_err": "Arquivo de chave {0} NÃO encontrado: coloque-o numa pasta 'data' ao lado do programa",
-        "need_keys": "Faltam os arquivos de chave (veja a aba 2). Gerar prévias fica bloqueado até eles estarem no lugar.",
+        "k_dog_ok": "O Pumpy.exe faz a decifragem ({0} consultas): pronto",
+        "k_dog_files": "O Pumpy.exe desta pasta não tem o modo do assistente; usando os arquivos de chave da pasta data",
+        "k_dog_err": "Sem como decifrar: o Pumpy.exe desta pasta não tem o modo do assistente (use o Pumpy.exe desta "
+                     "versão) e não há arquivos de chave numa pasta data",
+        "need_keys": "Não há como decifrar os arquivos (veja a aba 2). Gerar prévias fica bloqueado.",
     },
 }
 

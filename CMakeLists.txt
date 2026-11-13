@@ -213,6 +213,7 @@ add_executable(Pumpy
     src/util.c
     src/resource.c
     src/dog_table.c
+    src/dog_serve.c
     src/step.c
     src/song.c
     src/zlibinflate.c

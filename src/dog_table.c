@@ -1914,3 +1914,11 @@ int Dog_Convert16(const uint8_t* q, uint32_t* resp) {
     *resp = e->r;
     return 1;
 }
+
+/* Quantidade de consultas e a i-ésima (16 bytes). */
+int Dog_Count(void) { return (int)(sizeof(g_dogTable) / sizeof(g_dogTable[0])); }
+int Dog_QueryAt(int i, uint8_t* q) {
+    if (i < 0 || i >= Dog_Count()) return 0;
+    memcpy(q, g_dogTable[i].q, 16);
+    return 1;
+}

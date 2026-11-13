@@ -28,6 +28,14 @@ out += ["};", "",
         "int Dog_Convert16(const uint8_t* q, uint32_t* resp) {",
         "    const DogEntry* e = (const DogEntry*)bsearch(q, g_dogTable, sizeof(g_dogTable) / sizeof(g_dogTable[0]),",
         "                                                       sizeof(g_dogTable[0]), zd_cmp);",
-        "    if (!e) return 0;", "    *resp = e->r;", "    return 1;", "}", ""]
+        "    if (!e) return 0;", "    *resp = e->r;", "    return 1;", "}", "",
+        # extra do port: o modo --dog-serve (src/dog_serve.c, usado pelo assistente OldDataWizard) lista as
+        # consultas para escolher uma ao gravar o MOV3; as respostas continuam só dentro do executável
+        "/* Quantidade de consultas e a i-ésima (16 bytes). */",
+        "int Dog_Count(void) { return (int)(sizeof(g_dogTable) / sizeof(g_dogTable[0])); }",
+        "int Dog_QueryAt(int i, uint8_t* q) {",
+        "    if (i < 0 || i >= Dog_Count()) return 0;",
+        "    memcpy(q, g_dogTable[i].q, 16);",
+        "    return 1;", "}", ""]
 open(os.path.join(here, "..", "src", "dog_table.c"), "w", encoding="utf-8", newline="\n").write("\n".join(out))
 print(len(tab), "entradas")
