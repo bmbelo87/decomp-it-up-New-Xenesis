@@ -258,9 +258,10 @@ void OldData_LoadDiscs(int* tex, const uint8_t* want, int count)
 }
 
 /* Resumo para o GAME OPTION: quantas versões anteriores foram achadas e quantas das
- * músicas do USE OLD DATA SONGS têm o indispensável (capa, disco e áudio), contando o
- * que o próprio NX já traz. Prévia e BGA ficam de fora da conta: têm reserva (001.MOV)
- * e algumas músicas não os têm em versão nenhuma. Não depende de a opção estar ligada.
+ * músicas do USE OLD DATA SONGS têm o indispensável (capa, disco, áudio, BGA, prévia e step),
+ * contando o que o próprio NX já traz. era: só capa, disco e áudio (prévia e BGA tinham reserva,
+ * 001.MOV); pedido do usuário: a música sem qualquer um deles sai das roletas e o GAME OPTION
+ * mostra (ok/total). Não depende de a opção estar ligada.
  * Calculado uma vez por execução (abre os pacotes de disco). */
 static uint8_t s_songOk[SONG_TABLE_COUNT];   /* 1 = capa, disco e áudio achados (OldData_Status) */
 
@@ -270,8 +271,12 @@ void OldData_Status(int* roots, int* ok, int* total)
     if (s_count < 0) scan();
     if (s_ok < 0) {
         static uint8_t title[SONG_TABLE_COUNT], audio[SONG_TABLE_COUNT], disc[SONG_TABLE_COUNT];
+        /* extra do port (pedido do usuário): BGA, prévia e step também são indispensáveis; a música
+         * sem qualquer um deles sai das roletas (OldData_SongOk) e conta como incompleta no GAME OPTION */
+        static uint8_t bga[SONG_TABLE_COUNT], prev[SONG_TABLE_COUNT], step[SONG_TABLE_COUNT];
         char path[MAX_PATH];
         memset(title, 0, sizeof(title)); memset(audio, 0, sizeof(audio)); memset(disc, 0, sizeof(disc));
+        memset(bga, 0, sizeof(bga)); memset(prev, 0, sizeof(prev)); memset(step, 0, sizeof(step));
         for (int i = NX_SONG_OLD_BASE; i < SONG_TABLE_COUNT; i++) {
             for (int id = (int)g_songTable[i].id, g = 0; id != -1 && g < 8; g++, id = NX_ResId(id)) {
                 if (!title[i]) {
@@ -282,7 +287,50 @@ void OldData_Status(int* roots, int* ok, int* total)
                     snprintf(path, sizeof(path), "%s/AUDIO/%03X.AUD", g_game.currentDirectory, (unsigned)id);
                     audio[i] = fileExists(path) || findFile1(id, "AUDIO/%X.AUD", path, sizeof(path));
                 }
+                if (!bga[i]) {   /* vídeo ou animação (.DAT); a DB52 usa o 326.DAT do NX (loading.c) */
+                    snprintf(path, sizeof(path), "%s/BGA/%03X.MOV", g_game.currentDirectory, (unsigned)id);
+                    bga[i] = fileExists(path) || findFile1(id, "BGA/%X.MOV", path, sizeof(path));
+                    if (!bga[i]) {
+                        snprintf(path, sizeof(path), "%s/BGA/%03X.DAT", g_game.currentDirectory, (unsigned)id);
+                        bga[i] = fileExists(path) || findFile1(id, "BGA/%X.DAT", path, sizeof(path));
+                    }
+                    if (!bga[i] && id == 0xDB52) {
+                        snprintf(path, sizeof(path), "%s/BGA/326.DAT", g_game.currentDirectory);
+                        bga[i] = fileExists(path);
+                    }
+                }
+                if (!prev[i]) {
+                    snprintf(path, sizeof(path), "%s/BGA/PREVIEW/%03X.MOV", g_game.currentDirectory, (unsigned)id);
+                    prev[i] = fileExists(path) || findPreview1(id, path, sizeof(path));
+                }
             }
+        }
+        {   /* BGA genérico (001.MOV) é o BGA correto destas (informado pelo usuário): as remixes B58, DB27 e
+             * DB50 nunca tiveram BGA próprio; a C32 usa os dados da Love is a Danger Zone 2 original (D41),
+             * que também não tem BGA no NX e roda no 001.MOV (loading.c). Só vale com o 001.MOV presente. */
+            static const uint32_t k_genericBga[] = { 0xB58, 0xDB27, 0xDB50, 0xC32 };
+            snprintf(path, sizeof(path), "%s/BGA/001.MOV", g_game.currentDirectory);
+            bool generic = fileExists(path);
+            for (int i = NX_SONG_OLD_BASE; i < SONG_TABLE_COUNT && generic; i++)
+                for (size_t k = 0; k < sizeof(k_genericBga) / sizeof(k_genericBga[0]); k++)
+                    if (g_songTable[i].id == k_genericBga[k]) bga[i] = 1;
+        }
+        {   /* step: <ID>.SEE do NX, solto em STEP/ ou dentro do STEP.DAT (step.c: stepOpen). O .STX de uma
+             * versão anterior só serve para os modos recuperados (k_oldModes), não carrega a música inteira. */
+            snprintf(path, sizeof(path), "%s/STEP.DAT", g_game.currentDirectory);
+            bool pack = fileExists(path) && RES_Open(path);
+            for (int i = NX_SONG_OLD_BASE; i < SONG_TABLE_COUNT; i++) {
+                int ids[10], nIds = 0;
+                for (int id = (int)g_songTable[i].id, g = 0; id != -1 && g < 8; g++, id = NX_ResId(id)) ids[nIds++] = id;
+                if (g_songTable[i].baseId >= 0) ids[nIds++] = g_songTable[i].baseId;   /* loadChartForSong: id e depois a base */
+                for (int k = 0; k < nIds && !step[i]; k++) {
+                    char name[24];
+                    snprintf(name, sizeof(name), "%03X.SEE", (unsigned)ids[k]);
+                    snprintf(path, sizeof(path), "%s/STEP/%s", g_game.currentDirectory, name);
+                    step[i] = fileExists(path) || (pack && RES_Find(name) >= 0);
+                }
+            }
+            if (pack) RES_Close();
         }
         static const char* const k_pack[4] = { "TEST.DAT", "90.DAT", "90E.DAT", "90H.DAT" };
         static const char* const k_ext[6] = { "TGA", "png", "tga", "jpg", "bmp", "dds" };   /* como loadTextureFromRES */
@@ -304,10 +352,11 @@ void OldData_Status(int* roots, int* ok, int* total)
         s_ok = 0; s_total = 0;
         for (int i = NX_SONG_OLD_BASE; i < SONG_TABLE_COUNT; i++) {
             s_total++;
-            s_songOk[i] = title[i] && audio[i] && disc[i];
+            /* era: title[i] && audio[i] && disc[i] */
+            s_songOk[i] = title[i] && audio[i] && disc[i] && bga[i] && prev[i] && step[i];
             if (s_songOk[i]) s_ok++;
-            else Log_Print("OLDDATA: %X incompleta (capa %d, disco %d, audio %d)\n",
-                           (unsigned)g_songTable[i].id, title[i], disc[i], audio[i]);
+            else Log_Print("OLDDATA: %X incompleta (capa %d, disco %d, audio %d, bga %d, previa %d, step %d)\n",
+                           (unsigned)g_songTable[i].id, title[i], disc[i], audio[i], bga[i], prev[i], step[i]);
         }
         Log_Print("OLDDATA: %d de %d músicas com capa, disco e áudio (%d versão(ões) anterior(es))\n",
                   s_ok, s_total, s_count);
