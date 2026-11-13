@@ -297,6 +297,7 @@ endif()
 if(WIN32)
     target_link_libraries(Pumpy PRIVATE winmm)   # timeGetTime / timeBeginPeriod
     target_sources(Pumpy PRIVATE src/icon.rc)    # ícone do .exe (src/icon.ico, gerado de icon.png)
+    set_source_files_properties(src/icon.rc PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/glowdisc.png")  # glowdisc embutido
     if(MSVC)
         target_sources(Pumpy PRIVATE src/Pumpy.manifest)
     endif()

@@ -1,6 +1,9 @@
 /* Ícone do executável (gerado de icon.png) */
 1 ICON "icon.ico"
 
+/* glowdisc.png embutido (RT_RCDATA 2): brilho dos discos/prévias de outros jogos na seleção NX */
+2 RCDATA "glowdisc.png"
+
 
 /* Version Information */
 1 VERSIONINFO

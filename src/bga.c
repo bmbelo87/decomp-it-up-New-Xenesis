@@ -327,6 +327,8 @@ void BGA_Reset(void) {
     Log_Print("BGA: reset, maxFrame=%d\n", g_game.bgaMaxFrame);
 }
 
+int g_glowTexId = -1;
+
 static void drawTileQuad(SPRTileDef* tile, float offsetX, float offsetY) {
     GLuint glTexId = (tile->texId >= 0 && tile->texId < MAX_TEXTURES && g_game.textures[tile->texId].inUse) ? g_game.textures[tile->texId].id : 0;
     /* DBG: loga hall.spr uma vez na primeira chamada */
@@ -368,6 +370,21 @@ static void drawTileQuad(SPRTileDef* tile, float offsetX, float offsetY) {
     glTexCoord2f(u1, v2);
     glVertex2f(offsetX + (float)tile->srcX, 480.0f - (offsetY + (float)(tile->srcY + tile->srcH)));
     glEnd();
+
+    /* extra do port: glowdisc por cima da prévia de outro jogo (o do disco vai na textura) */
+    if (tile->glow && g_glowTexId >= 0 && g_glowTexId < MAX_TEXTURES && g_game.textures[g_glowTexId].inUse) {
+        glBindTexture(GL_TEXTURE_2D, g_game.textures[g_glowTexId].id);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f);
+        glVertex2f(offsetX + (float)tile->srcX, 480.0f - (offsetY + (float)tile->srcY));
+        glTexCoord2f(1.0f, 0.0f);
+        glVertex2f(offsetX + (float)(tile->srcX + tile->srcW), 480.0f - (offsetY + (float)tile->srcY));
+        glTexCoord2f(1.0f, 1.0f);
+        glVertex2f(offsetX + (float)(tile->srcX + tile->srcW), 480.0f - (offsetY + (float)(tile->srcY + tile->srcH)));
+        glTexCoord2f(0.0f, 1.0f);
+        glVertex2f(offsetX + (float)tile->srcX, 480.0f - (offsetY + (float)(tile->srcY + tile->srcH)));
+        glEnd();
+    }
 }
 
 static void renderSPTile(SPRTileDef* tile, float posX, float posY, float scaleX, float scaleY, float hotX, float hotY, float rotation, float r, float g, float b, float alpha) {

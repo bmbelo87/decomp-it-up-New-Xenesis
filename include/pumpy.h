@@ -369,7 +369,9 @@ typedef struct {
     float u1, v1, u2, v2;
     int texId;
     bool flipH, flipV;
+    bool glow;   /* extra do port: drawTileQuad cobre o tile com o glowdisc (prévia de outro jogo) */
 } SPRTileDef;
+extern int g_glowTexId;   /* textura do glowdisc.png (embutido no .exe), -1 = sem */
 
 #define MAX_BGA_LAYERS 100   /* BGA3: 100 slots fixos (Zero usa até o 99, ex.: STATION) */
 /* era: #define MAX_BGA_LAYERS 64 */

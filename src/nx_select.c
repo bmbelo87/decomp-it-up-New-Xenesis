@@ -64,6 +64,8 @@ static int  s_diffSaved[2];          /* +0x84 */
 static int  s_dir;                   /* +0xa4: 0 parado, 1 DR (L move), 2 DL (R move) */
 static bool s_ready;                 /* +0x25 */
 static bool s_previewOn;             /* +0x26 */
+static bool s_previewGlow;           /* extra do port: prévia de outro jogo leva o glowdisc */
+static int  s_glowTex = -1, s_glowGL;/* extra do port: glowdisc.png embutido no .exe */
 static unsigned s_joined;            /* [0x81f8904] bits 0/1 */
 static int  s_time;                  /* +0x9c: 0x5a - segundos */
 static uint32_t s_timeTick;          /* [+0x33c] */
@@ -763,6 +765,78 @@ static bool nxFind(int id, const char* fmt, char* out, size_t sz) {
     return false;
 }
 
+/* Prévias originais do NX (BGA/PREVIEW com data de 2014-02-07). O tools/import_old_data.py grava as
+ * prévias dos jogos antigos na mesma pasta, então "o arquivo existe" não distingue mais o que é do NX. */
+static const int k_nxPreview[] = { 0x103,0x109,0x112,0x204,0x205,0x208,0x212,0x213,0x301,0x302,0x303,0x304,0x310,0x312,0x313,0x318,0x404,0x405,0x413,0x502,0x503,0x505,0x507,0x516,0x701,0x704,0x708,0x711,0x712,0x735,0x736,0x802,0x805,0x806,0x809,0x814,0x818,0x820,0x826,0x902,0x906,0x909,0x915,0x919,0x922,0xA01,0xA02,0xA03,0xA04,0xA05,0xA06,0xA08,0xA09,0xA10,0xA11,0xA12,0xA14,0xA15,0xA17,0xA18,0xA19,0xA20,0xA21,0xA22,0xA23,0xB01,0xB02,0xB03,0xB05,0xB06,0xB08,0xB09,0xB11,0xB12,0xB13,0xB14,0xB15,0xB17,0xB18,0xB19,0xB20,0xC01,0xC02,0xC03,0xC04,0xC05,0xC06,0xC08,0xC09,0xC10,0xC11,0xC12,0xC14,0xC15,0xC16,0xC17,0xC18,0xC19,0xC20,0xC21,0xC22,0xD01,0xD02,0xD03,0xD04,0xD05,0xD06,0xD07,0xD08,0xD09,0xD10,0xD11,0xD12,0xD13,0xD14,0xD15,0xD16,0xD17,0xD18,0xD19,0xD20,0xD21,0xD22,0xD23,0xD24,0xD25,0xD26,0xD27,0xD28,0xD29,0xD30,0xD31,0xD32,0xD33,0xD34,0xD35,0xD36,0xD37,0xD38,0xD39,0xD40,0xD41,0xD42,0xD43,0xDB26,0xDB28,0xDB29,0xDB30,0xDB31,0xDB51,0xDB53,0xDB54,0xDB55,0xDB56,0xDB57,0xDC41,0xDC42,0xDC43 };
+
+/* a música (ou um id alternativo dela, como o nxFind) tem prévia original do NX? */
+static bool nxHasOrigPreview(int id) {
+    for (int g = 0; id != -1 && g < 8; g++, id = NX_ResId(id))
+        for (size_t k = 0; k < sizeof(k_nxPreview) / sizeof(k_nxPreview[0]); k++)
+            if (k_nxPreview[k] == id) return true;
+    return false;
+}
+
+/* ---------------------------------------------------------------------------
+ * Extra do port: glowdisc.png (embutido no .exe, RT_RCDATA 2 de icon.rc).
+ * Discos e prévias de outros jogos não trazem o brilho que os do NX já têm na própria arte.
+ * Disco: o glow é misturado na textura (só onde o disco é opaco -> respeita a borda).
+ * Prévia (vídeo): tile->glow faz o drawTileQuad cobrir o tile com ele.
+ * ------------------------------------------------------------------------- */
+static void glowLoad(void) {
+    if (s_glowTex >= 0 && s_glowTex < MAX_TEXTURES && g_game.textures[s_glowTex].inUse &&
+        g_game.textures[s_glowTex].id == (GLuint)s_glowGL) { g_glowTexId = s_glowTex; return; }
+    s_glowTex = -1; g_glowTexId = -1;
+#ifdef _WIN32
+    HRSRC hr = FindResourceA(NULL, MAKEINTRESOURCEA(2), MAKEINTRESOURCEA(10) /* RT_RCDATA */);
+    HGLOBAL hg = hr ? LoadResource(NULL, hr) : NULL;
+    const void* p = hg ? LockResource(hg) : NULL;
+    if (p) {
+        s_glowTex = Texture_LoadFromMemory((const uint8_t*)p, (uint32_t)SizeofResource(NULL, hr), "glowdisc.png");
+        if (s_glowTex >= 0) s_glowGL = (int)g_game.textures[s_glowTex].id;
+    }
+#endif
+    g_glowTexId = s_glowTex;
+    Log_Print("NXSELECT: glowdisc %s\n", s_glowTex >= 0 ? "carregado do .exe" : "indisponível");
+}
+
+/* mistura o glow (esticado no disco) nos pixels do disco, sem mexer no alpha dele */
+static void glowBake(int texId) {
+    if (s_glowTex < 0 || texId < 0 || texId >= MAX_TEXTURES || !g_game.textures[texId].inUse) return;
+    /* loadTextureFromRES devolve a mesma textura (cache) a cada Enter: mistura uma vez só */
+    static GLuint baked[MAX_TEXTURES];
+    if (baked[texId] == g_game.textures[texId].id) return;
+    baked[texId] = g_game.textures[texId].id;
+    int gw = 0, gh = 0, dw = 0, dh = 0;
+    glBindTexture(GL_TEXTURE_2D, g_game.textures[s_glowTex].id);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &gw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &gh);
+    glBindTexture(GL_TEXTURE_2D, g_game.textures[texId].id);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &dw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &dh);
+    if (gw <= 0 || gh <= 0 || dw <= 0 || dh <= 0) return;
+    uint8_t* g = (uint8_t*)malloc((size_t)gw * gh * 4);
+    uint8_t* d = (uint8_t*)malloc((size_t)dw * dh * 4);
+    if (g && d) {
+        glBindTexture(GL_TEXTURE_2D, g_game.textures[s_glowTex].id);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, g);
+        glBindTexture(GL_TEXTURE_2D, g_game.textures[texId].id);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, d);
+        for (int y = 0; y < dh; y++) {
+            int gy = y * gh / dh;
+            for (int x = 0; x < dw; x++) {
+                const uint8_t* gp = g + ((size_t)gy * gw + (x * gw / dw)) * 4;
+                uint8_t* dp = d + ((size_t)y * dw + x) * 4;
+                unsigned ga = gp[3];
+                if (!ga || !dp[3]) continue;
+                for (int c = 0; c < 3; c++) dp[c] = (uint8_t)((dp[c] * (255 - ga) + gp[c] * ga + 127) / 255);
+            }
+        }
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, dw, dh, GL_RGBA, GL_UNSIGNED_BYTE, d);
+    }
+    free(g); free(d);
+}
+
 static void previewStop(void) {
     if (!s_previewOn) return;
     s_previewOn = false;
@@ -784,6 +858,7 @@ static void previewStart(void) {
     const TrackEntry* e = cur();
     if (!e) return;
     char mov[MAX_PATH], aud[MAX_PATH];
+    s_previewGlow = !nxHasOrigPreview((int)e->id);   /* era: !nxFind (as prévias importadas também existem em BGA/PREVIEW) */
     /* era: sem a prévia ia direto para a 001.MOV. Extra do port (USE OLD DATA SONGS):
      * antes tenta a prévia de uma versão anterior. */
     if (!nxFind((int)e->id, "%s/BGA/PREVIEW/%03X.MOV", mov, sizeof(mov)) &&
@@ -897,8 +972,11 @@ void NxSelect_Enter(void) {
     static const int k_pos[] = { 15, 7, 11, 4, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56 };
     for (size_t i = 0; i < sizeof(k_pos) / sizeof(k_pos[0]); i++) makePosCopy(k_pos[i]);
 
+    glowLoad();
     /* discos (0x8062210) */
     char path[MAX_PATH];
+    static uint8_t discNX[SONG_TABLE_COUNT];   /* disco veio do TEST.DAT do NX */
+    memset(discNX, 0, sizeof(discNX));
     for (int i = 0; i < SONG_TABLE_COUNT; i++) s_discTex[i] = -1;
     snprintf(path, sizeof(path), "%s/BGA/TEST.DAT", g_game.currentDirectory);
     if (RES_Open(path)) {
@@ -909,6 +987,7 @@ void NxSelect_Enter(void) {
                 snprintf(name, sizeof(name), "%03X.TGA", (unsigned)id);
                 s_discTex[i] = loadTextureFromRES(name);
             }
+            discNX[i] = s_discTex[i] >= 0;
         }
         RES_Close();
     }
@@ -921,6 +1000,20 @@ void NxSelect_Enter(void) {
         OldData_LoadDiscs(s_discTex, want, SONG_TABLE_COUNT);
         int oRoots, oOk, oTotal;
         OldData_Status(&oRoots, &oOk, &oTotal);   /* 1ª vez: resumo no pumpy.log */
+    }
+
+    /* glowdisc: toda música sem o PREVIEW/%03X.MOV no BGA do NX (= arte de outro jogo) leva o glow
+     * no disco (a prévia dela é tratada em previewStart). era: só os extras do USE OLD DATA */
+    {
+        static uint8_t noPrev[SONG_TABLE_COUNT];
+        for (int i = 0; i < SONG_TABLE_COUNT; i++)
+            noPrev[i] = s_discTex[i] >= 0 && !nxHasOrigPreview((int)g_songTable[i].id);
+        for (int i = 0; i < SONG_TABLE_COUNT; i++) {
+            if (!noPrev[i]) continue;
+            bool shared = false;   /* textura dividida com música que tem prévia do NX */
+            for (int j = 0; j < SONG_TABLE_COUNT; j++) if (j != i && s_discTex[j] == s_discTex[i] && !noPrev[j]) shared = true;
+            if (!shared) glowBake(s_discTex[i]);
+        }
     }
 
     for (int k = 0; k < SFX_COUNT; k++)
@@ -1181,6 +1274,7 @@ void NxSelect_Update(float dt) {
             if (t >= 0 && s_movieSpr.sprTileCount > 0 && s_movieTex >= 0) {
                 g_game.sprTiles[t] = g_game.sprTiles[s_movieSpr.sprTileStart];
                 g_game.sprTiles[t].texId = s_movieTex;
+                g_game.sprTiles[t].glow = s_previewGlow;
                 /* movie.spr foi feito para a movie.tga 256x256, com o vídeo 256x192 nas
                  * linhas de cima; nossa textura do vídeo tem só 256x192 -> reescala V */
                 g_game.sprTiles[t].v1 *= 256.0f / 192.0f;
