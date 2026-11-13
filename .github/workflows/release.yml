@@ -84,6 +84,39 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
           cmake --build build --target Pumpy --config Release --parallel
 
+      # OldDataWizard (tools/old_data_wizard.py): assistente gráfico do USE OLD DATA SONGS, compilado com
+      # PyInstaller (64 bits, vale também no zip win32 em Windows de 64 bits) e acompanhado do ffmpeg.exe.
+      # Sem chaves do dongle: a decifragem usa o próprio Pumpy.exe (--dog-serve). Os dois passos são
+      # continue-on-error: se falharem, o zip leva só o Pumpy.exe, como antes.
+      - uses: actions/setup-python@v5
+        continue-on-error: true
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: OldDataWizard (PyInstaller)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          python -m pip install --quiet numpy pyinstaller
+          Push-Location tools
+          python -m PyInstaller --noconfirm --distpath ../wizard-dist --workpath ../wizard-work old_data_wizard.spec
+          Pop-Location
+          if (-not (Test-Path wizard-dist/OldDataWizard.exe)) { throw "OldDataWizard.exe não foi gerado" }
+
+      - name: ffmpeg do assistente
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-x
+          $f = Get-ChildItem ffmpeg-x -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $f) { throw "ffmpeg.exe não encontrado no pacote" }
+          New-Item -ItemType Directory -Force wizard-dist | Out-Null
+          Copy-Item $f.FullName wizard-dist/ffmpeg.exe
+          $lic = Get-ChildItem ffmpeg-x -Recurse -Filter LICENSE | Select-Object -First 1
+          if ($lic) { Copy-Item $lic.FullName wizard-dist/FFMPEG-LICENSE.txt }
+
       - name: Empacotar e anexar
         shell: pwsh
         env:
@@ -91,7 +124,14 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           $zip = "Pumpy-$env:TAG-${{ matrix.name }}.zip"
-          Compress-Archive -Path build/Release/Pumpy.exe -DestinationPath $zip -Force
+          $files = @("build/Release/Pumpy.exe")
+          if ((Test-Path wizard-dist/OldDataWizard.exe) -and (Test-Path wizard-dist/ffmpeg.exe)) {
+            $files += "wizard-dist/OldDataWizard.exe", "wizard-dist/ffmpeg.exe", "packaging/windows/LEIAME-OldData.txt"
+            if (Test-Path wizard-dist/FFMPEG-LICENSE.txt) { $files += "wizard-dist/FFMPEG-LICENSE.txt" }
+          } else {
+            Write-Host "::warning::OldDataWizard.exe ou ffmpeg.exe indisponível: o zip leva só o Pumpy.exe"
+          }
+          Compress-Archive -Path $files -DestinationPath $zip -Force
           gh release upload "$env:TAG" $zip --clobber
 
   macos:

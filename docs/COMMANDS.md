@@ -157,6 +157,8 @@ em que ponto da música a intro se encaixa e recorta esse trecho do vídeo do BG
 `.DAT` pelo próprio jogo, gravando `BGA/PREVIEW/<ID>.MOV` no formato do NX. A intro tocada na
 seleção é o `AUDIO/D<ID>.AUD` da versão anterior. Sem prévia, o card mostra `BGA/001.MOV`.
 
+**OldDataWizard.exe** (vai no zip do Windows, com o `ffmpeg.exe`) faz isso numa janela, em Português ou English: mostra a árvore de pastas esperada, confere cada versão anterior, lista música por música o que falta e cria as prévias com progresso e cancelamento. Coloque-o na pasta do jogo, ao lado do `Pumpy.exe`. A parte cifrada (decifrar os `.AUD`/`.PNZ` do NX e do Zero e gravar o `MOV3`) é feita pelo próprio `Pumpy.exe`, que responde pelo modo `--dog-serve` (sem janela, via stdin/stdout; `src/dog_serve.c`): o assistente não usa arquivo de chave. Por isso ele exige o `Pumpy.exe` da mesma versão; um mais antigo é detectado e o botão Começar fica bloqueado. Código: `tools/old_data_wizard.py` (build: `tools/old_data_wizard.spec`).
+
 Modos recuperados de `.STX` antigos (o `.SEE` do NX perdeu a dificuldade, o `.STX` ainda tem):
 
 | Música | Modos | De onde |

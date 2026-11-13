@@ -1,0 +1,43 @@
+OldDataWizard - assistente do USE OLD DATA SONGS
+================================================
+
+Este pacote traz, além do Pumpy.exe:
+
+  OldDataWizard.exe   o assistente (janela em Português ou English, escolha no canto superior direito)
+  ffmpeg.exe          usado pelo assistente para cortar e converter as prévias
+  FFMPEG-LICENSE.txt  licença do ffmpeg
+
+Para que serve
+--------------
+O disco do NX traz o áudio, o BGA e o step de várias músicas que saíram do arcade, mas sem a capa, a
+prévia e o disco da seleção. Com GAME STYLE = MODDED e USE OLD DATA SONGS = ON (Service Menu > GAME
+OPTION), o Pumpy.exe busca o que falta numa versão anterior do jogo instalada ao lado do NX. O que ele
+não cria sozinho é a prévia (BGA\PREVIEW\<ID>.MOV): é isso que o assistente faz.
+
+Como usar
+---------
+1. Copie Pumpy.exe, OldDataWizard.exe e ffmpeg.exe para a pasta do jogo NX (a que tem AUDIO, BGA, TITLE...).
+2. As versões anteriores precisam estar em pastas irmãs, no formato <raiz>\NN_nome\game, com NN menor
+   que o da pasta do NX. Exemplo:
+
+     E:\18_nx\game       <- o NX (Pumpy.exe e OldDataWizard.exe aqui)
+     E:\17_zero\game
+     E:\16_exc2\game
+     E:\15_exc\game
+
+3. Abra o OldDataWizard.exe. A aba "2. Pastas" mostra a árvore esperada e o que foi encontrado; a aba
+   "3. Músicas" lista o que falta; a aba "4. Gerar prévias" cria os arquivos.
+4. Abra o jogo, Service Menu > GAME OPTION > GAME STYLE = MODDED, USE OLD DATA SONGS = ON.
+
+Observações
+-----------
+- O assistente usa o Pumpy.exe desta versão, na mesma pasta, para a parte cifrada; não precisa de
+  nenhum arquivo de chave. Um Pumpy.exe mais antigo não serve.
+- Para as músicas cujo fundo é um .DAT (animação), o jogo é aberto sozinho por alguns segundos para gravar
+  o fundo: é normal uma janela do jogo aparecer e sumir. Não mexa nela.
+- OldDataWizard.exe e ffmpeg.exe são de 64 bits (valem também no pacote win32, em Windows de 64 bits).
+
+ffmpeg
+------
+FFmpeg 7.1.1, build "essentials" de gyan.dev, licença GNU GPL v3 (FFMPEG-LICENSE.txt).
+Código-fonte: https://ffmpeg.org/download.html#releases  e  https://github.com/GyanD/codexffmpeg
