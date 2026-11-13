@@ -895,6 +895,15 @@ static void svcRenderGameOption(void)
         do {
             g_svcCursor++;
             if (g_svcCursor >= nRows) g_svcCursor = 0;   /* era: > 12 */
+    /* extra do port: USE OLD DATA SONGS = ON -> lembrete de rodar o assistente (tools/old_data_wizard.py,
+     * OldDataWizard.exe) que cria as prévias. Vai na linha em branco logo abaixo da opção (a que
+     * antecede o DEFAULT SETTING: rows[nRows - 3] == 10), em amarelo. Pedido do usuário. */
+    if (g_game.gameStyleModded && g_game.useOldData) {
+        svcColor(SVC_EEPROMDATA);
+        svcText(196.0f, (float)(352 - (nRows - 3) * 20), "Use OldDataWizard.exe to import Old Data first");
+        svcColor(SVC_NORMAL);
+    }
+
         } while (rows[g_svcCursor] == 10);               /* era: == 10 (MENU_BLANK) */
     } else if (hit & SVC_BIT_UP) {
         do {
