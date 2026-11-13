@@ -522,7 +522,7 @@ static void buildList(void) {
     static const uint32_t k_before[][2] = { { 0xA10, 0xA11 }, { 0xD208, 0xD701 }, { 0x208, 0x212 },
         /* parciais: A07 depois da A06 (antes da 202), 508 antes da 516, C44 depois da DC43
          * (antes da DB26); era: a B58 ia para o fim do canal ANOTHER */
-        { 0xC44, 0xDB26 }, { 0xDB27, 0xDB28 }, { 0xB58, 0xDB30 }, { 0xDB50, 0xDB53 }, { 0xDB52, 0xDB53 },   /* B58: logo depois da DB28 (pedido do usuário) */
+        { 0xC44, 0xDB26 }, { 0xC32, 0xD42 } /* FullSong: logo depois da D41 (pedido do usuário) */, { 0xDB27, 0xDB28 }, { 0xB58, 0xDB30 }, { 0xDB50, 0xDB53 }, { 0xDB52, 0xDB53 },   /* B58: logo depois da DB28 (pedido do usuário) */
         /* era: { 0xA07, 0x204 }, { 0x508, 0x516 }, { 0x202, 0x204 }, { 0x311, 0x404 }, { 0x707, 0x708 },
          * { 0xC07, 0xB17 }, { 0x730, 0x902 }, { 0x910, 0x915 }, { 0xB04, 0xB05 }, { 0xB10, 0xB11 },
          * { 0xC13, 0xC14 }. Com as 40 do "só step" a lista inteira dos canais K-POP, POP e BANYA
