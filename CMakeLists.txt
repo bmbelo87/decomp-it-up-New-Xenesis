@@ -235,8 +235,8 @@ target_include_directories(Pumpy PRIVATE include)
 # da série (.recomp.json, PR #6); a 0.4.5 é o 2º commit depois de e41ee29 (o 1º, b9b1754,
 # não compilava no Win32).
 set(RECOMP_MAJOR_MINOR "0.4")
-set(RECOMP_PATCH_BASE -7)   # a 0.4.7 é o commit da release. era 3 (o 2º commit depois da base era o .5):
-                            # os 10 commits por assunto depois da v0.4.6 fariam a versão pular para 0.4.16
+set(RECOMP_PATCH_BASE -10)  # a 0.4.8 é o commit da release (a 0.4.7 era -7). era 3 (o 2º commit depois da base era o .5):
+                            # os commits por assunto depois da v0.4.6 fariam a versão pular de número
 set(RECOMP_BASE_COMMIT "e41ee29")
 set(RECOMP_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(recomp_version ALL
