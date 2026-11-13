@@ -113,8 +113,9 @@ Pads em `0x9e420a0 + jogador*0xccc`. Botões: **7 DL, 8 UL, 9 C, 0xA UR, 0xB DR*
 - Nível 0x807c820/0x807c970, dificuldade 0x807e7a0/0x807e710/0x807e5f0, tempo 0x807e8e0.
 - Correções de infraestrutura que a NX exigiu: nomes de entrada do RESPAC2 com mais de
   15 caracteres (arcade_special.bga) e MAX_BGA_SCENES 64 (COMMON tem 46 cenas).
-- Faltam: texto artista/título/BPM em FreeType (NXTW.TTF), códigos/COMMAND.DAT, modo
-  especial (corações, FULL SONG/REMIX/ANOTHER).
+- Texto artista/título/BPM (`nx_text.c`, MICROGBE.TTF), códigos com `COMMAND.DAT` e modo
+  especial (corações, FULL SONG/REMIX/ANOTHER): já implementados (ver README). Segue em
+  aberto apenas o que está em "Em aberto" acima e o desbloqueio do Begin especial.
 - Teste sem pad: PUMPY_AUTOSTATE=SELECT e PUMPY_SHOT=n1,n2 (capturas em pumpy_shot_n.bmp).
 
 ## Station (src/nx_station.c) — CStation 0x808a7f0
@@ -127,7 +128,8 @@ Pads em `0x9e420a0 + jogador*0xccc`. Botões: **7 DL, 8 UL, 9 C, 0xA UR, 0xB DR*
 - Slot 1 do COMMON (painel de cima) recebe `+0x58/+0x60/+0x68/+0x70` = camadas 9, 1, 8, 7
   (`channel4/1/3/2.spr`, 0x808ac60..0x808ad1d). Antes lia 52/55 (`text_*`) por um `ebx` mal rastreado:
   o painel ficava transparente e o texto do canal aparecia no topo. Corrigido em 01/10/2026.
-- TRAINING (CSelectEz) e WORLD TOUR (CSelectWorld) ainda vão para a Select arcade.
+- TRAINING (CSelectEz) e WORLD TOUR (CSelectWorld): implementados depois, em `nx_training.c` e
+  `nx_world.c` (ver README). A frase anterior, de que iam para a Select arcade, está obsoleta.
 - SPECIAL ZONE (modo 1) = mesma CSelect: lista só canais 4..6 com custo <= corações
   (0x8062566; custo FULL SONG 4, REMIX 3, ANOTHER 2), fundo BGA/SP.MOV, corações
   [0x81f8a14] (7 no reset 0x8062930, gastos em 0x807b4fb), slots ARCADE 0x4b..0x51

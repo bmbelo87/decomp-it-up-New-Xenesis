@@ -1,5 +1,11 @@
 # Paridade PUMPY.EXE (original) × Pumpy (port Linux)
 
+> **Documento histórico (Prex3).** Descreve a paridade do `PUMPY.EXE` da Prex3 e não foi
+> refeito para a NX. Os endereços e as tabelas abaixo são do `PUMPY.EXE`, não do `piu` da NX.
+> O estado atual da NX está no [README](../README.md) (tabela de status) e em
+> [NX_SELECT.md](NX_SELECT.md); as diferenças Zero → NX estão em [ZERO_PARA_NX.md](ZERO_PARA_NX.md).
+> O save atual é `SETTINGS/PIUNX.INI` (ver nota de 02/10/2026 na seção 5.1).
+
 Atualizado em 2026-09-21. Base: `PUMPY.EXE` descompactado com `upx -d` (uma cópia; o
 original não foi tocado). Ferramentas: `tools/analysis/LEIAME.md`.
 
