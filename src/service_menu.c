@@ -274,7 +274,8 @@ static void svcRenderFooter(void)
     (void)buf;
     /* era (Prex3): "PUMP IT UP (PREX 3 / 3)" em (0,16) e "1999-2003 ANDAMIRO CO., LTD." em (0,0) */
     /* NX 0x80864e0: três linhas em x = 48 (Y para cima) */
-    svcText(48.0f, 64.0f, "PUMP IT UP: NX");
+    /* era: svcText(48.0f, 64.0f, "PUMP IT UP: NX"); — pedido do usuário */
+    svcText(48.0f, 64.0f, "DECOMP IT UP: NX");
     svcText(48.0f, 48.0f, "(C) 1999-2006 ANDAMIRO CO., LTD.");
     /* era: svcText(48.0f, 32.0f, "(BUILD:1.08)");  (build do piu original)
      * Pedido do usuário: mostra a versão do projeto, "RECOMP-<versão>". */
@@ -767,7 +768,10 @@ static const char* SVC_GAMEOPT_ITEMS[16] = {
 static int svcGameOptRows(int rows[16])
 {
     int n = 0;
-    for (int i = 0; i <= 7; i++) rows[n++] = i;
+    /* era: for (int i = 0; i <= 7; i++) rows[n++] = i;
+     * Pedido do usuário: MERCY TICKET (6) e SCORE PER TICKET (7) saem da lista (nunca foram
+     * usados nem serão; ver AGENTS.md). Os ids e o código deles ficam; os itens de baixo sobem. */
+    for (int i = 0; i <= 5; i++) rows[n++] = i;
     rows[n++] = 9;                       /* GAME STYLE */
     if (g_game.gameStyleModded) { rows[n++] = 8; rows[n++] = 13; rows[n++] = 14; rows[n++] = 15; }   /* era: sem o 15 */
     rows[n++] = 10;                      /* MENU_BLANK */
@@ -891,10 +895,6 @@ static void svcRenderGameOption(void)
         }
     }
 
-    if (hit & SVC_BIT_TEST) {
-        do {
-            g_svcCursor++;
-            if (g_svcCursor >= nRows) g_svcCursor = 0;   /* era: > 12 */
     /* extra do port: USE OLD DATA SONGS = ON -> lembrete de rodar o assistente (tools/old_data_wizard.py,
      * OldDataWizard.exe) que cria as prévias. Vai na linha em branco logo abaixo da opção (a que
      * antecede o DEFAULT SETTING: rows[nRows - 3] == 10), em amarelo. Pedido do usuário. */
@@ -904,6 +904,10 @@ static void svcRenderGameOption(void)
         svcColor(SVC_NORMAL);
     }
 
+    if (hit & SVC_BIT_TEST) {
+        do {
+            g_svcCursor++;
+            if (g_svcCursor >= nRows) g_svcCursor = 0;   /* era: > 12 */
         } while (rows[g_svcCursor] == 10);               /* era: == 10 (MENU_BLANK) */
     } else if (hit & SVC_BIT_UP) {
         do {
